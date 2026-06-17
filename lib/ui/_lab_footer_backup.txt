@@ -1,0 +1,65 @@
+class LabFooter extends ConsumerWidget {
+  const LabFooter({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(themeSettingsProvider).value ?? {};
+    final controller = ref.read(themeControllerProvider);
+
+    return Container(
+      height: 70,
+      decoration: const BoxDecoration(
+        color: LabColors.background,
+        border: Border(top: BorderSide(color: LabColors.cyanBorder, width: 0.5)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildFooterButton(
+            context,
+            Icons.dashboard,
+            "DSHBRD",
+            controller.getColor(settings, "FOOTER_DSHBRD", defaultColor: LabColors.primary),
+            () => Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (c) => const HomeScreen()), (r) => false),
+          ),
+          _buildFooterButton(
+            context,
+            Icons.fitness_center,
+            "WORKOUT",
+            controller.getColor(settings, "FOOTER_WORKOUT", defaultColor: LabColors.workoutRed),
+            () => Navigator.of(context).push(MaterialPageRoute(builder: (c) => const WorkoutManagerScreen())),
+          ),
+          _buildFooterButton(
+            context,
+            Icons.receipt_long,
+            "INVENTORY",
+            controller.getColor(settings, "FOOTER_INVENTORY", defaultColor: LabColors.inventoryOrange),
+            () => Navigator.of(context).push(MaterialPageRoute(builder: (c) => const LedgerScreen())),
+          ),
+          _buildFooterButton(
+            context,
+            Icons.analytics,
+            "VISUALS",
+            controller.getColor(settings, "FOOTER_VISUALS", defaultColor: LabColors.visualsNeon),
+            () => Navigator.of(context).push(MaterialPageRoute(builder: (c) => const PerformanceDashboard())),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFooterButton(BuildContext context, IconData icon, String label, Color color, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: color, size: 20),
+          const SizedBox(height: 4),
+          Text(label, style: LabStyles.mono(context, fontSize: 8, color: color)),
+        ],
+      ),
+    );
+  }
+}
+
