@@ -175,13 +175,12 @@ This section captures durable GYMR knowledge discovered across prior sessions so
 - Project: `GYMR / BeyondPerformance`, a local-first Flutter workout tracker for hybrid athletes.
 - Stack: Flutter + Riverpod + Drift + SQLite.
 - Primary target: Android, especially Redmi Note 8 Pro.
-- Current build path used in this profile:
-  - `/mnt/c/Users/Ginna/Desktop/Juan Jose Marroquin/Code/Agents/GYMR PROYECT DIRECTORY/GYMR CURRENT BUILD`
-- Flutter/Dart path used from WSL:
-  - `/mnt/c/Users/Ginna/develop/flutter_windows_3.41.5-stable/flutter/`
-  - From WSL, use Dart executable directly: `/mnt/c/Users/Ginna/develop/flutter_windows_3.41.5-stable/flutter/bin/cache/dart-sdk/bin/dart.exe`
-- No formal test suite exists. Verification is usually: targeted `dart analyze --no-fatal-warnings` + hot restart + visual inspection on device.
+- Sessions run either from WSL or natively on Windows (PowerShell/Bash), depending on the environment — check which shell is actually active rather than assuming WSL. When on Windows, the Dart SDK executable used in past sessions has been:
+  - `C:\Users\Ginna\develop\flutter_windows_3.41.5-stable\flutter\bin\cache\dart-sdk\bin\dart.exe`
+  - The equivalent WSL path is `/mnt/c/Users/Ginna/develop/flutter_windows_3.41.5-stable/flutter/bin/cache/dart-sdk/bin/dart.exe`.
+- A minimal automated test suite exists as of 2026-07-09: `flutter test` runs `test/wb_smoke_test.dart`, smoke tests for the Workout Blocks persistence path (create/rename/folder/delete, injection, export, WB Projections lookup) against an in-memory DB via `AppDatabase.forTesting()`. `test/widget_test.dart` is unmodified Flutter boilerplate and currently fails in this harness (pre-existing, unrelated gap). Verification for non-trivial changes should include `dart analyze` + `flutter test`, plus hot restart + visual inspection on device for UI-facing changes.
 - Avoid excessive verification for simple mechanical tasks. Use direct execution and only minimal checks unless the task genuinely needs deeper validation.
+- Archived/dead files that aren't part of the app build live in `MISC/` at the repo root (see `MISC/README.md`), not scattered through `lib/`. Standalone one-time scripts live in `tools/`, run manually via `dart run`. Both are excluded from `dart analyze` via `analysis_options.yaml`.
 
 ### DOX workflow
 
@@ -200,25 +199,17 @@ This section captures durable GYMR knowledge discovered across prior sessions so
 
 ### NEXUS WB import/export and WB editor
 
-- WB data has a real-table path and a legacy compatibility path.
-- Real WB tables:
-  - `workout_blocks`
-  - `workout_block_kns`
-  - `workout_block_sets`
-- Legacy tables:
-  - `wb_store`
-  - `wb_kns_store`
-- NEXUS WB import/export must write/read real tables when KNS exists, then mirror to legacy tables only for compatibility.
-- Export should prefer real tables when they contain KNS and fall back to legacy only when needed.
+- As of 2026-07-09, `workout_blocks` (+ `workout_block_kns` + `workout_block_sets`) is the **sole** source of truth for Workout Blocks. The legacy `wb_store` / `wb_kns_store` JSON-blob tables that used to shadow-write alongside the real tables have been retired: `database.dart`'s `_backfillFolderFromLegacyWbStore()` backfills anything that only existed in those blobs (including `folder`, which used to live only there) on startup, then drops both tables. Do not reintroduce a dual-write path — write/read `workout_blocks` directly.
 - Soft-delete WBs with `workout_blocks.deleted_at`; do not permanently delete WBs if they must remain exportable/restorable.
-- OVARCH.PLN active WB pickers must treat active WBs as `COALESCE(workout_blocks.deleted_at, 0) = 0`, merge the legacy `wb_store` list with real `workout_blocks` rows, skip any real row with `deleted_at > 0`, skip legacy entries whose ID is marked deleted in real tables, and when a current `wb_store` snapshot exists, skip real-only orphan WBs that are not present in WO.BLCKS. This keeps WO.BLCKS deletions from reappearing in Plan Day injection.
+- OVARCH.PLN active WB pickers (`OvarchPlanInjectionService.activeWorkoutBlocks`) read directly from `workout_blocks` filtered on `COALESCE(deleted_at, 0) = 0` — no legacy merge/reconciliation needed anymore.
 - `plan_day_blocks` can exist in older local DBs with legacy alias columns. `beforeOpen` must add `day_id` / `plan_day_id` / `block_id` / `workout_block_id` safety columns and backfill from aliases such as `plan_day_id` / `workout_block_id` before any Drift DAO query. Direct inserts into `plan_day_blocks` must populate both `day_id` + legacy `plan_day_id` and both `block_id` + legacy `workout_block_id` until the schema is fully normalized.
 - NEXUS WB set IDs must be independent of `set_number`. Exported XLSX can contain duplicate `set_number` values in the same KNS, so deriving IDs from `kns_id + set_number` causes unique constraint failures.
 - Unilateral exercises can have two side rows. Export/import should preserve side rows and map `RIGHT` / `LEFT` correctly.
-- Injected WB sets should track source block ID via `complex_metadata['injectedFromBlock']` so WB projections can filter to WBs actually injected today.
-- Protect `workout_blocks` with `intention` and `description` columns when needed.
-- Build runner from WSL:
-  - `/mnt/c/Users/Ginna/develop/flutter_windows_3.41.5-stable/flutter/bin/cache/dart-sdk/bin/dart.exe run build_runner build --delete-conflicting-outputs`
+- Injected WB sets track source block ID via `complex_metadata['injectedFromBlock']` so WB Projections can filter to WBs actually injected today. WB Projections' "today" lookup must resolve log ids via Drift's typed `DateTime` comparison (`t.date.isBetweenValues(...)`), never a raw `millisecondsSinceEpoch` literal compared against a `DateTimeColumn` — Drift stores those as unix **seconds**, so a raw-millisecond comparison silently never matches (this broke WB Projections once already).
+- Protect `workout_blocks` with `intention`, `description`, and `folder` columns when needed, via the `_addColumnIfMissing` helper in `database.dart` rather than a bare `try { ALTER TABLE ... } catch (_) {}`.
+- Widgets shared between `workout_manager.dart` (live logging) and `WB.editor.dart` (block template editor) live in `lib/ui/wb_shared/`. Both files were originally a copy-paste fork; the identical/near-identical pieces (search pickers, set instance widgets, session timer, general notes, quick action button, unilateral pair frame, opts slice) were extracted there in 2026-07. The remaining large pieces that still differ per-screen on purpose (`_WorkoutDayPage`, `_ExerciseModule`, `_WorkoutSetInstance`, `_WorkoutOptsSheet`) were deliberately left separate — they encode real per-screen behavior differences (live PR/VP tracking vs. set tags, a smaller opts sheet in the block editor), not accidental duplication. Don't force these together without checking whether the divergence is a bug or intentional first.
+- Build runner:
+  - `dart run build_runner build --delete-conflicting-outputs`
 
 ### WB editor modal pitfalls
 
