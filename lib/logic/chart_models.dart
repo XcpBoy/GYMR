@@ -26,18 +26,6 @@ class MuscleMetric {
   });
 }
 
-class AcousticMetric {
-  final String trackName;
-  final String exerciseName;
-  final int count;
-
-  AcousticMetric({
-    required this.trackName,
-    required this.exerciseName,
-    required this.count,
-  });
-}
-
 class PhaseMetric {
   final int phase;
   final String? phaseName;

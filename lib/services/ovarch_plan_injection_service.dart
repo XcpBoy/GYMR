@@ -4,6 +4,58 @@ import 'package:drift/drift.dart' as drift;
 
 import '../database/database.dart';
 
+class WbInjectionOptions {
+  final bool injectPloadAsLoad;
+  final bool injectMaxRepsAsReps;
+  final bool injectMinRepsAsReps;
+  final bool injectRpeAsRpe;
+  final bool applyToAll;
+  final bool allSets;
+  final Map<int, WbKnsInjectionOptions> knsOptions;
+
+  const WbInjectionOptions({
+    this.injectPloadAsLoad = false,
+    this.injectMaxRepsAsReps = true,
+    this.injectMinRepsAsReps = false,
+    this.injectRpeAsRpe = false,
+    this.applyToAll = true,
+    this.allSets = true,
+    this.knsOptions = const <int, WbKnsInjectionOptions>{},
+  });
+
+  WbKnsInjectionOptions forKns(int knsId) {
+    if (applyToAll) {
+      return WbKnsInjectionOptions(
+        injectPloadAsLoad: injectPloadAsLoad,
+        injectMaxRepsAsReps: injectMaxRepsAsReps,
+        injectMinRepsAsReps: injectMinRepsAsReps,
+        injectRpeAsRpe: injectRpeAsRpe,
+      );
+    }
+    return knsOptions[knsId] ??
+        WbKnsInjectionOptions(
+          injectPloadAsLoad: injectPloadAsLoad,
+          injectMaxRepsAsReps: injectMaxRepsAsReps,
+          injectMinRepsAsReps: injectMinRepsAsReps,
+          injectRpeAsRpe: injectRpeAsRpe,
+        );
+  }
+}
+
+class WbKnsInjectionOptions {
+  final bool injectPloadAsLoad;
+  final bool injectMaxRepsAsReps;
+  final bool injectMinRepsAsReps;
+  final bool injectRpeAsRpe;
+
+  const WbKnsInjectionOptions({
+    this.injectPloadAsLoad = false,
+    this.injectMaxRepsAsReps = true,
+    this.injectMinRepsAsReps = false,
+    this.injectRpeAsRpe = false,
+  });
+}
+
 class OvarchPlanInjectionService {
   static Future<List<Map<String, dynamic>>> activeWorkoutBlocks(
       AppDatabase db) async {
@@ -151,12 +203,27 @@ class OvarchPlanInjectionService {
     final rows = await db.customSelect('''
       SELECT id, name, intention, description, created_at, deleted_at
       FROM workout_blocks
-      WHERE id = $blockId AND COALESCE(deleted_at, 0) = 0
+      WHERE (id = $blockId OR created_at = $blockId) AND COALESCE(deleted_at, 0) = 0
+      ORDER BY CASE WHEN id = $blockId THEN 0 ELSE 1 END ASC
+      LIMIT 1
     ''').get();
     print(
         '[OVARCH_INJECT] workoutBlockById rows=$blockId rowsFound=${rows.length}');
 
-    if (rows.isEmpty) return null;
+    if (rows.isEmpty) {
+      final legacy = await _legacyWorkoutBlockPayload(db, blockId);
+      if (legacy != null) return legacy;
+      final activeBlocks = await activeWorkoutBlocks(db);
+      if (activeBlocks.length == 1) {
+        final fallback = activeBlocks.first;
+        print(
+            '[OVARCH_INJECT] workoutBlockById ACTIVE_SINGLE_FALLBACK requested=$blockId fallback=${fallback['id']} name=${fallback['name']}');
+        return fallback;
+      }
+      print(
+          '[OVARCH_INJECT] workoutBlockById NO_FALLBACK requested=$blockId activeBlocks=${activeBlocks.length}');
+      return null;
+    }
     final row = rows.first;
     final payload = <String, dynamic>{
       'id': row.data['id'] as int,
@@ -170,20 +237,55 @@ class OvarchPlanInjectionService {
     return payload;
   }
 
+  static Future<Map<String, dynamic>?> _legacyWorkoutBlockPayload(
+      AppDatabase db, int blockId) async {
+    try {
+      final legacyRows =
+          await db.customSelect('SELECT data FROM wb_store WHERE id = 1').get();
+      if (legacyRows.isEmpty) return null;
+      final raw = legacyRows.first.data['data'] as String;
+      final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+      final match = list.firstWhere((item) {
+        final idRaw = item['id'];
+        final idText = idRaw?.toString().replaceAll('wb_', '') ?? '';
+        final idNum = int.tryParse(idText);
+        final createdAt = int.tryParse(item['createdAt']?.toString() ?? '');
+        return idNum == blockId || createdAt == blockId;
+      }, orElse: () => <String, dynamic>{});
+      if (match.isEmpty) return null;
+      final payload = <String, dynamic>{
+        'id': blockId,
+        'name': (match['name'] as String?)?.toString().trim().toUpperCase() ??
+            'WB $blockId',
+        'intention': match['intention'] as String?,
+        'description': match['description'] as String?,
+        'createdAt': int.tryParse(match['createdAt']?.toString() ?? ''),
+        'source': 'legacy',
+      };
+      print(
+          '[OVARCH_INJECT] workoutBlockById LEGACY_FALLBACK id=$blockId name=${payload['name']}');
+      return payload;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<void> injectWorkoutBlock(
     AppDatabase db,
     DateTime date,
     Map<String, dynamic> wbData, {
-    bool usePload = false,
-    bool allSets = true,
+    WbInjectionOptions? options,
     bool trackSourceBlock = true,
+    Future<void> Function(int completedKns, int totalKns, String label)?
+        onKnsProgress,
   }) async {
     final blockId = wbData['id'] as int;
     final blockName = wbData['name'] as String;
     final blockIntention = wbData['intention'] as String?;
+    final injectionOptions = options ?? const WbInjectionOptions();
     var insertedSets = 0;
     print(
-        '[OVARCH_INJECT] START blockId=$blockId block=$blockName usePload=$usePload allSets=$allSets track=$trackSourceBlock date=${date.toIso8601String()}');
+        '[OVARCH_INJECT] START blockId=$blockId block=$blockName usePload=${injectionOptions.injectPloadAsLoad} allSets=${injectionOptions.allSets} applyAll=${injectionOptions.applyToAll} track=$trackSourceBlock date=${date.toIso8601String()}');
 
     await db.transaction(() async {
       final todayStart = DateTime(date.year, date.month, date.day);
@@ -233,6 +335,8 @@ class OvarchPlanInjectionService {
         print('[OVARCH_INJECT] THROW WB_HAS_NO_KNS blockId=$blockId');
         throw StateError('WB_HAS_NO_KNS');
       }
+      final totalKns = knsRows.length;
+      var processedKns = 0;
 
       for (final knsRow in knsRows) {
         final int baseExId = knsRow.data['base_exercise_id'] as int;
@@ -241,7 +345,7 @@ class OvarchPlanInjectionService {
         final String? batchName = knsRow.data['batch_name'] as String?;
         final int knsId = knsRow.data['id'] as int;
         final setRows = await db.customSelect('''
-          SELECT id, set_number, reps_min, reps_max, pload, side
+          SELECT id, set_number, reps_min, reps_max, pload, rpe, side
           FROM workout_block_sets
           WHERE kns_id = $knsId
           ORDER BY set_number ASC, id ASC
@@ -269,12 +373,14 @@ class OvarchPlanInjectionService {
         print('[OVARCH_INJECT] meta=$meta');
 
         final List<Map<String, dynamic>> setsToInject =
-            setRows.isEmpty || !allSets
+            setRows.isEmpty || !injectionOptions.allSets
                 ? <Map<String, dynamic>>[<String, dynamic>{}]
                 : setRows
                     .map((sRow) => <String, dynamic>{
                           'pload': sRow.data['pload'] as num?,
                           'maxReps': sRow.data['reps_max'] as num?,
+                          'minReps': sRow.data['reps_min'] as num?,
+                          'rpe': sRow.data['rpe'] as num?,
                           'side': sRow.data['side'] as String?,
                         })
                     .toList();
@@ -283,17 +389,27 @@ class OvarchPlanInjectionService {
         for (final setData in setsToInject) {
           final pload = setData['pload'];
           final maxReps = setData['maxReps'];
+          final minReps = setData['minReps'];
+          final rpe = setData['rpe'];
           final setSide = setData['side'] as String?;
-          final double weight = usePload && pload != null
+          final knsOptions = injectionOptions.forKns(knsId);
+          final double weight = knsOptions.injectPloadAsLoad && pload != null
               ? (pload is num
                   ? pload.toDouble()
                   : double.tryParse(pload.toString()) ?? 0)
               : 0;
-          final double reps = maxReps != null
+          final double reps = knsOptions.injectMaxRepsAsReps && maxReps != null
               ? (maxReps is num
                   ? maxReps.toDouble()
                   : double.tryParse(maxReps.toString()) ?? 0)
-              : 0;
+              : knsOptions.injectMinRepsAsReps && minReps != null
+                  ? (minReps is num
+                      ? minReps.toDouble()
+                      : double.tryParse(minReps.toString()) ?? 0)
+                  : 0;
+          final double? injectedRpe = knsOptions.injectRpeAsRpe && rpe != null
+              ? (rpe is num ? rpe.toDouble() : double.tryParse(rpe.toString()))
+              : null;
 
           if (isUnilateral) {
             for (final side in const ['RIGHT', 'LEFT']) {
@@ -302,12 +418,13 @@ class OvarchPlanInjectionService {
               final setMeta = Map<String, dynamic>.from(meta);
               setMeta['side'] = side;
               print(
-                  '[OVARCH_INJECT] BEFORE_INSERT unilateral blockId=$blockId knsId=$knsId baseExId=$baseExId order=$orderIndex side=$side weight=$weight reps=$reps meta=$setMeta');
+                  '[OVARCH_INJECT] BEFORE_INSERT unilateral blockId=$blockId knsId=$knsId baseExId=$baseExId order=$orderIndex side=$side weight=$weight reps=$reps rpe=$injectedRpe meta=$setMeta');
               await db.into(db.workoutSets).insert(WorkoutSetsCompanion.insert(
                     logId: logId,
                     baseExerciseId: baseExId,
                     weight: weight,
                     reps: reps,
+                    rpe: drift.Value(injectedRpe),
                     orderIndex: drift.Value(orderIndex),
                     priority: drift.Value(
                         utilities.isNotEmpty ? utilities.first : null),
@@ -331,12 +448,13 @@ class OvarchPlanInjectionService {
             final setMeta = Map<String, dynamic>.from(meta);
             if (setSide != null) setMeta['side'] = setSide;
             print(
-                '[OVARCH_INJECT] BEFORE_INSERT blockId=$blockId knsId=$knsId baseExId=$baseExId order=$orderIndex side=$setSide weight=$weight reps=$reps meta=$setMeta');
+                '[OVARCH_INJECT] BEFORE_INSERT blockId=$blockId knsId=$knsId baseExId=$baseExId order=$orderIndex side=$setSide weight=$weight reps=$reps rpe=$injectedRpe meta=$setMeta');
             await db.into(db.workoutSets).insert(WorkoutSetsCompanion.insert(
                   logId: logId,
                   baseExerciseId: baseExId,
                   weight: weight,
                   reps: reps,
+                  rpe: drift.Value(injectedRpe),
                   orderIndex: drift.Value(orderIndex),
                   priority: drift.Value(
                       utilities.isNotEmpty ? utilities.first : null),
@@ -356,6 +474,11 @@ class OvarchPlanInjectionService {
                 '[OVARCH_INJECT] AFTER_INSERT insertedSets=$insertedSets order=$orderIndex side=$setSide');
           }
         }
+        processedKns++;
+        print(
+            '[OVARCH_INJECT] KNS_DONE blockId=$blockId knsId=$knsId progress=$processedKns/$totalKns');
+        await onKnsProgress?.call(
+            processedKns, totalKns, 'WB INJECTION KNS $processedKns/$totalKns');
       }
     });
 
@@ -363,8 +486,28 @@ class OvarchPlanInjectionService {
         '[OVARCH_INJECT] DONE blockId=$blockId block=$blockName insertedSets=$insertedSets');
   }
 
+  static Future<int> _countKnsForBlocks(
+      AppDatabase db, Iterable<int> blockIds) async {
+    final uniqueBlockIds = blockIds.toSet();
+    if (uniqueBlockIds.isEmpty) return 0;
+    final rows = await db.customSelect('''
+      SELECT block_id, COUNT(*) AS count
+      FROM workout_block_kns
+      WHERE block_id IN (${uniqueBlockIds.join(',')})
+      GROUP BY block_id
+    ''').get();
+    var total = 0;
+    for (final row in rows) {
+      total += (row.data['count'] as num).toInt();
+    }
+    return total;
+  }
+
   static Future<Map<String, int>> injectPlanDay(
-      AppDatabase db, DateTime date, List<PlanDayBlock> dayBlocks) async {
+      AppDatabase db, DateTime date, List<PlanDayBlock> dayBlocks,
+      {WbInjectionOptions? options,
+      Future<void> Function(int completed, int total, String label)?
+          onProgress}) async {
     print(
         '[OVARCH_PLAN_DAY_INJECT] START date=${date.toIso8601String()} inputBlocks=${dayBlocks.length}');
     for (final b in dayBlocks) {
@@ -376,34 +519,64 @@ class OvarchPlanInjectionService {
         final order = a.orderIndex.compareTo(b.orderIndex);
         return order != 0 ? order : a.id.compareTo(b.id);
       });
+    final rawDayBlockRows =
+        orderedBlocks.isEmpty ? <drift.QueryRow>[] : await db.customSelect('''
+      SELECT id, block_id, COALESCE(NULLIF(workout_block_id, 0), block_id) AS resolved_block_id
+      FROM plan_day_blocks
+      WHERE id IN (${orderedBlocks.map((b) => b.id).join(',')})
+    ''').get();
+    final resolvedBlockIdByDayBlockId = <int, int>{};
+    for (final raw in rawDayBlockRows) {
+      final dayBlockId = raw.data['id'] as int;
+      final resolved = raw.data['resolved_block_id'] as int;
+      resolvedBlockIdByDayBlockId[dayBlockId] = resolved;
+    }
     print('[OVARCH_PLAN_DAY_INJECT] orderedBlocks=${orderedBlocks.length}');
     for (final b in orderedBlocks) {
       print(
           '[OVARCH_PLAN_DAY_INJECT] orderedBlock id=${b.id} dayId=${b.dayId} blockId=${b.blockId} order=${b.orderIndex}');
     }
 
+    final resolvedBlockIds = orderedBlocks
+        .map((b) => resolvedBlockIdByDayBlockId[b.id] ?? b.blockId)
+        .toSet();
+    final totalKns = await _countKnsForBlocks(db, resolvedBlockIds);
+    var completedKns = 0;
+    print(
+        '[OVARCH_PLAN_DAY_INJECT] totalKns=$totalKns resolvedBlockIds=${resolvedBlockIds.toList()}');
+
     var injectedBlocks = 0;
     var skippedBlocks = 0;
     for (final dayBlock in orderedBlocks) {
+      final resolvedBlockId =
+          resolvedBlockIdByDayBlockId[dayBlock.id] ?? dayBlock.blockId;
       print(
-          '[OVARCH_PLAN_DAY_INJECT] resolving block dayBlockId=${dayBlock.id} blockId=${dayBlock.blockId}');
-      final block = await workoutBlockById(db, dayBlock.blockId);
+          '[OVARCH_PLAN_DAY_INJECT] resolving block dayBlockId=${dayBlock.id} blockId=${dayBlock.blockId} resolvedBlockId=$resolvedBlockId');
+      final block = await workoutBlockById(db, resolvedBlockId);
       if (block == null) {
         print(
-            '[OVARCH_PLAN_DAY_INJECT] SKIP deleted/missing blockId=${dayBlock.blockId}');
+            '[OVARCH_PLAN_DAY_INJECT] SKIP deleted/missing blockId=${dayBlock.blockId} resolvedBlockId=$resolvedBlockId');
         skippedBlocks++;
         continue;
       }
       try {
         print(
-            '[OVARCH_PLAN_DAY_INJECT] calling injectWorkoutBlock blockId=${dayBlock.blockId}');
+            '[OVARCH_PLAN_DAY_INJECT] calling injectWorkoutBlock blockId=$resolvedBlockId');
         await injectWorkoutBlock(
           db,
           date,
           block,
-          usePload: false,
-          allSets: true,
+          options: options,
           trackSourceBlock: true,
+          onKnsProgress: (completedInBlock, totalInBlock, label) async {
+            completedKns++;
+            await onProgress?.call(
+                completedKns,
+                totalKns,
+                totalKns > 0
+                    ? 'PLAN DAY INJECTION $completedKns/$totalKns'
+                    : 'PLAN DAY INJECTION');
+          },
         );
         injectedBlocks++;
         print(

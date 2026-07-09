@@ -9,7 +9,7 @@ import 'main_scaffold.dart';
 import 'lab_widgets.dart';
 import '../logic/calculator.dart';
 
-enum DatasetCategory { sets, notes, acoustic, weight, anthropometric }
+enum DatasetCategory { sets, notes, weight, anthropometric }
 
 class FullDatasetScreen extends ConsumerStatefulWidget {
   const FullDatasetScreen({super.key});
@@ -67,8 +67,6 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
         return _buildSetsList(db);
       case DatasetCategory.notes:
         return _buildNotesList(db);
-      case DatasetCategory.acoustic:
-        return _buildAcousticList(db);
       case DatasetCategory.weight:
         return _buildWeightList(db);
       case DatasetCategory.anthropometric:
@@ -307,55 +305,6 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
     return _LoadDetails(type: 'EXT.LOAD', isIsometric: intentionText.startsWith('[ISO]'));
   }
 
-  Widget _buildAcousticList(AppDatabase db) {
-    final query = (db.select(db.workoutSets).join([
-      innerJoin(db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId)),
-    ])..where(db.workoutSets.trackName.isNotNull())
-      ..orderBy([OrderingTerm.desc(db.workoutSets.timestamp)])
-      ..limit(_limit));
-
-    return StreamBuilder<List<TypedResult>>(
-      stream: query.watch(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-        return ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          itemCount: snapshot.data!.length,
-          itemBuilder: (context, i) {
-            final row = snapshot.data![i];
-            final set = row.readTable(db.workoutSets);
-            final track = (set.trackName ?? "").replaceAll('[RED_PR]', '').trim();
-            return Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: LabStyles.hairlineBorder(color: LabColors.primary.withValues(alpha: 0.2)),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(track.toUpperCase(), 
-                          style: LabStyles.mono(context, fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
-                          overflow: TextOverflow.ellipsis),
-                        const SizedBox(height: 4),
-                        Text(DateFormat('yyyy-MM-dd HH:mm').format(set.timestamp), 
-                          style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Text('LVL_${set.hypeLevel ?? 0}', 
-                    style: LabStyles.mono(context, color: LabColors.primary, fontSize: 10, fontWeight: FontWeight.bold)),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
 
   Widget _buildWeightList(AppDatabase db) {
     final query = (db.select(db.anthropometricLogs)
@@ -487,7 +436,6 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
         children: [
           _buildCategoryTab('SETS', DatasetCategory.sets),
           _buildCategoryTab('NOTES', DatasetCategory.notes),
-          _buildCategoryTab('ACOUSTIC', DatasetCategory.acoustic),
           _buildCategoryTab('WEIGHT', DatasetCategory.weight),
           _buildCategoryTab('ANTROPMT', DatasetCategory.anthropometric),
         ],

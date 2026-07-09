@@ -11,6 +11,7 @@ import '../database/database.dart';
 import 'package:drift/drift.dart';
 import '../logic/calculator.dart';
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqlite3/sqlite3.dart';
 import '../providers/theme_provider.dart';
 
@@ -109,9 +110,92 @@ class ExportService {
     final exportFile = File("${tempDir.path}/GYMR_backup_$timestamp.sqlite");
     await mainDb.copy(exportFile.path);
 
-    await Share.shareXFiles([XFile(exportFile.path)],
-        text: 'GYMR Database Backup');
+    await SharePlus.instance.share(
+        ShareParams(files: [XFile(exportFile.path)],
+            text: 'GYMR Database Backup'));
     return true;
+  }
+
+  // ── DB BACKUP DIRECTORY PERSISTENCE ──
+
+  static Future<String?> loadBackupDirectory() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('backup_directory');
+  }
+
+  static Future<void> saveBackupDirectory(String path) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('backup_directory', path);
+  }
+
+  static Future<DateTime?> loadLastBackupDate() async {
+    final prefs = await SharedPreferences.getInstance();
+    final ms = prefs.getInt('last_backup_date_ms');
+    return ms != null ? DateTime.fromMillisecondsSinceEpoch(ms) : null;
+  }
+
+  static Future<void> saveLastBackupDate(DateTime date) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(
+        'last_backup_date_ms', date.millisecondsSinceEpoch);
+  }
+
+  /// Returns the reliable backup directory (app's external storage).
+  /// Creates it if it doesn't exist.
+  static Future<String> getBackupDirectory() async {
+    final extDir = await getExternalStorageDirectory();
+    final dirPath = p.join(extDir!.path, 'GYMR_backups');
+    final dir = Directory(dirPath);
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dirPath;
+  }
+
+  /// Copy the main database file with a timestamp to the app's external
+  /// storage (always writable on Android). Returns the path of the backup.
+  static Future<String> backupDatabaseToDirectory([String? _]) async {
+    final dbs = await listDatabases();
+    if (dbs.isEmpty) throw Exception('NO_DATABASE_FILES_FOUND');
+
+    File? mainDb;
+    for (var dbFile in dbs) {
+      final name = p.basename(dbFile.path).toLowerCase();
+      if (name.endsWith('.sqlite') || name.endsWith('.db')) {
+        mainDb = dbFile;
+        break;
+      }
+    }
+    mainDb ??= dbs.first;
+
+    final actualDir = await getBackupDirectory();
+    final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+    final backupFile =
+        File(p.join(actualDir, 'GYMR_db_$timestamp.sqlite'));
+    await mainDb.copy(backupFile.path);
+
+    await saveBackupDirectory(actualDir);
+    await saveLastBackupDate(DateTime.now());
+    return backupFile.path;
+  }
+
+  /// Auto-backup: runs once per day.
+  /// Returns true if a backup was performed, false otherwise.
+  static Future<bool> tryAutoBackup() async {
+    try {
+      final lastBackup = await loadLastBackupDate();
+      final today = DateTime.now();
+      if (lastBackup != null &&
+          lastBackup.year == today.year &&
+          lastBackup.month == today.month &&
+          lastBackup.day == today.day) {
+        return false;
+      }
+
+      await backupDatabaseToDirectory();
+      return true;
+    } catch (e) {
+      debugPrint('Auto-backup failed: $e');
+      return false;
+    }
   }
 
   static Future<void> importDatabase(
@@ -141,7 +225,7 @@ class ExportService {
     final sorted = List<DateTime>.from(dates)..sort();
     final a = DateFormat('ddMMyy').format(sorted.first);
     final b = DateFormat('ddMMyy').format(sorted.last);
-    if (a == b) return "WOLOG_${a}.$extension";
+    if (a == b) return "WOLOG_$a.$extension";
     return "WOLOG_${a}_${b}.$extension";
   }
 
@@ -342,7 +426,7 @@ class ExportService {
           margin: const pw.EdgeInsets.only(bottom: 10),
           child: pw.Text(
               "GYMR // TECHNICAL_WORKOUT_REPORT // PAGE ${context.pageNumber}",
-              style: pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+              style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
         ),
         build: (pw.Context context) {
           final List<pw.Widget> content = [];
@@ -461,8 +545,9 @@ class ExportService {
                     final activeToggles = availableToggles
                         .where((t) => setMeta[t] == true)
                         .toList();
-                    if (activeToggles.isNotEmpty)
+                    if (activeToggles.isNotEmpty) {
                       togglesText = activeToggles.join(", ");
+                    }
                   } catch (_) {}
                 }
 
@@ -573,9 +658,10 @@ class ExportService {
                 if (!processedExerciseIds.contains(ex.id)) {
                   final desc =
                       ex.parsedComplexMetadata["description"]?.toString() ?? "";
-                  if (desc.isNotEmpty)
+                  if (desc.isNotEmpty) {
                     exerciseDescriptions
                         .add({'name': ex.fullName, 'desc': desc});
+                  }
                   processedExerciseIds.add(ex.id);
                 }
 
@@ -651,10 +737,12 @@ class ExportService {
                   cellDecoration: (index, data, rowNum) {
                     if (rowNum > 0 && rowNum <= rowPriorityColors.length) {
                       final pColor = rowPriorityColors[rowNum - 1];
-                      if (pColor != null)
+                      if (pColor != null) {
                         return pw.BoxDecoration(color: pColor.flatten());
-                      if (isUnilateralRow[rowNum - 1])
+                      }
+                      if (isUnilateralRow[rowNum - 1]) {
                         return const pw.BoxDecoration(color: PdfColors.cyan50);
+                      }
                     }
                     return const pw.BoxDecoration();
                   },
@@ -818,11 +906,14 @@ class ExportService {
     );
 
     final output = await getTemporaryDirectory();
-    final _ts = DateTime.now().millisecondsSinceEpoch;
-    final file = File("${output.path}/${fileName ?? 'gymr_report_$_ts'}.pdf");
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final file = File("${output.path}/${fileName ?? 'gymr_report_$ts'}.pdf");
     await file.writeAsBytes(await pdf.save());
-    if (share)
-      await Share.shareXFiles([XFile(file.path)], text: 'GYMR Report PDF');
+    if (share) {
+      await SharePlus.instance.share(
+          ShareParams(files: [XFile(file.path)],
+              text: 'GYMR Report PDF'));
+    }
   }
 
   static Future<void> exportWorkoutsToExcel(List<TypedResult> rows,
@@ -848,7 +939,6 @@ class ExportService {
     sheet.setColumnWidth(14, 15); // TOGGLES
     sheet.setColumnWidth(15, 25); // NOTES
     sheet.setColumnWidth(16, 25); // SOMATIC
-    sheet.setColumnWidth(17, 20); // TRACK
 
     // 1. PRE-FETCH DATA (BATCH)
     final allDates =
@@ -897,8 +987,7 @@ class ExportService {
         TextCellValue('FAILURE_PHASE'),
         TextCellValue('TOGGLES'),
         TextCellValue('NOTES'),
-        TextCellValue('SOMATIC'),
-        TextCellValue('TRACK')
+        TextCellValue('SOMATIC')
       ]);
 
       int daySetCounter = 0;
@@ -989,7 +1078,7 @@ class ExportService {
           final color =
               tC.getColor(settings, "PRIORITY_$priority", nameSeed: priority);
           final hexColor =
-              '#${color.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+              '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
           priorityStyle =
               CellStyle(backgroundColorHex: ExcelColor.fromHexString(hexColor));
         }
@@ -1011,8 +1100,7 @@ class ExportService {
           TextCellValue(failureText),
           TextCellValue(togglesText),
           TextCellValue(set.notes ?? ""),
-          TextCellValue(somaticText),
-          TextCellValue(set.trackName ?? "")
+          TextCellValue(somaticText)
         ]);
 
         if (priorityStyle != null) {
@@ -1052,12 +1140,15 @@ class ExportService {
     final fileBytes = excel.save();
     if (fileBytes != null) {
       final output = await getTemporaryDirectory();
-      final _ts = DateTime.now().millisecondsSinceEpoch;
+      final ts = DateTime.now().millisecondsSinceEpoch;
       final file =
-          File("${output.path}/${fileName ?? 'gymr_workouts_$_ts'}.xlsx");
+          File("${output.path}/${fileName ?? 'gymr_workouts_$ts'}.xlsx");
       await file.writeAsBytes(fileBytes);
-      if (share)
-        await Share.shareXFiles([XFile(file.path)], text: 'Workout Data Excel');
+      if (share) {
+        await SharePlus.instance.share(
+            ShareParams(files: [XFile(file.path)],
+                text: 'Workout Data Excel'));
+      }
     }
   }
 
@@ -1109,8 +1200,7 @@ class ExportService {
         "FAILURE",
         "TOGGLES",
         "NOTES",
-        "SOMATIC",
-        "TRACK"
+        "SOMATIC"
       ]);
 
       int daySetCounter = 0;
@@ -1212,8 +1302,7 @@ class ExportService {
           failureText,
           togglesText,
           set.notes ?? "",
-          somaticText,
-          set.trackName ?? ""
+          somaticText
         ]);
       }
 
@@ -1234,8 +1323,8 @@ class ExportService {
     }
 
     final output = await getTemporaryDirectory();
-    final _ts = DateTime.now().millisecondsSinceEpoch;
-    final file = File("${output.path}/${fileName ?? 'gymr_workouts_$_ts'}.csv");
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final file = File("${output.path}/${fileName ?? 'gymr_workouts_$ts'}.csv");
     await file.writeAsString(_encodeCsv(csvData));
     await Share.shareXFiles([XFile(file.path)], text: 'Workouts CSV');
   }
@@ -1504,11 +1593,13 @@ class ExportService {
     }
 
     final output = await getTemporaryDirectory();
-    final _ts = DateTime.now().millisecondsSinceEpoch;
-    final file = File("${output.path}/${fileName ?? 'gymr_report_$_ts'}.md");
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final file = File("${output.path}/${fileName ?? 'gymr_report_$ts'}.md");
     await file.writeAsString(buffer.toString());
     if (share) {
-      await Share.shareXFiles([XFile(file.path)], text: 'Workouts Markdown');
+      await SharePlus.instance.share(
+          ShareParams(files: [XFile(file.path)],
+              text: 'GYMR Markdown Report'));
     }
   }
 
@@ -1763,10 +1854,9 @@ class ExportService {
     final file = File(
         "${output.path}/gymr_exercises_${DateTime.now().millisecondsSinceEpoch}.csv");
     await file.writeAsString(_encodeCsv(csvData));
-    if (share) {
-      await Share.shareXFiles([XFile(file.path)],
-          text: 'Kinisi Exercise Library CSV');
-    }
+    await SharePlus.instance.share(
+        ShareParams(files: [XFile(file.path)],
+            text: 'GYMR Exercises CSV Export'));
     return file.path;
   }
 
@@ -1779,7 +1869,7 @@ class ExportService {
     await db.transaction(() async {
       for (int i = 1; i < rows.length; i++) {
         final row = rows[i];
-        if (row.length < 1) continue;
+        if (row.isEmpty) continue;
 
         final name = row[0].trim();
         if (name.isEmpty) continue;
@@ -1991,8 +2081,9 @@ class ExportService {
     final output = await getTemporaryDirectory();
     final file = File("${output.path}/kinisi_template.csv");
     await file.writeAsString(_encodeCsv(csvData));
-    await Share.shareXFiles([XFile(file.path)],
-        text: 'Kinisi Exercise Template CSV');
+    await SharePlus.instance.share(
+        ShareParams(files: [XFile(file.path)],
+            text: 'GYMR Empty KNS Template'));
   }
 
   // --- RAW TABLE EXPORT ---
@@ -2027,8 +2118,9 @@ class ExportService {
     final safeName = tableName.replaceAll(RegExp(r'[^a-zA-Z0-9_]'), '_');
     final file = File("${output.path}/GYMR_${safeName}_export.csv");
     await file.writeAsString(csvContent);
-    await Share.shareXFiles([XFile(file.path)],
-        text: 'GYMR Table Export: $tableName');
+    await SharePlus.instance.share(
+        ShareParams(files: [XFile(file.path)],
+            text: 'GYMR Database Backup'));
   }
 
   /// Lists all user tables in the database (excludes sqlite_* and android_* system tables)

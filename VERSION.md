@@ -1,7 +1,7 @@
 # GYMR // BEYOND_PERFORMANCE // VERSION
 
-## Current: v0.1.5 — "OVARCH Plan DayBlock WB Picker + DEL PAST Cleanup"
-Date: 2026-06-13
+## Current: v0.1.6 — "Volume Points (VP) System"
+Date: 2026-06-29
 DB Schema: 29
 
 ### Version Scheme
@@ -16,6 +16,17 @@ DB Schema: 29
 | **(none)** | ≥90% confidence, no known hidden bugs |
 
 ### Changelog
+
+#### v0.1.6 — 2026-06-29
+- [NEW] Volume Points (VP) system: `VP = tonnage × (1 + m × ln(i+1))` with ordinal-based calculation per set.
+- [NEW] VP displayed in C.WO set expanded row (alongside TONNAGE and eORM).
+- [NEW] VP PR detection — `V!` trophy in PR box when set exceeds historical VP max for the exercise.
+- [NEW] VP MULTIPLIER field in exercise editor/creator (LOAD_METRICS section), persisted in `complex_metadata`.
+- [NEW] Performance Overview card below SESSION GENERAL NOTES showing KNS-level VP breakdown and session total.
+- [FIX] C.WO InkWell drag-handle crash: wrapped with `Material(color: Colors.transparent)`.
+- [OPTIMIZATION] VP calculation cached with 10s debounce — no VP computation during active typing.
+- [OPTIMIZATION] Load/Reps persistence decoupled from VP persistence — raw fields save at 100ms, VP at 10s.
+- [OPTIMIZATION] VP PR detection merged into existing `histBefore` loop, no `setState()` in hot path.
 
 #### v0.1.5 — 2026-06-13
 - [NEW] WO.BLCKS `DEL PAST` aggressive cleanup button removes stale workout blocks not currently visible in WO.BLCKS; if the current list is empty, it deletes all possible WBs.

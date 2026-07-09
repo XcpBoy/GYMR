@@ -26,12 +26,24 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
   bool _isProcessing = false;
   List<String> _dbTables = [];
   String? _exportingTable;
+  String? _backupFolder;
 
   // Collapsible states
   bool _isExchangesExpanded = false;
   bool _isSynthesisExpanded = true;
   bool _isRawDataExpanded = false;
   bool _isExpectedInputsExpanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBackupFolder();
+  }
+
+  Future<void> _loadBackupFolder() async {
+    final dir = await ExportService.loadBackupDirectory();
+    if (mounted) setState(() => _backupFolder = dir);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -295,14 +307,16 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
     setState(() => _isProcessing = true);
     try {
       await ExportService.generateEmptyExerciseTemplate();
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("TEMPLATE_GENERATED_AND_SHARED")));
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text("GENERATION_FAILED: $e"),
             backgroundColor: Colors.redAccent));
+      }
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -312,16 +326,21 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
     setState(() => _isProcessing = true);
     try {
       final filePath = await ExportService.generateEmptyWbTemplate();
-      if (mounted) await Share.shareXFiles([XFile(filePath)],
-          text: 'GYMR WB Empty Template');
-      if (mounted)
+      if (mounted) {
+        await SharePlus.instance.share(
+            ShareParams(files: [XFile(filePath)],
+                text: 'GYMR WB Empty Template'));
+      }
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("WB_TEMPLATE_GENERATED")));
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text("GENERATION_FAILED: $e"),
             backgroundColor: Colors.redAccent));
+      }
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -388,6 +407,50 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
               color: LabColors.tertiary,
               onTap: _backupAllDatabases,
               fontSize: 10.8,
+            ),
+            const SizedBox(height: 12),
+            // ── Backup Folder ──
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: LabColors.surfaceContainerLow,
+                  border: Border.all(
+                      color: LabColors.tertiary.withValues(alpha: 0.2),
+                      width: 0.5)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("BACKUP_LOCATION:",
+                      style: LabStyles.mono(context,
+                          fontSize: 8,
+                          color: LabColors.tertiary,
+                          fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Text(
+                    _backupFolder ?? "LOADING...",
+                    style: LabStyles.mono(context,
+                        fontSize: 7, color: Colors.white),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 2,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: LabButton(
+                          label: "BACKUP_NOW",
+                          onPressed: _backupToFolder,
+                          color: LabColors.tertiary,
+                          isOutlined: false,
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 6, horizontal: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 24),
             // ── Per-table export ──
@@ -535,12 +598,35 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text("BACKUP_FAILED: NO_FILES_FOUND"),
             backgroundColor: Colors.orangeAccent));
-      }
+      } 
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text("BACKUP_FAILED: $e"),
             backgroundColor: Colors.redAccent));
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _backupToFolder() async {
+    setState(() => _isProcessing = true);
+    try {
+      final path = await ExportService.backupDatabaseToDirectory();
+      _backupFolder = await ExportService.loadBackupDirectory();
+      if (mounted) {
+        setState(() {});
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text("BACKUP_SAVED: ${p.basename(path)}"),
+            backgroundColor: LabColors.tertiary));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text("BACKUP_FAILED: $e"),
+            backgroundColor: Colors.redAccent));
+      }
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -686,9 +772,11 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
               format: "XLSX",
               onShare: () async {
                 final filePath = await _exportWorkoutBlocksPath();
-                if (filePath != null)
-                  await Share.shareXFiles([XFile(filePath)],
-                      text: 'GYMR Workout Blocks XLSX');
+                if (filePath != null) {
+                  await SharePlus.instance.share(
+                      ShareParams(files: [XFile(filePath)],
+                          text: 'GYMR Workout Blocks XLSX'));
+                }
               },
               onDownload: () async {
                 final filePath = await _exportWorkoutBlocksPath();
@@ -1104,10 +1192,11 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       if (mounted) setState(() => _isProcessing = false);
       return filePath;
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text("EXPORT_FAILED: $e"),
             backgroundColor: Colors.redAccent));
+      }
       if (mounted) setState(() => _isProcessing = false);
       return null;
     }
@@ -1123,10 +1212,11 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       if (mounted) setState(() => _isProcessing = false);
       return filePath;
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text("EXPORT_FAILED: $e"),
             backgroundColor: Colors.redAccent));
+      }
       if (mounted) setState(() => _isProcessing = false);
       return null;
     }
@@ -1163,10 +1253,11 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       // Refresh the WB manager list provider so imported WBs appear
       ref.invalidate(workoutBlockListProvider);
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text("IMPORT_FAILED: $e"),
             backgroundColor: Colors.redAccent));
+      }
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -1213,8 +1304,6 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
         OrderingTerm.asc(db.workoutSets.timestamp)
       ]);
       final rows = await query.get();
-      final logDates =
-          rows.map((r) => r.readTable(db.workoutLogs).date).toSet().toList();
       final fileName = DateFormat('ddMMyy').format(range.start) !=
               DateFormat('ddMMyy').format(range.end)
           ? "WOLOG_${DateFormat('ddMMyy').format(range.start)}_${DateFormat('ddMMyy').format(range.end)}"
@@ -1231,14 +1320,16 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
         await ExportService.exportWorkoutsToMarkdown(rows, db, settings, tC,
             fileName: fileName);
       }
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text("EXPORT_SUCCESSFUL")));
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text("EXPORT_FAILED: $e"),
             backgroundColor: Colors.redAccent));
+      }
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -1321,14 +1412,16 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
         bytes: bytes,
       );
 
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text("SAVED_TO: $resultPath")));
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text("DOWNLOAD_FAILED: $e"),
             backgroundColor: Colors.redAccent));
+      }
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
@@ -1358,58 +1451,18 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
               duration: const Duration(seconds: 5)));
         }
       } catch (e) {
-        if (mounted)
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text("IMPORT_FAILED: $e"),
               backgroundColor: Colors.redAccent));
+        }
       } finally {
         if (mounted) setState(() => _isProcessing = false);
       }
     }
   }
 
-  Future<void> _importFitNotes() async {
-    final result = await FilePicker.platform.pickFiles(type: FileType.any);
-    if (result != null && result.files.single.path != null) {
-      setState(() => _isProcessing = true);
-      try {
-        final file = File(result.files.single.path!);
-        final content = await file.readAsString();
-        final db = ref.read(databaseProvider);
-        final report = await ExportService.importFromFitNotes(content, db);
-        if (mounted)
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(
-                  "FITNOTES_RECOVERY_COMPLETE: ${report['logs']} LOGS, ${report['sets']} SETS, ${report['exercises']} NEW_EXERCISES"),
-              backgroundColor: Colors.blueAccent,
-              duration: const Duration(seconds: 5)));
-      } catch (e) {
-        if (mounted)
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text("IMPORT_FAILED: $e"),
-              backgroundColor: Colors.redAccent));
-      } finally {
-        if (mounted) setState(() => _isProcessing = false);
-      }
-    }
-  }
-
-  Future<void> _exportExercises() async {
-    setState(() => _isProcessing = true);
-    try {
-      await _exportExercisesPath(share: true);
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("KINISI_LIBRARY_EXPORTED")));
-    } catch (e) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text("EXPORT_FAILED: $e"),
-            backgroundColor: Colors.redAccent));
-    } finally {
-      if (mounted) setState(() => _isProcessing = false);
-    }
-  }
+  
 
   Future<void> _importExercises() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.any);
@@ -1437,10 +1490,11 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
               duration: const Duration(seconds: 5)));
         }
       } catch (e) {
-        if (mounted)
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text("IMPORT_FAILED: $e"),
               backgroundColor: Colors.redAccent));
+        }
       } finally {
         if (mounted) setState(() => _isProcessing = false);
       }

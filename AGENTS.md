@@ -276,6 +276,8 @@ This section captures durable GYMR knowledge discovered across prior sessions so
 - User prefers copy-paste-then-modify workflows for UI changes.
 - User prefers compact UI and structured forms, not JSON editors.
 - User wants data persistence done properly once, with real DB behavior.
+- C.WO batch sections stay anchored at their first visible position. If a KNS assigned to an existing batch appears later in `orderIndex`, render it under the existing batch header instead of creating a duplicate bottom header.
+- Assigning a C.WO KNS to a batch should expand the target batch so the assigned KNS does not appear to disappear inside a collapsed batch.
 
 
 

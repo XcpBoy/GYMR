@@ -8,7 +8,7 @@ import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
 import 'complex_metadata_screen.dart'; // NEW
-import 'workout_manager.dart';
+import 'wb_shared/wb_shared_widgets.dart';
 
 class AddExerciseScreen extends ConsumerStatefulWidget {
   const AddExerciseScreen({super.key});
@@ -52,6 +52,7 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
   // RELATIONS
   Map<String, dynamic> _complexMetadata = {"regressions": [], "progressions": [], "alters": [], "particular_toggles": [], "description": ""};
   final _descriptionController = TextEditingController();
+  final _vpMultiplierController = TextEditingController(text: '1.0');
 
   // PHASES
   final _numPhasesController = TextEditingController(text: '1');
@@ -88,6 +89,7 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     _patternTypeController.dispose(); _intentionController.dispose();
     _tissueTypeController.dispose(); _tissueNameController.dispose();
     _numPhasesController.dispose();
+    _vpMultiplierController.dispose();
     for (var c in [..._prefixControllers, ..._suffixControllers, ..._implementControllers, ..._bodyPositionControllers, ..._phaseDescriptionControllers]) {
       c.dispose();
     }
@@ -152,7 +154,7 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
             suffixes: drift.Value(suffixes.isEmpty ? null : suffixes.toUpperCase()),
             numPhases: drift.Value(int.tryParse(_numPhasesController.text) ?? 1),
             phaseDescriptions: drift.Value(jsonEncode(metadata)),
-            complexMetadata: drift.Value(jsonEncode({..._complexMetadata, "classification": _classification, "description": _descriptionController.text.trim()})),
+            complexMetadata: drift.Value(jsonEncode({..._complexMetadata, "classification": _classification, "description": _descriptionController.text.trim(), "vpMultiplier": double.tryParse(_vpMultiplierController.text) ?? 1.0})),
             isUnilateral: drift.Value(_isUnilateral),
             orderIndex: drift.Value(maxOrder),
           ),
@@ -418,6 +420,15 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
               _buildIsometricToggle(),
               const SizedBox(height: 8),
               _buildUnilateralToggle(),
+              const SizedBox(height: 16),
+              Row(children: [
+                Expanded(
+                    child: LabTextField(
+                        controller: _vpMultiplierController,
+                        label: 'VP MULTIPLIER',
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true))),
+              ]),
 
               const SizedBox(height: 32),
               _buildSectionTitle('TARGETING'),

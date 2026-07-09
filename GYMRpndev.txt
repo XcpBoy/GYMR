@@ -292,4 +292,8 @@ BACKBURNER // MAYBE_NOT
 10. Granular Supersets: Supersets entre sets especificos, no solo de forma
     global entre movimientos.
 
+11. FAILURE_PHASE: Funcionalidad de fases de fallo en el C.WO (failurePhase DB
+    column + _buildFailurePhaseCard + charts). El código se mantiene en el
+    código base pero sin desarrollo activo por ahora.
+
 ══════════════════════════════════════

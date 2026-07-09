@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' as drift;
 import 'package:intl/intl.dart';
 import 'dart:convert'; // For jsonDecode
 import 'dart:async'; // For Timer
+import 'dart:math'; // For log (VP calculation)
 
 import '../providers/database_provider.dart';
 import '../providers/theme_provider.dart';
@@ -16,6 +17,7 @@ import 'main_scaffold.dart';
 import 'complex_metadata_screen.dart';
 import 'exercise_history_screen.dart';
 import 'edit_exercise_screen.dart';
+import 'wb_shared/wb_shared_widgets.dart';
 
 // --- Timer State ---
 final currentWorkoutLogProvider = StreamProvider<WorkoutLog?>((ref) {
@@ -176,6 +178,15 @@ class _WorkoutDayPage extends ConsumerStatefulWidget {
 class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
   late ScrollController _scrollController;
   final Set<String> _expandedUtils = {};
+  final Set<String> _expandedExerciseKeys = {};
+  final Set<String> _collapsedExerciseKeys = {};
+  bool _maintainExtended = false;
+  double _injectionProgress = 0.0;
+  String _injectionStatus = '';
+  Timer? _injectionProgressTimer;
+  DateTime? _injectionStartedAt;
+  OverlayEntry? _injectionOverlayEntry;
+  bool _isInjectionFinishing = false;
 
   @override
   void initState() {
@@ -186,7 +197,38 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _injectionProgressTimer?.cancel();
+    _injectionOverlayEntry?.remove();
+    _injectionOverlayEntry = null;
     super.dispose();
+  }
+
+  void expandBatch(String batchName) {
+    if (!mounted) return;
+    setState(() {
+      _expandedUtils.add('batch_$batchName');
+    });
+  }
+
+  void setExerciseExpanded(String exerciseKey, bool expanded) {
+    if (!mounted) return;
+    setState(() {
+      if (expanded) {
+        _collapsedExerciseKeys.remove(exerciseKey);
+        _expandedExerciseKeys.add(exerciseKey);
+      } else {
+        _collapsedExerciseKeys.add(exerciseKey);
+        _expandedExerciseKeys.remove(exerciseKey);
+      }
+    });
+  }
+
+  void toggleMaintainExtended() {
+    if (!mounted) return;
+    setState(() {
+      _maintainExtended = !_maintainExtended;
+      _collapsedExerciseKeys.clear();
+    });
   }
 
   @override
@@ -205,398 +247,250 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
     final bw = ref.watch(bodyWeightAtDateProvider(widget.date)).value ?? 0.0;
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
+    final workoutOptsColor =
+        tC.getColor(settings, 'UI_TAG_WORKOUT_OPTS', nameSeed: 'WORKOUT_OPTS');
+
+    final currentLogForNotes = workoutAsync.value?.isEmpty == true
+        ? null
+        : workoutAsync.value?.first
+            .readTable(ref.read(databaseProvider).workoutLogs);
+    final generalNotesSliver = currentLogForNotes == null
+        ? const SizedBox.shrink()
+        : Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: GeneralNotesModule(
+                key: const ValueKey('general_notes'),
+                log: currentLogForNotes,
+                cardKey: 'SESSION_GENERAL_NOTES'),
+          );
 
     return Stack(children: [
-      SingleChildScrollView(
-          controller: _scrollController,
-          padding:
-              const EdgeInsets.only(top: 40, left: 16, right: 16, bottom: 150),
-          child:
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            _buildHeader(context, widget.date, ref, workoutAsync.value ?? []),
-            const SizedBox(height: 16),
-            GestureDetector(
-              onTap: () =>
-                  _showWorkoutOptsSheet(context, ref, workoutAsync.value ?? []),
-              child: Container(
-                height: 44,
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: tC
-                      .getColor(settings, 'UI_TAG_WORKOUT_OPTS',
-                          nameSeed: 'WORKOUT_OPTS')
-                      .withValues(alpha: 0.12),
-                  border: Border.all(
-                      color: tC.getColor(settings, 'UI_TAG_WORKOUT_OPTS',
-                          nameSeed: 'WORKOUT_OPTS'),
-                      width: 0.5),
-                ),
-                child: Text(
-                  'WORKOUT OPTS',
-                  style: LabStyles.mono(context,
-                      fontSize: 9,
-                      color: tC.getColor(settings, 'UI_TAG_WORKOUT_OPTS',
-                          nameSeed: 'WORKOUT_OPTS'),
-                      fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-            const SizedBox(height: 24),
-            if (isToday) ...[
-              workoutAsync.when(
-                data: (results) => results.isNotEmpty
-                    ? Column(
-                        children: [
-                          const SizedBox(height: 24),
-                        ],
-                      )
-                    : const SizedBox.shrink(),
-                loading: () => const SizedBox.shrink(),
-                error: (e, s) => const SizedBox.shrink(),
-              ),
-            ],
-            workoutAsync.when(
-              data: (results) {
-                if (results.isEmpty) return _buildEmptyState(context);
+      CustomScrollView(controller: _scrollController, slivers: [
+        const SliverToBoxAdapter(child: SizedBox(height: 40)),
+        SliverToBoxAdapter(
+            child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _buildHeader(
+                    context, widget.date, ref, workoutAsync.value ?? []))),
+        SliverToBoxAdapter(
+            child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: GestureDetector(
+                  onTap: () => _showWorkoutOptsSheet(
+                      context, ref, workoutAsync.value ?? []),
+                  child: Container(
+                    height: 44,
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: workoutOptsColor.withValues(alpha: 0.12),
+                      border: Border.all(color: workoutOptsColor, width: 0.5),
+                    ),
+                    child: Text(
+                      'WORKOUT OPTS',
+                      style: LabStyles.mono(context,
+                          fontSize: 9,
+                          color: workoutOptsColor,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ))),
+        const SliverToBoxAdapter(child: SizedBox(height: 12)),
+        workoutAsync.when(
+          data: (results) {
+            if (results.isEmpty) {
+              return SliverToBoxAdapter(child: _buildEmptyState(context));
+            }
 
-                final Map<int, List<drift.TypedResult>> groupedByEx = {};
-                final List<int> exerciseIdsInOrder = [];
-                WorkoutLog? currentLog;
+            final Map<int, List<drift.TypedResult>> groupedByEx = {};
+            final List<int> exerciseIdsInOrder = [];
 
-                for (var row in results) {
-                  final exId = row.readTable(db.baseExercises).id;
-                  currentLog ??= row.readTable(db.workoutLogs);
-                  if (!groupedByEx.containsKey(exId)) {
-                    groupedByEx[exId] = [];
-                    exerciseIdsInOrder.add(exId);
-                  }
-                  groupedByEx[exId]!.add(row);
-                }
+            for (var row in results) {
+              final exId = row.readTable(db.baseExercises).id;
+              if (!groupedByEx.containsKey(exId)) {
+                groupedByEx[exId] = [];
+                exerciseIdsInOrder.add(exId);
+              }
+              groupedByEx[exId]!.add(row);
+            }
 
-                // --- ROBUST SUPERSET GROUPING LOGIC ---
-                final List<List<int>> supersetGroups = [];
-                final Set<int> processed = {};
+            // --- ROBUST SUPERSET GROUPING LOGIC ---
+            final List<List<int>> supersetGroups = [];
+            final Set<int> processed = {};
 
-                for (var exId in exerciseIdsInOrder) {
-                  if (processed.contains(exId)) continue;
+            for (var exId in exerciseIdsInOrder) {
+              if (processed.contains(exId)) continue;
 
-                  final firstSet =
-                      groupedByEx[exId]!.first.readTable(db.workoutSets);
-                  if (firstSet.supersetGroupId != null) {
-                    final String gId = firstSet.supersetGroupId!;
-                    final List<int> group = [];
-                    for (var id in exerciseIdsInOrder) {
-                      if (groupedByEx[id]!
-                              .first
-                              .readTable(db.workoutSets)
-                              .supersetGroupId ==
-                          gId) {
-                        group.add(id);
-                        processed.add(id);
-                      }
-                    }
-                    supersetGroups.add(group);
-                  } else {
-                    supersetGroups.add([exId]);
-                    processed.add(exId);
-                  }
-                }
-
-                // --- BUILD INTERLEAVED LIST (batches + unbatched in orderIndex order) ---
-                // Walk supersetGroups sequentially: when a batch is encountered, start a section;
-                // when an unbatched group appears, close any open batch and render solo.
-                final List<Object> interleavedItems = [];
-                String? currentBatchName;
-                List<List<int>> currentBatchGroups = [];
-
-                for (final group in supersetGroups) {
-                  final firstSet =
-                      groupedByEx[group.first]!.first.readTable(db.workoutSets);
-                  String? batchName;
-                  if (firstSet.complexMetadata != null) {
-                    try {
-                      final meta = jsonDecode(firstSet.complexMetadata!);
-                      if (meta['batch'] != null) {
-                        final b = meta['batch'].toString();
-                        if (b.isNotEmpty) batchName = b;
-                      }
-                    } catch (_) {}
-                  }
-
-                  if (batchName != null) {
-                    if (currentBatchName != batchName) {
-                      // Flush previous batch section
-                      if (currentBatchName != null) {
-                        interleavedItems.add(MapEntry(currentBatchName!,
-                            List<List<int>>.from(currentBatchGroups)));
-                        currentBatchGroups.clear();
-                      }
-                      currentBatchName = batchName;
-                    }
-                    currentBatchGroups.add(group);
-                  } else {
-                    // Flush any open batch section
-                    if (currentBatchName != null) {
-                      interleavedItems.add(MapEntry(currentBatchName!,
-                          List<List<int>>.from(currentBatchGroups)));
-                      currentBatchName = null;
-                      currentBatchGroups.clear();
-                    }
-                    interleavedItems.add(group);
-                  }
-                }
-                // Flush final batch
-                if (currentBatchName != null) {
-                  interleavedItems.add(MapEntry(currentBatchName!,
-                      List<List<int>>.from(currentBatchGroups)));
-                }
-
-                // Build all widgets in order, one flatIdx for the entire list
-                final List<Widget> mainWidgets = [];
-                int flatIdx = 0;
-                int globalSetCounter = 0;
-                for (final item in interleavedItems) {
-                  if (item is List<int>) {
-                    // ── Unbatched group ──
-                    final group = item;
-                    final firstExId = group.first;
-                    final firstSet =
-                        groupedByEx[firstExId]!.first.readTable(db.workoutSets);
-                    final isSuperset = firstSet.supersetGroupId != null;
-                    final supersetName = firstSet.supersetName;
-                    Color groupColor = Colors.transparent;
-                    if (isSuperset && supersetName != null) {
-                      groupColor = tC.getColor(
-                          settings, "SUPERSET_$supersetName",
-                          nameSeed: supersetName);
-                    }
-                    mainWidgets.add(_buildGroupWidget(group,
-                        groupIdx: flatIdx,
-                        groupColor: groupColor,
-                        isSuperset: isSuperset,
-                        supersetName: supersetName,
-                        groupedByEx: groupedByEx,
-                        db: db,
-                        bw: bw,
-                        globalSetStart: globalSetCounter));
-                    // Update counter for next group: count all sets in this group's exercises
-                    for (final exId in group) {
-                      globalSetCounter += groupedByEx[exId]!.length;
-                    }
-                    flatIdx++;
-                  } else if (item is MapEntry<String, List<List<int>>>) {
-                    // ── Batch section ──
-                    final batchName = item.key;
-                    final groups = item.value;
-                    final isExpanded =
-                        _expandedUtils.contains('batch_$batchName');
-
-                    final batchGroupWidgets = groups.map((group) {
-                      final firstExId = group.first;
-                      final firstSet = groupedByEx[firstExId]!
+              final firstSet =
+                  groupedByEx[exId]!.first.readTable(db.workoutSets);
+              if (firstSet.supersetGroupId != null) {
+                final String gId = firstSet.supersetGroupId!;
+                final List<int> group = [];
+                for (var id in exerciseIdsInOrder) {
+                  if (groupedByEx[id]!
                           .first
-                          .readTable(db.workoutSets);
-                      final isSuperset = firstSet.supersetGroupId != null;
-                      final supersetName = firstSet.supersetName;
-                      Color groupColor = Colors.transparent;
-                      if (isSuperset && supersetName != null) {
-                        groupColor = tC.getColor(
-                            settings, "SUPERSET_$supersetName",
-                            nameSeed: supersetName);
-                      }
-                      final w = _buildGroupWidget(group,
-                          groupIdx: flatIdx++,
-                          groupColor: groupColor,
-                          isSuperset: isSuperset,
-                          supersetName: supersetName,
-                          groupedByEx: groupedByEx,
-                          db: db,
-                          bw: bw,
-                          globalSetStart: globalSetCounter);
-                      for (final exId in group) {
-                        globalSetCounter += groupedByEx[exId]!.length;
-                      }
-                      return w;
-                    }).toList();
+                          .readTable(db.workoutSets)
+                          .supersetGroupId ==
+                      gId) {
+                    group.add(id);
+                    processed.add(id);
+                  }
+                }
+                supersetGroups.add(group);
+              } else {
+                supersetGroups.add([exId]);
+                processed.add(exId);
+              }
+            }
 
-                    mainWidgets.add(
-                      Container(
-                        key: ValueKey('batch_$batchName'),
-                        margin: const EdgeInsets.only(bottom: 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            GestureDetector(
-                              onTap: () => setState(() {
-                                if (isExpanded) {
-                                  _expandedUtils.remove('batch_$batchName');
-                                } else {
-                                  _expandedUtils.add('batch_$batchName');
-                                }
-                              }),
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: tC
-                                      .getColor(
-                                          settings, 'UI_TAG_BATCH_$batchName',
-                                          nameSeed: batchName)
-                                      .withValues(alpha: 0.1),
-                                  border: Border(
-                                      left: BorderSide(
-                                          color: tC.getColor(settings,
-                                              'UI_TAG_BATCH_$batchName',
-                                              nameSeed: batchName),
-                                          width: 3)),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.drag_indicator,
-                                        size: 14, color: Colors.grey[600]),
-                                    const SizedBox(width: 4),
-                                    Text(isExpanded ? '[ − ]' : '[ + ]',
-                                        style: LabStyles.mono(context,
-                                            fontSize: 10,
-                                            color: Colors.grey[400])),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(batchName.toUpperCase(),
-                                          style: LabStyles.mono(context,
-                                              fontSize: 11,
-                                              color: tC.getColor(settings,
-                                                  'UI_TAG_BATCH_$batchName',
-                                                  nameSeed: batchName),
-                                              fontWeight: FontWeight.bold)),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white
-                                            .withValues(alpha: 0.08),
-                                        borderRadius: BorderRadius.circular(2),
-                                      ),
-                                      child: Text('${groups.length} KNS',
-                                          style: LabStyles.mono(context,
-                                              fontSize: 8,
-                                              color: Colors.grey[500])),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            if (isExpanded) ...[
-                              const SizedBox(height: 8),
-                              ReorderableListView(
-                                shrinkWrap: true,
-                                physics: const NeverScrollableScrollPhysics(),
-                                onReorder: (oldIdx, newIdx) async {
-                                  if (newIdx > oldIdx) newIdx--;
-                                  final reordered =
-                                      List<List<int>>.from(groups);
-                                  final moved = reordered.removeAt(oldIdx);
-                                  reordered.insert(newIdx, moved);
-                                  // Recalculate full order from interleavedItems with this batch reordered
-                                  final List<int> orderIds = [];
-                                  for (final oi in interleavedItems) {
-                                    if (oi is List<int>) {
-                                      orderIds.addAll(oi);
-                                    } else if (oi
-                                        is MapEntry<String, List<List<int>>>) {
-                                      final bg = (oi.key == batchName)
-                                          ? reordered
-                                          : oi.value;
-                                      for (final g in bg) {
-                                        orderIds.addAll(g);
-                                      }
-                                    }
-                                  }
-                                  await db.transaction(() async {
-                                    for (int i = 0; i < orderIds.length; i++) {
-                                      final exId = orderIds[i];
-                                      final setIds = groupedByEx[exId]!
-                                          .map((r) =>
-                                              r.readTable(db.workoutSets).id)
-                                          .toList();
-                                      await (db.update(db.workoutSets)
-                                            ..where((t) => t.id.isIn(setIds)))
-                                          .write(WorkoutSetsCompanion(
-                                              orderIndex: drift.Value(i)));
-                                    }
-                                  });
-                                },
-                                children: batchGroupWidgets,
-                              ),
-                              const SizedBox(height: 8),
-                            ],
-                          ],
-                        ),
-                      ),
+            // --- BUILD INTERLEAVED LIST (batches + unbatched in orderIndex order) ---
+            // A batch stays anchored at its first visible position. If another KNS
+            // assigned to the same batch appears later in orderIndex, append it to
+            // the existing batch section instead of creating a duplicate bottom header.
+            final List<Object> interleavedItems = [];
+            final Map<String, MapEntry<String, List<List<int>>>> batchSections =
+                {};
+
+            for (final group in supersetGroups) {
+              final firstSet =
+                  groupedByEx[group.first]!.first.readTable(db.workoutSets);
+              String? batchName;
+              if (firstSet.complexMetadata != null) {
+                try {
+                  final meta = jsonDecode(firstSet.complexMetadata!);
+                  if (meta['batch'] != null) {
+                    final b = meta['batch'].toString();
+                    if (b.isNotEmpty) batchName = b;
+                  }
+                } catch (_) {}
+              }
+
+              if (batchName != null) {
+                final existing = batchSections[batchName];
+                if (existing == null) {
+                  final groups = <List<int>>[group];
+                  final entry =
+                      MapEntry<String, List<List<int>>>(batchName, groups);
+                  interleavedItems.add(entry);
+                  batchSections[batchName] = entry;
+                } else {
+                  existing.value.add(group);
+                }
+              } else {
+                interleavedItems.add(group);
+              }
+            }
+
+            final List<int> flatIndices = [];
+            final List<int> globalSetStarts = [];
+            int flatIdx = 0;
+            int globalSetCounter = 0;
+            for (final item in interleavedItems) {
+              flatIndices.add(flatIdx);
+              globalSetStarts.add(globalSetCounter);
+              flatIdx++;
+              if (item is List<int>) {
+                globalSetCounter += _countSetsInGroup(groupedByEx, item);
+              } else if (item is MapEntry<String, List<List<int>>>) {
+                for (final group in item.value) {
+                  globalSetCounter += _countSetsInGroup(groupedByEx, group);
+                }
+              }
+            }
+
+            return SliverPadding(
+              padding: EdgeInsets.zero,
+              sliver: SliverReorderableList(
+                itemCount: interleavedItems.length,
+                itemBuilder: (context, index) {
+                  final item = interleavedItems[index];
+                  if (item is List<int>) {
+                    return _buildGroupWidget(
+                      item,
+                      groupIdx: flatIndices[index],
+                      groupColor: _groupColorFor(
+                          context, settings, tC, groupedByEx, db, item),
+                      isSuperset: _isSupersetFor(groupedByEx, db, item),
+                      supersetName: _supersetNameFor(groupedByEx, db, item),
+                      groupedByEx: groupedByEx,
+                      db: db,
+                      bw: bw,
+                      globalSetStart: globalSetStarts[index],
                     );
                   }
-                }
 
-                return Column(
-                  children: [
-                    ReorderableListView(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      onReorder: (oldIdx, newIdx) async {
-                        if (newIdx > oldIdx) newIdx--;
-                        final reorderedList =
-                            List<Object>.from(interleavedItems);
-                        final moved = reorderedList.removeAt(oldIdx);
-                        reorderedList.insert(newIdx, moved);
-                        // Calculate flat orderIndex for ALL sets
-                        final List<int> orderIds = [];
-                        for (final oi in reorderedList) {
-                          if (oi is List<int>) {
-                            orderIds.addAll(oi);
-                          } else if (oi is MapEntry<String, List<List<int>>>) {
-                            for (final g in oi.value) {
-                              orderIds.addAll(g);
-                            }
-                          }
-                        }
-                        await db.transaction(() async {
-                          for (int i = 0; i < orderIds.length; i++) {
-                            final exId = orderIds[i];
-                            final setIds = groupedByEx[exId]!
-                                .map((r) => r.readTable(db.workoutSets).id)
-                                .toList();
-                            await (db.update(db.workoutSets)
-                                  ..where((t) => t.id.isIn(setIds)))
-                                .write(WorkoutSetsCompanion(
-                                    orderIndex: drift.Value(i)));
-                          }
-                        });
-                      },
-                      children: mainWidgets,
-                    ),
-                    if (currentLog != null) ...[
-                      _GeneralNotesModule(
-                          key: const ValueKey('general_notes'),
-                          log: currentLog),
-                    ],
-                  ],
-                );
-              },
-              loading: () => const Center(
-                  child: Padding(
-                padding: EdgeInsets.only(top: 100),
-                child: CircularProgressIndicator(color: LabColors.primary),
-              )),
-              error: (e, s) => Center(
-                  child: Padding(
-                padding: const EdgeInsets.only(top: 100),
-                child: Text("ERR: $e",
-                    style: LabStyles.mono(context, color: Colors.redAccent)),
-              )),
-            ),
-          ])),
+                  if (item is MapEntry<String, List<List<int>>>) {
+                    return _buildBatchSection(
+                      context: context,
+                      batchName: item.key,
+                      groups: item.value,
+                      flatIdx: flatIndices[index],
+                      globalSetStart: globalSetStarts[index],
+                      groupedByEx: groupedByEx,
+                      db: db,
+                      bw: bw,
+                      settings: settings,
+                      tC: tC,
+                      interleavedItems: interleavedItems,
+                    );
+                  }
+
+                  return const SizedBox.shrink();
+                },
+                onReorder: (oldIdx, newIdx) async {
+                  if (newIdx > oldIdx) newIdx--;
+                  final reorderedList = List<Object>.from(interleavedItems);
+                  final moved = reorderedList.removeAt(oldIdx);
+                  reorderedList.insert(newIdx, moved);
+                  // Calculate flat orderIndex for ALL sets
+                  final List<int> orderIds = [];
+                  for (final oi in reorderedList) {
+                    if (oi is List<int>) {
+                      orderIds.addAll(oi);
+                    } else if (oi is MapEntry<String, List<List<int>>>) {
+                      for (final g in oi.value) {
+                        orderIds.addAll(g);
+                      }
+                    }
+                  }
+                  await db.transaction(() async {
+                    for (int i = 0; i < orderIds.length; i++) {
+                      final exId = orderIds[i];
+                      final setIds = groupedByEx[exId]!
+                          .map((r) => r.readTable(db.workoutSets).id)
+                          .toList();
+                      await (db.update(db.workoutSets)
+                            ..where((t) => t.id.isIn(setIds)))
+                          .write(
+                              WorkoutSetsCompanion(orderIndex: drift.Value(i)));
+                    }
+                  });
+                },
+              ),
+            );
+          },
+          loading: () => const SliverFillRemaining(
+              child: Padding(
+            padding: EdgeInsets.only(top: 100),
+            child: CircularProgressIndicator(color: LabColors.primary),
+          )),
+          error: (e, s) => SliverFillRemaining(
+              child: Padding(
+            padding: const EdgeInsets.only(top: 100),
+            child: Text("ERR: $e",
+                style: LabStyles.mono(context, color: Colors.redAccent)),
+          )),
+        ),
+        SliverToBoxAdapter(child: generalNotesSliver),
+        SliverToBoxAdapter(
+            child: FutureBuilder<Widget>(
+                future: _buildVpOverview(context, ref, workoutAsync.value),
+                builder: (ctx, snap) =>
+                    snap.connectionState == ConnectionState.done
+                        ? (snap.data ?? const SizedBox.shrink())
+                        : const SizedBox.shrink())),
+        const SliverToBoxAdapter(child: SizedBox(height: 150)),
+      ]),
       Positioned(
           bottom: 24,
           right: 24,
@@ -605,6 +499,256 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
               onPressed: () => _showExercisePicker(context, ref, widget.date),
               child: const Icon(Icons.add, color: Colors.black, size: 32))),
     ]);
+  }
+
+  void _showInjectionOverlay() {
+    if (_injectionOverlayEntry != null) return;
+    _injectionOverlayEntry = OverlayEntry(
+      builder: (overlayContext) => Positioned(
+        top: MediaQuery.of(overlayContext).padding.top + 8,
+        left: 12,
+        right: 12,
+        child: IgnorePointer(
+          child: _buildInjectionProgressBar(overlayContext),
+        ),
+      ),
+    );
+    Overlay.of(context, rootOverlay: true).insert(_injectionOverlayEntry!);
+  }
+
+  Widget _buildInjectionProgressBar(BuildContext context) {
+    final percent = (_injectionProgress * 100).round().clamp(0, 100);
+    return Container(
+      margin: const EdgeInsets.only(top: 14, bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: LabColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: LabColors.primary.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+              _injectionStatus.isEmpty
+                  ? 'INJECTING...'
+                  : _injectionStatus.toUpperCase(),
+              style: LabStyles.mono(context,
+                  fontSize: 10,
+                  color: LabColors.primary,
+                  fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Text('$percent%',
+              style: LabStyles.mono(context,
+                  fontSize: 16,
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: _injectionProgress,
+              minHeight: 10,
+              backgroundColor: Colors.grey[900],
+              valueColor: AlwaysStoppedAnimation<Color>(LabColors.primary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _startInjectionProgress(String label) {
+    debugPrint('[INJECTION_PROGRESS] START $label');
+    _injectionProgressTimer?.cancel();
+    _injectionOverlayEntry?.remove();
+    _isInjectionFinishing = false;
+    setState(() {
+      _injectionProgress = 0.04;
+      _injectionStatus = label;
+      _injectionStartedAt = DateTime.now();
+    });
+    _showInjectionOverlay();
+    _injectionProgressTimer =
+        Timer.periodic(const Duration(milliseconds: 200), (_) {
+      if (!mounted) {
+        _injectionProgressTimer?.cancel();
+        return;
+      }
+      setState(() {
+        _injectionProgress = (_injectionProgress + 0.02).clamp(0.0, 0.95);
+      });
+    });
+  }
+
+  void _setInjectionProgress(double progress, String label) {
+    if (!mounted) return;
+    setState(() {
+      _injectionProgress = progress.clamp(0.0, 1.0);
+      _injectionStatus = label;
+    });
+  }
+
+  void _finishInjectionProgress() {
+    if (_isInjectionFinishing) return;
+    _isInjectionFinishing = true;
+    debugPrint('[INJECTION_PROGRESS] FINISH');
+    _injectionProgressTimer?.cancel();
+    _injectionProgressTimer = null;
+    final elapsed = _injectionStartedAt == null
+        ? const Duration(seconds: 3)
+        : DateTime.now().difference(_injectionStartedAt!);
+    final remaining = const Duration(milliseconds: 2200) - elapsed;
+    final delay = remaining.isNegative ? Duration.zero : remaining;
+    Future.delayed(delay, () {
+      if (!mounted) return;
+      setState(() {
+        _injectionProgress = 1.0;
+        _injectionStatus = 'INJECTION COMPLETE';
+      });
+      Future.delayed(const Duration(milliseconds: 900), () {
+        if (!mounted) return;
+        setState(() {
+          _injectionProgress = 0.0;
+          _injectionStatus = '';
+          _injectionStartedAt = null;
+          _injectionOverlayEntry?.remove();
+          _injectionOverlayEntry = null;
+          _isInjectionFinishing = false;
+        });
+      });
+    });
+  }
+
+  Future<Widget> _buildVpOverview(BuildContext context, WidgetRef ref,
+      List<drift.TypedResult>? results) async {
+    if (results == null || results.isEmpty) return const SizedBox.shrink();
+
+    final db = ref.read(databaseProvider);
+    final bw = ref.read(bodyWeightAtDateProvider(widget.date)).value ?? 0.0;
+    final Map<int, ({String name, double totalVp})> vpByEx = {};
+    double sessionVp = 0;
+
+    // Group sets by baseExerciseId and compute VP from persisted weight/reps
+    final setsByEx = <int, List<WorkoutSet>>{};
+    for (var row in results) {
+      final s = row.readTable(db.workoutSets);
+      setsByEx.putIfAbsent(s.baseExerciseId, () => []).add(s);
+    }
+
+    // Resolve exercise names and metadata
+    final exIds = setsByEx.keys.toList();
+    if (exIds.isEmpty) return const SizedBox.shrink();
+    final exRows = exIds.isNotEmpty
+        ? await (db.select(db.baseExercises)
+              ..where((t) => t.id.isIn(exIds)))
+            .get()
+        : <BaseExercise>[];
+    final exMap = {for (var e in exRows) e.id: e};
+
+    for (final id in exIds) {
+      final ex = exMap[id];
+      if (ex == null) continue;
+      final m = (ex.parsedComplexMetadata["vpMultiplier"] as num?)?.toDouble() ?? 1.0;
+      final loadType = RegExp(r'\[NT:(\w+)\]').firstMatch(ex.intention ?? '')?.group(1) ?? 'EXT.LOAD';
+      final isJst = loadType == 'JST.BW';
+      final isL = loadType == 'LASTRE';
+
+      final sets = setsByEx[id]!
+        ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+      double knsVp = 0;
+      for (int i = 0; i < sets.length; i++) {
+        final s = sets[i];
+        final w = isJst ? bw : (isL ? s.weight + bw : s.weight);
+        final reps = s.reps;
+        final tonnage = w * reps;
+        if (tonnage <= 0) continue;
+        final ordinal = i + 1;
+        knsVp += tonnage * (1 + m * log(ordinal + 1));
+      }
+      if (knsVp > 0) {
+        vpByEx[id] = (name: ex.fullName, totalVp: knsVp);
+        sessionVp += knsVp;
+      }
+    }
+
+    final sorted = vpByEx.entries.toList()
+      ..sort((a, b) => b.value.totalVp.compareTo(a.value.totalVp));
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey[700]!, width: 0.5),
+          color: LabColors.surfaceDim,
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // Header
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+            color: LabColors.surfaceContainerLow,
+            child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('PERFORMANCE OVERVIEW',
+                      style: LabStyles.mono(context,
+                          fontSize: 10,
+                          color: LabColors.accent,
+                          fontWeight: FontWeight.bold)),
+                  Text('${sessionVp.toStringAsFixed(0)} VP',
+                      style: LabStyles.mono(context,
+                          fontSize: 10,
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold)),
+                ]),
+          ),
+          const Divider(height: 1, color: Colors.grey),
+          // KNS rows
+          ...sorted.map((entry) => Container(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(entry.value.name,
+                            style: LabStyles.mono(context,
+                                fontSize: 9,
+                                color: Colors.grey[300],
+                                fontWeight: FontWeight.w500),
+                            overflow: TextOverflow.ellipsis),
+                      ),
+                      Text('${entry.value.totalVp.toStringAsFixed(0)} VP',
+                          style: LabStyles.mono(context,
+                              fontSize: 9,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold)),
+                    ]),
+              )),
+          const Divider(height: 1, color: Colors.grey),
+          // Total
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+            child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('SESIÓN TOTAL',
+                      style: LabStyles.mono(context,
+                          fontSize: 10,
+                          color: Colors.cyanAccent,
+                          fontWeight: FontWeight.bold)),
+                  Text('${sessionVp.toStringAsFixed(0)} VP',
+                      style: LabStyles.mono(context,
+                          fontSize: 10,
+                          color: Colors.cyanAccent,
+                          fontWeight: FontWeight.bold)),
+                ]),
+          ),
+        ]),
+      ),
+    );
   }
 
   Widget _buildHeader(BuildContext context, DateTime date, WidgetRef ref,
@@ -760,6 +904,183 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
     );
   }
 
+  int _countSetsInGroup(
+      Map<int, List<drift.TypedResult>> groupedByEx, List<int> group) {
+    return group.fold<int>(0, (sum, exId) => sum + groupedByEx[exId]!.length);
+  }
+
+  bool _isSupersetFor(Map<int, List<drift.TypedResult>> groupedByEx,
+      AppDatabase db, List<int> group) {
+    return groupedByEx[group.first]!
+            .first
+            .readTable(db.workoutSets)
+            .supersetGroupId !=
+        null;
+  }
+
+  String? _supersetNameFor(Map<int, List<drift.TypedResult>> groupedByEx,
+      AppDatabase db, List<int> group) {
+    return groupedByEx[group.first]!
+        .first
+        .readTable(db.workoutSets)
+        .supersetName;
+  }
+
+  Color _groupColorFor(
+      BuildContext context,
+      Map<String, ThemeSetting> settings,
+      ThemeController tC,
+      Map<int, List<drift.TypedResult>> groupedByEx,
+      AppDatabase db,
+      List<int> group) {
+    if (!_isSupersetFor(groupedByEx, db, group)) return Colors.transparent;
+    final supersetName = _supersetNameFor(groupedByEx, db, group);
+    if (supersetName == null) return Colors.transparent;
+    return tC.getColor(settings, "SUPERSET_$supersetName",
+        nameSeed: supersetName);
+  }
+
+  Widget _buildBatchSection({
+    required BuildContext context,
+    required String batchName,
+    required List<List<int>> groups,
+    required int flatIdx,
+    required int globalSetStart,
+    required Map<int, List<drift.TypedResult>> groupedByEx,
+    required AppDatabase db,
+    required double bw,
+    required Map<String, ThemeSetting> settings,
+    required ThemeController tC,
+    required List<Object> interleavedItems,
+  }) {
+    final isExpanded = _expandedUtils.contains('batch_$batchName');
+    final groupStarts = <int>[];
+    int runningGlobal = globalSetStart;
+    for (final group in groups) {
+      groupStarts.add(runningGlobal);
+      runningGlobal += _countSetsInGroup(groupedByEx, group);
+    }
+
+    return Container(
+      key: ValueKey('batch_$batchName'),
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GestureDetector(
+            onTap: () => setState(() {
+              if (isExpanded) {
+                _expandedUtils.remove('batch_$batchName');
+              } else {
+                _expandedUtils.add('batch_$batchName');
+              }
+            }),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: tC
+                    .getColor(settings, 'UI_TAG_BATCH_$batchName',
+                        nameSeed: batchName)
+                    .withValues(alpha: 0.1),
+                border: Border(
+                    left: BorderSide(
+                        color: tC.getColor(settings, 'UI_TAG_BATCH_$batchName',
+                            nameSeed: batchName),
+                        width: 3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.drag_indicator,
+                      size: 14, color: Colors.grey),
+                  const SizedBox(width: 4),
+                  Text(isExpanded ? '[ − ]' : '[ + ]',
+                      style: LabStyles.mono(context,
+                          fontSize: 10, color: Colors.grey[400])),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(batchName.toUpperCase(),
+                        style: LabStyles.mono(context,
+                            fontSize: 11,
+                            color: tC.getColor(
+                                settings, 'UI_TAG_BATCH_$batchName',
+                                nameSeed: batchName),
+                            fontWeight: FontWeight.bold)),
+                  ),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                    child: Text('${groups.length} KNS',
+                        style: LabStyles.mono(context,
+                            fontSize: 8, color: Colors.grey[500])),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (isExpanded) ...[
+            const SizedBox(height: 8),
+            ReorderableListView.builder(
+              key: ValueKey('batch_list_$batchName'),
+              shrinkWrap: true,
+              padding: EdgeInsets.zero,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: groups.length,
+              itemBuilder: (context, batchIdx) => _buildGroupWidget(
+                groups[batchIdx],
+                groupIdx: flatIdx + batchIdx,
+                groupColor: _groupColorFor(
+                    context, settings, tC, groupedByEx, db, groups[batchIdx]),
+                isSuperset: _isSupersetFor(groupedByEx, db, groups[batchIdx]),
+                supersetName:
+                    _supersetNameFor(groupedByEx, db, groups[batchIdx]),
+                groupedByEx: groupedByEx,
+                db: db,
+                bw: bw,
+                globalSetStart: groupStarts[batchIdx],
+              ),
+              onReorder: (oldIdx, newIdx) async {
+                if (newIdx > oldIdx) newIdx--;
+                final reordered = List<List<int>>.from(groups);
+                final moved = reordered.removeAt(oldIdx);
+                reordered.insert(newIdx, moved);
+                // Recalculate full order from interleavedItems with this batch reordered
+                final List<int> orderIds = [];
+                for (final oi in interleavedItems) {
+                  if (oi is List<int>) {
+                    orderIds.addAll(oi);
+                  } else if (oi is MapEntry<String, List<List<int>>>) {
+                    final bg = (oi.key == batchName) ? reordered : oi.value;
+                    for (final g in bg) {
+                      orderIds.addAll(g);
+                    }
+                  }
+                }
+                await db.transaction(() async {
+                  for (int i = 0; i < orderIds.length; i++) {
+                    final exId = orderIds[i];
+                    final setIds = groupedByEx[exId]!
+                        .map((r) => r.readTable(db.workoutSets).id)
+                        .toList();
+                    await (db.update(db.workoutSets)
+                          ..where((t) => t.id.isIn(setIds)))
+                        .write(
+                            WorkoutSetsCompanion(orderIndex: drift.Value(i)));
+                  }
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildGroupWidget(List<int> group,
       {required int groupIdx,
       required Color groupColor,
@@ -812,8 +1133,9 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
               exLoadType = ex.field!;
               exIsJst = exLoadType == 'JST.BW';
             }
+            final exerciseKey = 'ex_${firstExId}_$exId';
             final mod = _ExerciseModule(
-              key: ValueKey('ex_${firstExId}_$exId'),
+              key: ValueKey(exerciseKey),
               exercise: ex,
               results: groupedByEx[exId]!,
               date: widget.date,
@@ -825,6 +1147,11 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
               moduleIsJst: exIsJst,
               moduleLoadType: exLoadType,
               showDragHandle: showDragHandle,
+              expanded: _maintainExtended
+                  ? !_collapsedExerciseKeys.contains(exerciseKey)
+                  : _expandedExerciseKeys.contains(exerciseKey),
+              onToggleExpanded: (expanded) =>
+                  setExerciseExpanded(exerciseKey, expanded),
             );
             runningGlobal += exSets;
             return mod;
@@ -852,6 +1179,8 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
           Navigator.pop(ctx);
           _deleteAllSets(context, ref, results);
         },
+        maintainExtended: _maintainExtended,
+        onToggleMaintainExtended: toggleMaintainExtended,
       ),
     );
   }
@@ -865,7 +1194,9 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
   // ═══════════════════════════════════════════════════════════════
 
   Widget _buildSessionTimer(BuildContext context, WidgetRef ref) {
-    return const _EditableSessionTimer();
+    return EditableSessionTimer(
+        logProvider: currentWorkoutLogProvider,
+        tickProvider: timerTickProvider);
   }
 
   Widget _buildEmptyState(BuildContext context) {
@@ -911,17 +1242,22 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                         print(
                             '[CWO_INJECTION] button=Individual Movement pressed date=${date.toIso8601String()}');
                         Navigator.pop(context);
-                        final db = ref.read(databaseProvider);
-                        final all = await db.select(db.baseExercises).get();
-                        if (context.mounted)
-                          showModalBottomSheet(
-                              context: context,
-                              backgroundColor: LabColors.background,
-                              isScrollControlled: true,
-                              builder: (c) => ExerciseSearchPicker(
-                                  exercises: all,
-                                  onSelected: (e) =>
-                                      _addExerciseToDate(ref, date, e)));
+                        Future.microtask(() {
+                          if (!mounted) return;
+                          final db = ref.read(databaseProvider);
+                          unawaited(
+                              db.select(db.baseExercises).get().then((all) {
+                            if (!mounted) return;
+                            showModalBottomSheet(
+                                context: this.context,
+                                backgroundColor: LabColors.background,
+                                isScrollControlled: true,
+                                builder: (c) => ExerciseSearchPicker(
+                                    exercises: all,
+                                    onSelected: (e) =>
+                                        _addExerciseToDate(ref, date, e)));
+                          }));
+                        });
                       }),
                   const SizedBox(height: 12),
                   LabButton(
@@ -933,7 +1269,10 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                         print(
                             '[CWO_INJECTION] button=Workout Block pressed date=${date.toIso8601String()}');
                         Navigator.pop(context);
-                        if (context.mounted) _showWbPicker(ref, date);
+                        Future.microtask(() {
+                          if (!mounted) return;
+                          _showWbPicker(ref, date);
+                        });
                       }),
                   const SizedBox(height: 12),
                   LabButton(
@@ -977,14 +1316,14 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
     final planDays = await OvarchPlanInjectionService.planDaysWithBlocks(db);
     print(
         '[CWO_PLAN_DAY] planDaysWithBlocks returned count=${planDays.length}');
-    if (!context.mounted) {
-      print('[CWO_PLAN_DAY] STOP context not mounted after planDaysWithBlocks');
+    if (!mounted) {
+      print('[CWO_PLAN_DAY] STOP state not mounted after planDaysWithBlocks');
       return;
     }
 
     if (planDays.isEmpty) {
       print('[CWO_PLAN_DAY] NO_PLAN_DAYS_WITH_WBS');
-      ScaffoldMessenger.of(context)
+      ScaffoldMessenger.of(this.context)
           .showSnackBar(const SnackBar(content: Text('NO_PLAN_DAYS_WITH_WBS')));
       return;
     }
@@ -1008,12 +1347,13 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
 
     print('[CWO_PLAN_DAY] opening QualitySearchPicker values=${values.length}');
     final picked = await showModalBottomSheet<String>(
-      context: context,
+      context: this.context,
       backgroundColor: LabColors.background,
       isScrollControlled: true,
       builder: (c) => QualitySearchPicker(
         title: 'SELECT_PLAN_DAY',
         values: values,
+        closeOnSelect: false,
         onSelected: (value) => Navigator.pop(c, value),
       ),
     );
@@ -1021,9 +1361,9 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
       print('[CWO_PLAN_DAY] picker returned null / user cancelled');
       return;
     }
-    if (!context.mounted) {
+    if (!mounted) {
       print(
-          '[CWO_PLAN_DAY] STOP context not mounted after picker picked=$picked');
+          '[CWO_PLAN_DAY] STOP state not mounted after picker picked=$picked');
       return;
     }
 
@@ -1032,7 +1372,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
     if (dayId == null) {
       print(
           '[CWO_PLAN_DAY] INVALID_PLAN_DAY_SELECTION picked="$picked" mapSize=${dayIdByLabel.length}');
-      ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(this.context).showSnackBar(
           const SnackBar(content: Text('INVALID_PLAN_DAY_SELECTION')));
       return;
     }
@@ -1051,40 +1391,56 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
       print(
           '[CWO_PLAN_DAY] planDayBlock id=${b.id} dayId=${b.dayId} blockId=${b.blockId} order=${b.orderIndex} notes=${b.notes}');
     }
-    if (!context.mounted) {
-      print(
-          '[CWO_PLAN_DAY] STOP context not mounted after planDayBlocks query');
+    if (!mounted) {
+      print('[CWO_PLAN_DAY] STOP state not mounted after planDayBlocks query');
       return;
     }
 
     if (blocks.isEmpty) {
       print('[CWO_PLAN_DAY] DAY_HAS_NO_WBS dayId=$dayId');
-      ScaffoldMessenger.of(context)
+      ScaffoldMessenger.of(this.context)
           .showSnackBar(const SnackBar(content: Text('DAY_HAS_NO_WBS')));
       return;
     }
 
+    _startInjectionProgress('PLAN DAY INJECTION');
+    final options =
+        await _showPlanDayInjectConfig(this.context, ref, date, blocks);
+    if (options == null) {
+      _finishInjectionProgress();
+      return;
+    }
     try {
       print(
           '[CWO_PLAN_DAY] calling injectPlanDay dayId=$dayId blocks=${blocks.length}');
-      final result =
-          await OvarchPlanInjectionService.injectPlanDay(db, date, blocks);
-      if (context.mounted) {
+      final result = await OvarchPlanInjectionService.injectPlanDay(
+        db,
+        date,
+        blocks,
+        options: options.toServiceOptions(),
+        onProgress: (completed, total, label) async {
+          if (!mounted || total <= 0) return;
+          _setInjectionProgress(completed / total, label);
+        },
+      );
+      _finishInjectionProgress();
+      if (mounted) {
         final injected = result['injected'] ?? 0;
         final skipped = result['skipped'] ?? 0;
         print(
             '[CWO_PLAN_DAY] injectPlanDay result injected=$injected skipped=$skipped');
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(
             content:
                 Text('PLAN_DAY_INJECTED: $injected WB / SKIPPED: $skipped')));
       } else {
-        print('[CWO_PLAN_DAY] STOP context not mounted before snackbar');
+        print('[CWO_PLAN_DAY] STOP state not mounted before snackbar');
       }
     } catch (e, stackTrace) {
+      _finishInjectionProgress();
       print('[CWO_PLAN_DAY] injectPlanDay threw error=$e');
       print(stackTrace);
-      if (context.mounted)
-        ScaffoldMessenger.of(context)
+      if (mounted)
+        ScaffoldMessenger.of(this.context)
             .showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
@@ -1282,333 +1638,259 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
   }
 
   // ─── WORKOUT BLOCK INJECTION ─────────────────────────────────
-  void _showWbPicker(WidgetRef ref, DateTime date) async {
+  Future<void> _showWbPicker(WidgetRef ref, DateTime date) async {
     final db = ref.read(databaseProvider);
-    // Read WB list from the store
-    final wbRows =
-        await db.customSelect('SELECT data FROM wb_store WHERE id = 1').get();
-    if (wbRows.isEmpty) {
-      if (context.mounted)
-        ScaffoldMessenger.of(context)
+    final wbList = await OvarchPlanInjectionService.activeWorkoutBlocks(db);
+    if (wbList.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(this.context)
             .showSnackBar(const SnackBar(content: Text('NO_WBS_CREATED')));
+      }
       return;
     }
-    final raw = wbRows.first.data['data'] as String;
-    final wbList = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
-    if (!context.mounted) return;
 
-    // Build a picker from WB names
-    final names = wbList.map((j) => j['name'] as String).toList();
-    showModalBottomSheet(
-      context: context,
+    final labelToWb = <String, Map<String, dynamic>>{};
+    final labels = wbList.map((item) {
+      final id = (item['id'] as num).toInt();
+      final name = (item['name'] as String).trim();
+      final label = '$name // ID $id';
+      labelToWb[label] = item;
+      print('[INJECT_WB] picker option label="$label" mappedId=$id');
+      return label;
+    }).toList();
+
+    final picked = await showModalBottomSheet<String>(
+      context: this.context,
       backgroundColor: LabColors.background,
       isScrollControlled: true,
       builder: (c) => QualitySearchPicker(
         title: 'SELECT WORKOUT BLOCK',
-        values: names,
-        onSelected: (wbName) {
-          debugPrint('[INJECT_WB] onSelected called: $wbName');
-          final wbData = wbList.firstWhere((j) => j['name'] == wbName);
-          debugPrint('[INJECT_WB] wbData found: id=${wbData['id']}');
-          Navigator.pop(c);
-          Future.microtask(() {
-            if (!context.mounted) return;
-            debugPrint('[INJECT_WB] calling _injectWorkoutBlock directly');
-            _injectWorkoutBlock(ref, date, wbData,
-                options: const _InjectOptions(usePload: false, allSets: true));
-          });
-        },
+        values: labels,
+        closeOnSelect: false,
+        onSelected: (wbName) => Navigator.pop(c, wbName),
+      ),
+    );
+    if (picked == null || !mounted) return;
+
+    final selectedWb = labelToWb[picked];
+    if (selectedWb == null) {
+      ScaffoldMessenger.of(this.context).showSnackBar(
+          const SnackBar(content: Text('INVALID_WORKOUT_BLOCK_SELECTION')));
+      return;
+    }
+
+    final requestedBlockId = (selectedWb['id'] as num).toInt();
+    final wbData = await OvarchPlanInjectionService.workoutBlockById(
+            db, requestedBlockId) ??
+        selectedWb;
+    if (!mounted) return;
+
+    final resolvedBlockId = (wbData['id'] as num).toInt();
+    final knsRows = await db
+        .customSelect(
+            'SELECT id FROM workout_block_kns WHERE block_id = $resolvedBlockId')
+        .get();
+    if (!mounted) return;
+    final knsIds = knsRows
+        .map((row) => (row.data['id'] as num).toInt())
+        .toList(growable: false);
+    if (knsIds.isEmpty) {
+      ScaffoldMessenger.of(this.context)
+          .showSnackBar(const SnackBar(content: Text('WB_HAS_NO_KNS')));
+      return;
+    }
+
+    _showInjectConfig(this.context, ref, date, wbData, knsIds: knsIds);
+  }
+
+  Future<_InjectOptions?> _showPlanDayInjectConfig(BuildContext context,
+      WidgetRef ref, DateTime date, List<PlanDayBlock> blocks) async {
+    final labels = blocks.map((b) => 'WB ${b.blockId}').join(' + ');
+    bool injectPload = false;
+    bool maxReps = true;
+    bool minReps = false;
+    bool rpe = false;
+    bool allSets = true;
+    return showDialog<_InjectOptions>(
+        context: context,
+        builder: (c) {
+          return StatefulBuilder(
+            builder: (c, setState) {
+              void rebuild() => setState(() {});
+              return AlertDialog(
+                backgroundColor: LabColors.background,
+                title: Text('PLAN DAY INJECT OPTIONS',
+                    style: LabStyles.mono(context,
+                        fontSize: 14, fontWeight: FontWeight.bold)),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(labels,
+                          style: LabStyles.headline(context).copyWith(
+                              fontSize: 14, color: LabColors.primary)),
+                      const SizedBox(height: 12),
+                      _planOptionRow(
+                        context: context,
+                        label: 'P.LOAD -> LOAD',
+                        value: injectPload,
+                        onTap: (_) {
+                          debugPrint('[PLAN_DAY_CHECK] PLOAD ${!injectPload}');
+                          injectPload = !injectPload;
+                          rebuild();
+                        },
+                      ),
+                      _planOptionRow(
+                        context: context,
+                        label: 'MAX REPS -> REPS',
+                        value: maxReps,
+                        onTap: (_) {
+                          debugPrint('[PLAN_DAY_CHECK] MAX_REPS ${!maxReps}');
+                          maxReps = !maxReps;
+                          rebuild();
+                        },
+                      ),
+                      _planOptionRow(
+                        context: context,
+                        label: 'MIN REPS -> REPS',
+                        value: minReps,
+                        onTap: (_) {
+                          debugPrint('[PLAN_DAY_CHECK] MIN_REPS ${!minReps}');
+                          minReps = !minReps;
+                          rebuild();
+                        },
+                      ),
+                      _planOptionRow(
+                        context: context,
+                        label: 'RPE -> RPE',
+                        value: rpe,
+                        onTap: (_) {
+                          debugPrint('[PLAN_DAY_CHECK] RPE ${!rpe}');
+                          rpe = !rpe;
+                          rebuild();
+                        },
+                      ),
+                      _planOptionRow(
+                        context: context,
+                        label: 'INJECT ALL SETS',
+                        value: allSets,
+                        onTap: (_) {
+                          debugPrint('[PLAN_DAY_CHECK] ALL_SETS ${!allSets}');
+                          allSets = !allSets;
+                          rebuild();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(c),
+                      child: Text('CANCEL',
+                          style: LabStyles.mono(context, color: Colors.grey))),
+                  TextButton(
+                      onPressed: () => Navigator.pop(
+                          c,
+                          _InjectOptions(
+                            injectPloadAsLoad: injectPload,
+                            injectMaxRepsAsReps: maxReps,
+                            injectMinRepsAsReps: minReps,
+                            injectRpeAsRpe: rpe,
+                            applyToAll: true,
+                            allSets: allSets,
+                          )),
+                      child: Text('INJECT',
+                          style: LabStyles.mono(context,
+                              color: LabColors.primary))),
+                ],
+              );
+            },
+          );
+        });
+  }
+
+  Widget _planOptionRow({
+    required BuildContext context,
+    required String label,
+    required bool value,
+    required void Function(bool?) onTap,
+  }) {
+    return InkWell(
+      onTap: () => onTap(!value),
+      child: Row(
+        children: [
+          Checkbox(
+            value: value,
+            onChanged: onTap,
+            activeColor: LabColors.primary,
+            checkColor: Colors.black,
+          ),
+          const SizedBox(width: 8),
+          Text(label,
+              style:
+                  LabStyles.mono(context, fontSize: 10, color: Colors.white)),
+        ],
       ),
     );
   }
 
   Future<void> _showInjectConfig(BuildContext context, WidgetRef ref,
-      DateTime date, Map<String, dynamic> wbData) async {
-    bool usePload = false;
-    bool allSets = true;
+      DateTime date, Map<String, dynamic> wbData,
+      {List<int> knsIds = const <int>[]}) async {
+    _startInjectionProgress('WB INJECTION');
     final result = await showDialog<_InjectOptions>(
       context: context,
-      builder: (c) => StatefulBuilder(
-        builder: (c, setDState) => AlertDialog(
-          backgroundColor: LabColors.background,
-          title: Text('INJECT WB',
-              style: LabStyles.mono(context,
-                  fontSize: 14, fontWeight: FontWeight.bold)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('${wbData['name']}',
-                  style: LabStyles.headline(context)
-                      .copyWith(fontSize: 16, color: LabColors.primary)),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[700]!, width: 0.5),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('LOAD OPTIONS',
-                        style: LabStyles.mono(context,
-                            fontSize: 10,
-                            color: Colors.grey[400],
-                            fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 8),
-                    InkWell(
-                      onTap: () => setDState(() => usePload = !usePload),
-                      child: Row(
-                        children: [
-                          Icon(
-                              usePload
-                                  ? Icons.check_box
-                                  : Icons.check_box_outline_blank,
-                              color: LabColors.primary,
-                              size: 20),
-                          const SizedBox(width: 8),
-                          Text('USE P.LOAD AS LOAD',
-                              style: LabStyles.mono(context,
-                                  fontSize: 10, color: Colors.white)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    InkWell(
-                      onTap: () => setDState(() => allSets = !allSets),
-                      child: Row(
-                        children: [
-                          Icon(
-                              allSets
-                                  ? Icons.check_box
-                                  : Icons.check_box_outline_blank,
-                              color: LabColors.primary,
-                              size: 20),
-                          const SizedBox(width: 8),
-                          Text('INJECT ALL SETS',
-                              style: LabStyles.mono(context,
-                                  fontSize: 10, color: Colors.white)),
-                        ],
-                      ),
-                    ),
-                    if (!allSets)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4, left: 28),
-                        child: Text('(SINGLE DEFAULT SET ONLY)',
-                            style: LabStyles.mono(context,
-                                fontSize: 8, color: Colors.grey[500])),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(c),
-                child: Text('CANCEL',
-                    style: LabStyles.mono(context, color: Colors.grey))),
-            TextButton(
-                onPressed: () => Navigator.pop(
-                    c, _InjectOptions(usePload: usePload, allSets: allSets)),
-                child: Text('INJECT',
-                    style: LabStyles.mono(context, color: LabColors.primary))),
-          ],
-        ),
+      builder: (c) => _WbInjectConfigDialog(
+        wbData: wbData,
+        knsIds: knsIds,
+        onInject: (options) => Navigator.pop(c, options),
+        onCancel: () => Navigator.pop(c),
       ),
     );
-    if (result != null && context.mounted) {
+    if (result == null) {
+      _finishInjectionProgress();
+      return;
+    }
+    if (context.mounted) {
       _injectWorkoutBlock(ref, date, wbData, options: result);
+    } else {
+      _finishInjectionProgress();
     }
   }
 
   Future<void> _injectWorkoutBlock(
       WidgetRef ref, DateTime d, Map<String, dynamic> wbData,
       {_InjectOptions? options}) async {
-    final usePload = options?.usePload ?? false;
-    final allSets = options?.allSets ?? true;
+    final injectOptions = options ?? const _InjectOptions();
     final db = ref.read(databaseProvider);
     debugPrint(
-        '[INJECT] START block=${wbData['name']} usePload=$usePload allSets=$allSets');
+        '[INJECT] START block=${wbData['name']} usePload=${injectOptions.injectPloadAsLoad} maxReps=${injectOptions.injectMaxRepsAsReps} minReps=${injectOptions.injectMinRepsAsReps} rpe=${injectOptions.injectRpeAsRpe} allSets=${injectOptions.allSets} applyAll=${injectOptions.applyToAll}');
     try {
-      final todayStart = DateTime(d.year, d.month, d.day);
-      final todayEnd = DateTime(d.year, d.month, d.day, 23, 59, 59);
-      final logs = await (db.select(db.workoutLogs)
-            ..where((t) => t.date.isBetweenValues(todayStart, todayEnd)))
-          .get();
-      int logId = logs.isEmpty
-          ? await db
-              .into(db.workoutLogs)
-              .insert(WorkoutLogsCompanion.insert(date: d))
-          : logs.first.id;
-      debugPrint('[INJECT] logId=$logId logsFound=${logs.length}');
-
-      // Find current max orderIndex
-      final allSetsToday = await (db.select(db.workoutSets).join([
-        drift.innerJoin(
-            db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId))
-      ])
-            ..where(db.workoutLogs.date.isBetweenValues(todayStart, todayEnd)))
-          .get();
-      int currentMaxOrder = -1;
-      for (var row in allSetsToday) {
-        final s = row.readTable(db.workoutSets);
-        if (s.orderIndex > currentMaxOrder) currentMaxOrder = s.orderIndex;
+      await OvarchPlanInjectionService.injectWorkoutBlock(
+        db,
+        d,
+        wbData,
+        options: injectOptions.toServiceOptions(),
+        onKnsProgress: (completed, total, label) async {
+          if (!mounted || total <= 0) return;
+          _setInjectionProgress(completed / total, label);
+        },
+      );
+      _finishInjectionProgress();
+      if (mounted) {
+        ScaffoldMessenger.of(this.context).showSnackBar(
+            SnackBar(content: Text('INJECTED: ${wbData['name']}')));
       }
-      debugPrint(
-          '[INJECT] currentMaxOrder=$currentMaxOrder setsToday=${allSetsToday.length}');
-
-      // WB data fields
-      final String wbName = wbData['name'] ?? 'WB';
-      final String? wbIntention = wbData['intention'];
-
-      // Read KNS for this WB from real workout_block_kns table
-      final blockId =
-          int.tryParse(wbData['id'].toString().replaceAll('wb_', '')) ?? 0;
-      debugPrint('[INJECT] blockId=$blockId');
-      final knsRows = await db
-          .customSelect(
-              'SELECT id, base_exercise_id, order_index, utilities, batch_name FROM workout_block_kns WHERE block_id = $blockId ORDER BY order_index ASC')
-          .get();
-      debugPrint('[INJECT] knsRows=${knsRows.length}');
-      if (knsRows.isEmpty) {
-        debugPrint('[INJECT] NO KNS FOUND');
-        if (context.mounted)
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('WB_HAS_NO_KNS')));
-        return;
-      }
-
-      // Inject each KNS as an exercise
-      for (final knsRow in knsRows) {
-        final int baseExId = knsRow.data['base_exercise_id'] as int;
-        final List<String> utilities = () {
-          final raw = knsRow.data['utilities'] as String?;
-          if (raw == null) return <String>[];
-          try {
-            return (jsonDecode(raw) as List).cast<String>();
-          } catch (_) {
-            return <String>[];
-          }
-        }();
-        final String? batchName = knsRow.data['batch_name'] as String?;
-        final knsId = knsRow.data['id'] as int;
-        debugPrint(
-            '[INJECT] KNS knsId=$knsId baseExId=$baseExId utilities=$utilities batch=$batchName');
-
-        // Read sets from real workout_block_sets table
-        final setRows = await db
-            .customSelect(
-                'SELECT id, set_number, reps_min, reps_max, pload, side FROM workout_block_sets WHERE kns_id = $knsId ORDER BY set_number ASC')
-            .get();
-        debugPrint('[INJECT] KNS setsRead=${setRows.length}');
-
-        // Check if exercise is unilateral
-        final ex = await (db.select(db.baseExercises)
-              ..where((t) => t.id.equals(baseExId)))
-            .getSingleOrNull();
-        final bool isUnilateral = ex?.isUnilateral ?? false;
-        debugPrint('[INJECT] isUnilateral=$isUnilateral exName=${ex?.name}');
-
-        // Build base complexMetadata from utilities + batch
-        final Map<String, dynamic> meta = {};
-        if (utilities.isNotEmpty) meta['utilities'] = utilities;
-        if (batchName != null && batchName.isNotEmpty)
-          meta['batch'] = batchName;
-        meta['injectedFromBlock'] = blockId; // Track which WB was injected
-
-        // Determine which sets to inject
-        final List<Map<String, dynamic>> setsToInject;
-        if (setRows.isEmpty || !allSets) {
-          setsToInject = [<String, dynamic>{}];
-          debugPrint('[INJECT] setsToInject: 1 default (empty)');
-        } else {
-          setsToInject = setRows
-              .map((sRow) => <String, dynamic>{
-                    'pload': (sRow.data['pload'] as num?)?.toDouble(),
-                    'maxReps': (sRow.data['reps_max'] as num?)?.toDouble(),
-                    'side': sRow.data['side'] as String?,
-                  })
-              .toList();
-          debugPrint('[INJECT] setsToInject: ${setsToInject.length} sets');
-        }
-
-        for (final rs in setsToInject) {
-          final setData = rs as Map<String, dynamic>;
-          final pload = setData['pload'];
-          final maxReps = setData['maxReps'];
-          final setSide = setData['side'] as String?;
-
-          final double weight = usePload && pload != null
-              ? (pload is num
-                  ? pload.toDouble()
-                  : double.tryParse(pload.toString()) ?? 0)
-              : 0;
-          final double reps = maxReps != null
-              ? (maxReps is num
-                  ? maxReps.toDouble()
-                  : double.tryParse(maxReps.toString()) ?? 0)
-              : 0;
-          debugPrint(
-              '[INJECT] SET pload=$pload maxReps=$maxReps side=$setSide weight=$weight reps=$reps isUni=$isUnilateral');
-
-          if (isUnilateral) {
-            // Create RIGHT + LEFT pair
-            for (final side in ['RIGHT', 'LEFT']) {
-              currentMaxOrder++;
-              final setMeta = Map<String, dynamic>.from(meta);
-              setMeta['side'] = side;
-              await db.into(db.workoutSets).insert(WorkoutSetsCompanion.insert(
-                    logId: logId,
-                    baseExerciseId: baseExId,
-                    weight: weight,
-                    reps: reps,
-                    orderIndex: drift.Value(currentMaxOrder),
-                    priority: drift.Value(
-                        utilities.isNotEmpty ? utilities.first : null),
-                    complexMetadata: drift.Value(jsonEncode(setMeta)),
-                    timestamp: drift.Value(DateTime(
-                            d.year,
-                            d.month,
-                            d.day,
-                            DateTime.now().hour,
-                            DateTime.now().minute,
-                            DateTime.now().second)
-                        .add(Duration(milliseconds: currentMaxOrder))),
-                  ));
-            }
-          } else {
-            // Single set
-            currentMaxOrder++;
-            final setMeta = Map<String, dynamic>.from(meta);
-            if (setSide != null) setMeta['side'] = setSide;
-            await db.into(db.workoutSets).insert(WorkoutSetsCompanion.insert(
-                  logId: logId,
-                  baseExerciseId: baseExId,
-                  weight: weight,
-                  reps: reps,
-                  orderIndex: drift.Value(currentMaxOrder),
-                  priority: drift.Value(
-                      utilities.isNotEmpty ? utilities.first : null),
-                  complexMetadata: drift.Value(
-                      setMeta.isNotEmpty ? jsonEncode(setMeta) : null),
-                  timestamp: drift.Value(DateTime(
-                          d.year,
-                          d.month,
-                          d.day,
-                          DateTime.now().hour,
-                          DateTime.now().minute,
-                          DateTime.now().second)
-                      .add(Duration(milliseconds: currentMaxOrder))),
-                ));
-          }
-        }
-      }
-      if (context.mounted)
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('INJECTED: $wbName')));
-    } catch (e) {
+    } catch (e, stackTrace) {
+      _finishInjectionProgress();
       debugPrint('[INJECT_WB] $e');
+      debugPrint('[INJECT_WB] STACK $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(this.context)
+            .showSnackBar(SnackBar(content: Text('WB_INJECT_ERROR: $e')));
+      }
     }
   }
 
@@ -1827,1129 +2109,6 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
   }
 }
 
-class _GeneralNotesModule extends ConsumerStatefulWidget {
-  final WorkoutLog log;
-  const _GeneralNotesModule({super.key, required this.log});
-  @override
-  ConsumerState<_GeneralNotesModule> createState() =>
-      _GeneralNotesModuleState();
-}
-
-class _GeneralNotesModuleState extends ConsumerState<_GeneralNotesModule> {
-  // Notes are stored as a list; serialized to DB with a delimiter
-  static const _noteSeparator = '||NOTE||';
-  List<TextEditingController> _controllers = [];
-  List<Timer?> _debounceTimers = [];
-  bool _isExpanded = false;
-
-  String _getSleepHeader() {
-    final sleepMatch =
-        RegExp(r'\[S:[\d.]+\]').firstMatch(widget.log.notes ?? '');
-    return sleepMatch != null ? '${sleepMatch.group(0)} ' : '';
-  }
-
-  List<String> _parseNotes(String raw) {
-    // Strip sleep header
-    final clean = raw.replaceAll(RegExp(r'\[S:[\d.]+\]\s*'), '').trim();
-    if (clean.isEmpty) return [];
-    return clean
-        .split(_noteSeparator)
-        .map((n) => n.trim())
-        .where((n) => n.isNotEmpty)
-        .toList();
-  }
-
-  Future<void> _persistNotes() async {
-    final texts = _controllers
-        .map((c) => c.text.trim())
-        .where((t) => t.isNotEmpty)
-        .toList();
-    final joined = texts.join(_noteSeparator);
-    final db = ref.read(databaseProvider);
-    await (db.update(db.workoutLogs)..where((t) => t.id.equals(widget.log.id)))
-        .write(
-      WorkoutLogsCompanion(notes: drift.Value(_getSleepHeader() + joined)),
-    );
-  }
-
-  void _scheduleDebounce(int index) {
-    _debounceTimers[index]?.cancel();
-    _debounceTimers[index] =
-        Timer(const Duration(milliseconds: 500), _persistNotes);
-  }
-
-  void _addNote() {
-    setState(() {
-      _controllers.add(TextEditingController());
-      _debounceTimers.add(null);
-    });
-  }
-
-  void _deleteNote(int index) {
-    _debounceTimers[index]?.cancel();
-    _controllers[index].dispose();
-    setState(() {
-      _controllers.removeAt(index);
-      _debounceTimers.removeAt(index);
-    });
-    _persistNotes();
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    final notes = _parseNotes(widget.log.notes ?? '');
-    _controllers = <TextEditingController>[
-      ...notes.map((n) => TextEditingController(text: n))
-    ];
-    _debounceTimers = <Timer?>[
-      for (var i = 0; i < _controllers.length; i++) null
-    ];
-  }
-
-  @override
-  void dispose() {
-    for (var t in _debounceTimers) {
-      t?.cancel();
-    }
-    for (var c in _controllers) {
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(top: 8, bottom: 24),
-      decoration: LabStyles.hairlineBorder(color: LabColors.primary),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Header row (tappable) ──
-          GestureDetector(
-            onTap: () => setState(() => _isExpanded = !_isExpanded),
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
-              color: LabColors.primary.withOpacity(0.06),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        _isExpanded
-                            ? Icons.keyboard_arrow_up
-                            : Icons.keyboard_arrow_down,
-                        color: LabColors.primary,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'SESSION_GENERAL_NOTES',
-                        style: LabStyles.mono(context,
-                            color: LabColors.primary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                  GestureDetector(
-                    onTap: _addNote,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        border:
-                            Border.all(color: LabColors.primary, width: 0.5),
-                        color: LabColors.primary.withOpacity(0.08),
-                      ),
-                      child: Text(
-                        '+ ADD.NOTE',
-                        style: LabStyles.mono(context,
-                            color: LabColors.primary,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          if (_isExpanded) ...[
-            // ── Empty state ──
-            if (_controllers.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: Text(
-                  'NO_NOTES // TAP + ADD.NOTE',
-                  style: LabStyles.mono(context,
-                      fontSize: 10, color: Colors.grey[700]),
-                ),
-              ),
-
-            // ── Note blocks ──
-            ...List.generate(_controllers.length, (i) {
-              return Container(
-                margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[850]!, width: 0.5),
-                  color: Colors.white.withOpacity(0.03),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Index tag
-                    Container(
-                      width: 28,
-                      color: LabColors.primary.withOpacity(0.12),
-                      alignment: Alignment.topCenter,
-                      padding: const EdgeInsets.only(top: 10),
-                      child: Text(
-                        '${i + 1}',
-                        style: LabStyles.mono(context,
-                            fontSize: 10,
-                            color: LabColors.primary,
-                            fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    // Text input
-                    Expanded(
-                      child: TextField(
-                        controller: _controllers[i],
-                        maxLines: null,
-                        style: LabStyles.mono(context, fontSize: 12),
-                        decoration: InputDecoration(
-                          hintText: 'NOTE_${i + 1}...',
-                          hintStyle: LabStyles.mono(context,
-                              fontSize: 10, color: Colors.grey[700]),
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding:
-                              const EdgeInsets.fromLTRB(10, 10, 4, 10),
-                        ),
-                        onChanged: (_) => _scheduleDebounce(i),
-                      ),
-                    ),
-                    // Delete button
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 14),
-                      color: Colors.grey[700],
-                      splashRadius: 14,
-                      onPressed: () => _deleteNote(i),
-                      padding: const EdgeInsets.all(6),
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
-                ),
-              );
-            }),
-
-            const SizedBox(height: 4),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _BlueprintSearchPicker extends ConsumerStatefulWidget {
-  final List<Blueprint> blueprints;
-  final Function(Blueprint) onSelected;
-  const _BlueprintSearchPicker(
-      {required this.blueprints, required this.onSelected});
-  @override
-  ConsumerState<_BlueprintSearchPicker> createState() =>
-      _BlueprintSearchPickerState();
-}
-
-class _BlueprintSearchPickerState
-    extends ConsumerState<_BlueprintSearchPicker> {
-  late List<Blueprint> flt;
-  final TextEditingController sC = TextEditingController();
-  final Map<int, String> sums = {};
-  @override
-  void initState() {
-    super.initState();
-    flt = widget.blueprints;
-    sC.addListener(() {
-      setState(() {
-        flt = widget.blueprints
-            .where((b) => b.name.toLowerCase().contains(sC.text.toLowerCase()))
-            .toList();
-      });
-    });
-    Future.microtask(() => _ld());
-  }
-
-  Future<void> _ld() async {
-    final db = ref.read(databaseProvider);
-    for (var b in widget.blueprints) {
-      final rows = await (db.select(db.blueprintExercises).join([
-        drift.innerJoin(db.baseExercises,
-            db.baseExercises.id.equalsExp(db.blueprintExercises.baseExerciseId))
-      ])
-            ..where(db.blueprintExercises.blueprintId.equals(b.id)))
-          .get();
-      final n = rows.map((r) {
-        final e = r.readTable(db.baseExercises);
-        return e.fullName;
-      }).join(' • ');
-      if (mounted)
-        setState(() {
-          sums[b.id] = n.isEmpty ? 'EMPTY' : n;
-        });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-        height: MediaQuery.of(context).size.height * 0.8,
-        padding:
-            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: Column(
-          children: [
-            Container(
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                    color: LabColors.surfaceContainerHigh,
-                    border: Border(
-                        bottom:
-                            BorderSide(color: LabColors.primary, width: 2))),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text('SELECT_BLUEPRINT',
-                            style: LabStyles.headline(context)
-                                .copyWith(fontSize: 18)),
-                        IconButton(
-                            onPressed: () => Navigator.pop(context),
-                            icon: const Icon(Icons.close, color: Colors.white))
-                      ]),
-                  const SizedBox(height: 16),
-                  LabTextField(controller: sC, label: 'Search...')
-                ])),
-            Expanded(
-                child: ListView.builder(
-                    itemCount: flt.length,
-                    itemBuilder: (c, i) => LabListTile(
-                        title: flt[i].name.toUpperCase(),
-                        subtitle: sums[flt[i].id] ?? 'LOADING...',
-                        onTap: () {
-                          widget.onSelected(flt[i]);
-                          Navigator.pop(context);
-                        })))
-          ],
-        ));
-  }
-}
-
-class ExerciseSearchPicker extends ConsumerStatefulWidget {
-  final List<BaseExercise> exercises;
-  final Function(BaseExercise) onSelected;
-  const ExerciseSearchPicker(
-      {required this.exercises, required this.onSelected});
-  @override
-  ConsumerState<ExerciseSearchPicker> createState() =>
-      _ExerciseSearchPickerState();
-}
-
-enum _ExerciseSortMode {
-  alpha,
-  reverseAlpha,
-  newestFirst,
-  oldestFirst,
-  mostUsed,
-  leastUsed
-}
-
-class _ExerciseSearchPickerState extends ConsumerState<ExerciseSearchPicker> {
-  late List<BaseExercise> _all;
-  late List<BaseExercise> _filtered;
-  final TextEditingController _searchC = TextEditingController();
-  _ExerciseSortMode _sortMode = _ExerciseSortMode.alpha;
-
-  // Filter state
-  String? _fLoad;
-  bool? _fIso; // replaced _fClass (C/I) with isometric toggle
-  bool? _fUni;
-  String? _fBase;
-  String? _fMuscle;
-  String? _fImpl;
-
-  // Unique values for filter sheets
-  late Set<String> _loadValues;
-  late Set<String> _baseValues;
-  late Set<String> _muscleValues;
-  late Set<String> _implValues;
-
-  String get _sortLabel {
-    switch (_sortMode) {
-      case _ExerciseSortMode.alpha:
-        return 'A-Z';
-      case _ExerciseSortMode.reverseAlpha:
-        return 'Z-A';
-      case _ExerciseSortMode.newestFirst:
-        return 'NEW';
-      case _ExerciseSortMode.oldestFirst:
-        return 'OLD';
-      case _ExerciseSortMode.mostUsed:
-        return 'MST';
-      case _ExerciseSortMode.leastUsed:
-        return 'LST';
-    }
-  }
-
-  // Controllers for BASE and MUSCLE text-input filters
-  final TextEditingController _baseC = TextEditingController();
-  final TextEditingController _muscleC = TextEditingController();
-
-  bool get _hasActiveFilters =>
-      _fLoad != null ||
-      _fIso != null ||
-      _fUni != null ||
-      _fBase != null ||
-      _fMuscle != null ||
-      _fImpl != null;
-
-  @override
-  void initState() {
-    super.initState();
-    _all = widget.exercises;
-    _filtered = _all;
-    _searchC.addListener(_applyFilters);
-    _baseC.addListener(_onBaseChanged);
-    _muscleC.addListener(_onMuscleChanged);
-    _extractFilterValues();
-  }
-
-  void _onBaseChanged() {
-    final q = _baseC.text.toLowerCase();
-    if (q.isEmpty) {
-      if (_fBase != null) {
-        setState(() => _fBase = null);
-        _applyFilters();
-      }
-      return;
-    }
-    final match = _baseValues.firstWhere(
-      (v) => v.toLowerCase() == q,
-      orElse: () => '',
-    );
-    if (match.isNotEmpty && _fBase != match) {
-      setState(() => _fBase = match);
-      _applyFilters();
-    }
-  }
-
-  void _onMuscleChanged() {
-    final q = _muscleC.text.toLowerCase();
-    if (q.isEmpty) {
-      if (_fMuscle != null) {
-        setState(() => _fMuscle = null);
-        _applyFilters();
-      }
-      return;
-    }
-    final match = _muscleValues.firstWhere(
-      (v) => v.toLowerCase() == q,
-      orElse: () => '',
-    );
-    if (match.isNotEmpty && _fMuscle != match) {
-      setState(() => _fMuscle = match);
-      _applyFilters();
-    }
-  }
-
-  void _extractFilterValues() {
-    _loadValues = {};
-    _baseValues = {};
-    _muscleValues = {};
-    _implValues = {};
-    for (final e in _all) {
-      final intent = e.intention ?? '';
-      final m = RegExp(r'\[NT:(.*?)\|ISO:(.*?)\]').firstMatch(intent);
-      if (m != null) {
-        _loadValues.add(m.group(1) ?? '');
-      } else if (['LASTRE', 'EXT.LOAD', 'JST.BW'].contains(e.field)) {
-        if (e.field != null) _loadValues.add(e.field!);
-      }
-      if (e.name.isNotEmpty) _baseValues.add(e.name);
-      if (e.primaryMuscleGroup != null && e.primaryMuscleGroup!.isNotEmpty) {
-        _muscleValues.add(e.primaryMuscleGroup!);
-      }
-      if (e.secondaryMuscleGroup != null &&
-          e.secondaryMuscleGroup!.isNotEmpty) {
-        _muscleValues.add(e.secondaryMuscleGroup!);
-      }
-      if (e.implements != null && e.implements!.isNotEmpty)
-        _implValues.add(e.implements!);
-    }
-  }
-
-  // ── Isometric detection ──
-  bool _isIsometric(BaseExercise e) {
-    final intent = e.intention ?? '';
-    // Check [NT:...|ISO:true] pattern
-    final m = RegExp(r'\[NT:(.*?)\|ISO:(.*?)\]').firstMatch(intent);
-    if (m != null) return m.group(2) == 'true';
-    // Check if intention starts with [ISO]
-    if (intent.startsWith('[ISO]')) return true;
-    // Check complexMetadata for isometric flag
-    final meta = e.parsedComplexMetadata;
-    if (meta['isIsometric'] == true) return true;
-    return false;
-  }
-
-  void _applyFilters() {
-    final q = _searchC.text.toLowerCase();
-    setState(() {
-      _filtered = _all.where((e) {
-        // 1. Text search across ALL fields
-        if (q.isNotEmpty) {
-          final sb = StringBuffer()
-            ..write(e.fullName.toLowerCase())
-            ..write(' ')
-            ..write(e.name.toLowerCase())
-            ..write(' ')
-            ..write((e.prefixes ?? '').toLowerCase())
-            ..write(' ')
-            ..write((e.suffixes ?? '').toLowerCase())
-            ..write(' ')
-            ..write((e.implements ?? '').toLowerCase())
-            ..write(' ')
-            ..write((e.bodyPositions ?? '').toLowerCase())
-            ..write(' ')
-            ..write((e.intention ?? '').toLowerCase())
-            ..write(' ')
-            ..write((e.patternType ?? '').toLowerCase())
-            ..write(' ')
-            ..write((e.tissueType ?? '').toLowerCase())
-            ..write(' ')
-            ..write((e.tissueName ?? '').toLowerCase())
-            ..write(' ')
-            ..write((e.primaryMuscleGroup ?? '').toLowerCase())
-            ..write(' ')
-            ..write((e.secondaryMuscleGroup ?? '').toLowerCase())
-            ..write(' ')
-            ..write((e.field ?? '').toLowerCase());
-          if (!sb.toString().contains(q)) return false;
-        }
-        // 2. Load type filter
-        if (_fLoad != null) {
-          final intent = e.intention ?? '';
-          final m = RegExp(r'\[NT:(.*?)\|ISO:(.*?)\]').firstMatch(intent);
-          final lt = m != null ? (m.group(1) ?? '') : (e.field ?? '');
-          if (lt != _fLoad) return false;
-        }
-        // 3. Isometric filter (replaces C/I)
-        if (_fIso != null) {
-          if (_isIsometric(e) != _fIso) return false;
-        }
-        // 4. Unilateral filter
-        if (_fUni != null) {
-          if (e.isUnilateral != _fUni) return false;
-        }
-        // 5. Base name filter (text input)
-        if (_fBase != null) {
-          if (e.name != _fBase) return false;
-        }
-        // 6. Muscle filter (text input)
-        if (_fMuscle != null) {
-          if (e.primaryMuscleGroup != _fMuscle &&
-              e.secondaryMuscleGroup != _fMuscle) return false;
-        }
-        // 7. Implement filter
-        if (_fImpl != null) {
-          if ((e.implements ?? '') != _fImpl) return false;
-        }
-        return true;
-      }).toList();
-      // Apply sort mode
-      switch (_sortMode) {
-        case _ExerciseSortMode.alpha:
-          _filtered.sort((a, b) => a.name.compareTo(b.name));
-          break;
-        case _ExerciseSortMode.reverseAlpha:
-          _filtered.sort((a, b) => b.name.compareTo(a.name));
-          break;
-        case _ExerciseSortMode.newestFirst:
-          _filtered.sort((a, b) => b.id.compareTo(a.id));
-          break;
-        case _ExerciseSortMode.oldestFirst:
-          _filtered.sort((a, b) => a.id.compareTo(b.id));
-          break;
-        case _ExerciseSortMode.mostUsed:
-          _filtered.sort((a, b) => b.id.compareTo(a.id));
-          break;
-        case _ExerciseSortMode.leastUsed:
-          _filtered.sort((a, b) => a.id.compareTo(b.id));
-          break;
-      }
-    });
-  }
-
-  String _loadTypeOf(BaseExercise e) {
-    final m = RegExp(r'\[NT:(.*?)\|ISO:(.*?)\]').firstMatch(e.intention ?? '');
-    if (m != null) return m.group(1) ?? 'EXT.LOAD';
-    if (['LASTRE', 'EXT.LOAD', 'JST.BW'].contains(e.field)) return e.field!;
-    return 'EXT.LOAD';
-  }
-
-  String? _classOf(BaseExercise e) => e.parsedComplexMetadata['classification'];
-
-  String _buildSubtitle(BaseExercise e) {
-    final lt = _loadTypeOf(e);
-    final cls = _classOf(e);
-    final parts = <String>[];
-    if (e.primaryMuscleGroup != null && e.primaryMuscleGroup!.isNotEmpty) {
-      parts.add(e.primaryMuscleGroup!.toUpperCase());
-    }
-    parts.add('[$lt]');
-    if (cls != null && cls.isNotEmpty) parts.add(cls);
-    if (e.isUnilateral) parts.add('[UNI]');
-    if (e.field != null && e.field!.isNotEmpty)
-      parts.add(e.field!.toUpperCase());
-    return parts.join('  •  ');
-  }
-
-  // ── Theme-aware color helpers ──
-  Color _themeColor(String key, String nameSeed) {
-    final settings = ref.watch(themeSettingsProvider).value ?? {};
-    return ref
-        .read(themeControllerProvider)
-        .getColor(settings, key, nameSeed: nameSeed);
-  }
-
-  Color _filterChipColor(String tag, String? activeValue) {
-    // Each filter chip gets its color from UI_TAG_ theme keys
-    return _themeColor('UI_TAG_${tag.toUpperCase()}', tag);
-  }
-
-  Color _baseColor(String baseName) {
-    // Looks up MOVEMENT_$baseName from THEME.MDYFR
-    return _themeColor('MOVEMENT_$baseName', baseName);
-  }
-
-  Color _muscleColor(String muscleName) {
-    // Looks up MUSCLE_$muscleName from THEME.MDYFR
-    return _themeColor('MUSCLE_$muscleName', muscleName);
-  }
-
-  void _showFilterSheet(String title, Set<String> values, String? current,
-      ValueChanged<String?> onSelect) {
-    final sorted = values.toList()..sort();
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: LabColors.background,
-      builder: (ctx) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(title,
-                style: LabStyles.headline(ctx).copyWith(fontSize: 14)),
-          ),
-          const Divider(
-              height: 0.5, color: LabColors.cyanBorder, thickness: 0.2),
-          Flexible(
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                ListTile(
-                  title: Text('CLEAR',
-                      style: LabStyles.mono(ctx,
-                          fontSize: 11, color: Colors.redAccent)),
-                  onTap: () {
-                    onSelect(null);
-                    Navigator.pop(ctx);
-                  },
-                ),
-                ...sorted.map((v) => ListTile(
-                      title: Text(v,
-                          style: LabStyles.mono(ctx,
-                              fontSize: 11,
-                              color: current == v ? LabColors.primary : null)),
-                      trailing: current == v
-                          ? const Icon(Icons.check,
-                              color: LabColors.primary, size: 14)
-                          : null,
-                      onTap: () {
-                        onSelect(v);
-                        Navigator.pop(ctx);
-                      },
-                    )),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _clearAllFilters() {
-    setState(() {
-      _fLoad = null;
-      _fIso = null;
-      _fUni = null;
-      _fBase = null;
-      _fMuscle = null;
-      _fImpl = null;
-      _baseC.clear();
-      _muscleC.clear();
-    });
-    _applyFilters();
-  }
-
-  // ── Filter chip widget (theme-colored, white text) ──
-  Widget _filterChip(String label, String? value, VoidCallback onTap) {
-    final isActive = value != null;
-    final themeColor = _filterChipColor(label, value);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        margin: const EdgeInsets.only(right: 6),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: isActive
-              ? themeColor.withValues(alpha: 0.15)
-              : Colors.transparent,
-          border: Border.all(
-            color: isActive
-                ? themeColor
-                : LabColors.cyanBorder.withValues(alpha: 0.3),
-            width: 0.5,
-          ),
-        ),
-        child: Text(
-          isActive
-              ? '$label:${value!.toUpperCase()}'
-              : '${label.toUpperCase()}:ALL',
-          textAlign: TextAlign.center,
-          style: LabStyles.mono(context, fontSize: 8, color: Colors.white),
-        ),
-      ),
-    );
-  }
-
-  Widget _triStateChip({
-    required String label,
-    required bool? value,
-    required ValueChanged<bool?> onTap,
-  }) {
-    String text;
-    final yesColor = _filterChipColor(label, 'YES');
-    if (value == null) {
-      text = '${label.toUpperCase()}:ALL';
-    } else if (value == true) {
-      text = '${label.toUpperCase()}:YES';
-    } else {
-      text = '${label.toUpperCase()}:NO';
-    }
-    return GestureDetector(
-      onTap: () {
-        if (value == null) {
-          onTap(true);
-        } else if (value == true) {
-          onTap(false);
-        } else {
-          onTap(null);
-        }
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        margin: const EdgeInsets.only(right: 6),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: value != null
-              ? yesColor.withValues(alpha: 0.15)
-              : Colors.transparent,
-          border: Border.all(
-            color: value != null
-                ? yesColor
-                : LabColors.cyanBorder.withValues(alpha: 0.3),
-            width: 0.5,
-          ),
-        ),
-        child: Text(text,
-            textAlign: TextAlign.center,
-            style: LabStyles.mono(context, fontSize: 8, color: Colors.white)),
-      ),
-    );
-  }
-
-  // ── Text-input filter field (BASE / MUSCLE) ──
-  Widget _textFilterField({
-    required String label,
-    required TextEditingController controller,
-    required Set<String> suggestions,
-    required String? currentValue,
-    required Color activeColor,
-    required VoidCallback onClear,
-  }) {
-    final isActive = currentValue != null;
-    // Autocomplete options
-    final options = suggestions
-        .where((s) => s.toLowerCase().contains(controller.text.toLowerCase()))
-        .toList()
-      ..sort();
-
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.only(right: 8),
-        child: Autocomplete<String>(
-          optionsBuilder: (TextEditingValue tev) {
-            if (tev.text.isEmpty) return suggestions.toList()..sort();
-            return suggestions
-                .where((s) => s.toLowerCase().contains(tev.text.toLowerCase()))
-                .toList()
-              ..sort();
-          },
-          displayStringForOption: (o) => o,
-          onSelected: (selection) {
-            controller.text = selection;
-          },
-          fieldViewBuilder: (ctx, tc, fn, onSubmitted) {
-            // Keep our controller in sync
-            if (controller.text != tc.text && !tc.selection.isValid) {
-              tc.text = controller.text;
-            }
-            return Container(
-              height: 36,
-              decoration: BoxDecoration(
-                color: isActive
-                    ? activeColor.withValues(alpha: 0.08)
-                    : LabColors.surfaceDim,
-                border: Border.all(
-                  color: isActive
-                      ? activeColor
-                      : LabColors.cyanBorder.withValues(alpha: 0.3),
-                  width: 0.5,
-                ),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: tc,
-                      focusNode: fn,
-                      style: LabStyles.mono(context,
-                          fontSize: 9, color: Colors.white),
-                      decoration: InputDecoration(
-                        hintText: label.toUpperCase(),
-                        hintStyle: LabStyles.mono(context,
-                            fontSize: 9, color: Colors.grey[700]),
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                      ),
-                    ),
-                  ),
-                  if (isActive)
-                    GestureDetector(
-                      onTap: () {
-                        tc.clear();
-                        controller.clear();
-                        onClear();
-                      },
-                      child: const Icon(Icons.close,
-                          color: Colors.redAccent, size: 14),
-                    ),
-                ],
-              ),
-            );
-          },
-          optionsViewBuilder: (ctx, onSelected, options) {
-            return Align(
-              alignment: Alignment.topLeft,
-              child: Material(
-                color: LabColors.surfaceContainerHigh,
-                child: ConstrainedBox(
-                  constraints:
-                      const BoxConstraints(maxHeight: 180, maxWidth: 300),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: options.length,
-                    itemBuilder: (_, i) {
-                      final opt = options.elementAt(i);
-                      return ListTile(
-                        dense: true,
-                        title: Text(opt,
-                            style: LabStyles.mono(ctx,
-                                fontSize: 10, color: Colors.white)),
-                        onTap: () => onSelected(opt),
-                      );
-                    },
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final h = MediaQuery.of(context).size.height;
-    // Active colors for BASE/MUSCLE text fields
-    final activeBaseColor =
-        _fBase != null ? _baseColor(_fBase!) : LabColors.primary;
-    final activeMuscleColor =
-        _fMuscle != null ? _muscleColor(_fMuscle!) : LabColors.primary;
-
-    return Container(
-      height: h * 0.92,
-      padding:
-          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Column(
-        children: [
-          // ── Header ──
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: LabColors.surfaceContainerHigh,
-              border: Border(
-                  bottom: BorderSide(color: LabColors.primary, width: 2)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Title row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('INJECT_MOVEMENT',
-                        style:
-                            LabStyles.headline(context).copyWith(fontSize: 18)),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close, color: Colors.white),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // Search bar + sort button
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: SizedBox(
-                        height: 36,
-                        child: TextField(
-                          controller: _searchC,
-                          style: LabStyles.mono(context,
-                              fontSize: 12, color: Colors.white),
-                          decoration: InputDecoration(
-                            hintText: 'SEARCH...',
-                            hintStyle: TextStyle(
-                                color: Colors.grey[600], fontSize: 11),
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 8),
-                            border: OutlineInputBorder(
-                                borderSide: BorderSide(
-                                    color: Colors.grey[800]!, width: 0.5)),
-                            enabledBorder: OutlineInputBorder(
-                                borderSide: BorderSide(
-                                    color: Colors.grey[800]!, width: 0.5)),
-                            focusedBorder: OutlineInputBorder(
-                                borderSide: BorderSide(
-                                    color: LabColors.primary, width: 0.5)),
-                            fillColor: LabColors.surfaceDim,
-                            filled: true,
-                            isDense: true,
-                          ),
-                          onChanged: (_) => _applyFilters(),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    SizedBox(
-                      height: 36,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.black,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(0)),
-                          side: BorderSide(color: Colors.white24, width: 0.5),
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _sortMode = _ExerciseSortMode.values[
-                                (_sortMode.index + 1) %
-                                    _ExerciseSortMode.values.length];
-                            _applyFilters();
-                          });
-                        },
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.sort, size: 14, color: Colors.grey[400]),
-                            const SizedBox(width: 4),
-                            Text(
-                              _sortLabel,
-                              style: LabStyles.mono(context,
-                                  fontSize: 9, color: Colors.white70),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                // Filter row: LOAD, ISO, UNI, IMPL
-                Row(
-                  children: [
-                    Expanded(
-                        child: _filterChip('LOAD', _fLoad, () {
-                      _showFilterSheet(
-                          'FILTER BY LOAD TYPE', _loadValues, _fLoad, (v) {
-                        setState(() => _fLoad = v);
-                        _applyFilters();
-                      });
-                    })),
-                    Expanded(
-                        child: _triStateChip(
-                      label: 'ISO',
-                      value: _fIso,
-                      onTap: (v) {
-                        setState(() => _fIso = v);
-                        _applyFilters();
-                      },
-                    )),
-                    Expanded(
-                        child: _triStateChip(
-                      label: 'UNI',
-                      value: _fUni,
-                      onTap: (v) {
-                        setState(() => _fUni = v);
-                        _applyFilters();
-                      },
-                    )),
-                    Expanded(
-                        child: _filterChip('IMPL', _fImpl, () {
-                      _showFilterSheet('FILTER BY IMPL', _implValues, _fImpl,
-                          (v) {
-                        setState(() => _fImpl = v);
-                        _applyFilters();
-                      });
-                    })),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                // Row 2: BASE and MUSCLE as wide text-input fields
-                Row(
-                  children: [
-                    _textFilterField(
-                      label: 'BASE',
-                      controller: _baseC,
-                      suggestions: _baseValues,
-                      currentValue: _fBase,
-                      activeColor: activeBaseColor,
-                      onClear: () {
-                        setState(() => _fBase = null);
-                        _applyFilters();
-                      },
-                    ),
-                    _textFilterField(
-                      label: 'MUSCLE',
-                      controller: _muscleC,
-                      suggestions: _muscleValues,
-                      currentValue: _fMuscle,
-                      activeColor: activeMuscleColor,
-                      onClear: () {
-                        setState(() => _fMuscle = null);
-                        _applyFilters();
-                      },
-                    ),
-                  ],
-                ),
-                if (_hasActiveFilters) ...[
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: GestureDetector(
-                      onTap: _clearAllFilters,
-                      child: Text(
-                        'CLEAR ALL FILTERS',
-                        style: LabStyles.mono(context,
-                            fontSize: 8,
-                            color: Colors.redAccent,
-                            fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          // ── Results counter bar ──
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: LabColors.surfaceContainerHigh.withValues(alpha: 0.5),
-              border: const Border(
-                  bottom: BorderSide(color: LabColors.cyanBorder, width: 0.2)),
-            ),
-            child: Row(
-              children: [
-                Text(
-                  'RESULTS: ${_filtered.length}',
-                  style: LabStyles.mono(context,
-                      fontSize: 9,
-                      color: LabColors.primary,
-                      fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(width: 16),
-                Text(
-                  'TOTAL: ${_all.length}',
-                  style:
-                      LabStyles.mono(context, fontSize: 9, color: Colors.white),
-                ),
-              ],
-            ),
-          ),
-          // ── Results list ──
-          Expanded(
-            child: ListView.builder(
-              itemCount: _filtered.length,
-              itemBuilder: (_, i) {
-                final e = _filtered[i];
-                return LabListTile(
-                  title: e.fullName,
-                  subtitle: _buildSubtitle(e),
-                  onTap: () {
-                    widget.onSelected(e);
-                    Navigator.pop(context);
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _searchC.dispose();
-    _baseC.dispose();
-    _muscleC.dispose();
-    super.dispose();
-  }
-}
-
 class _GroupedSetSlot {
   const _GroupedSetSlot({
     required this.index,
@@ -2988,6 +2147,8 @@ class _ExerciseModule extends ConsumerStatefulWidget {
   final bool moduleIsIso;
   final bool moduleIsJst;
   final String moduleLoadType;
+  final bool expanded;
+  final ValueChanged<bool> onToggleExpanded;
   const _ExerciseModule(
       {super.key,
       required this.exercise,
@@ -3000,13 +2161,14 @@ class _ExerciseModule extends ConsumerStatefulWidget {
       required this.moduleIsIso,
       required this.moduleIsJst,
       required this.moduleLoadType,
+      required this.expanded,
+      required this.onToggleExpanded,
       this.showDragHandle = true});
   @override
   ConsumerState<_ExerciseModule> createState() => _ExerciseModuleState();
 }
 
 class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
-  bool _isExpanded = false;
   List<_GroupedSetSlot> _groupedSetSlots = const [];
 
   @override
@@ -3083,14 +2245,14 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     final isoColor = uiTagIso;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.fromLTRB(8, 0, 8, 16),
       decoration: BoxDecoration(
         color: LabColors.surfaceDim,
         border: Border.all(
             color: hasUtility
                 ? utilityColor
                 : LabColors.cyanBorder
-                    .withValues(alpha: _isExpanded ? 0.5 : 0.2),
+                    .withValues(alpha: widget.expanded ? 0.5 : 0.2),
             width: hasUtility ? 1.5 : 0.5),
         boxShadow: hasUtility
             ? [
@@ -3178,49 +2340,54 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                     ),
                     const SizedBox(height: 6),
                     // Exercise name + tags — the expand/collapse area
-                    InkWell(
-                      onTap: () => setState(() => _isExpanded = !_isExpanded),
-                      onLongPress: () => _showComplexModsModal(context),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Builder(builder: (c) {
-                            return Text(e.fullName,
-                                style: LabStyles.headline(context).copyWith(
-                                    fontSize: 18, color: Colors.white));
-                          }),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 4,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              if (e.primaryMuscleGroup != null)
-                                Text(e.primaryMuscleGroup!.toUpperCase(),
-                                    style: LabStyles.mono(context,
-                                        color: uiTagPrimaryMuscle,
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.bold)),
-                              ...e.bodyPositionTags.map((tag) => Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 4, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      color: uiTagBodyposition.withValues(
-                                          alpha: 0.1),
-                                      border: Border.all(
-                                          color: uiTagBodyposition.withValues(
-                                              alpha: 0.3),
-                                          width: 0.5),
-                                    ),
-                                    child: Text(tag.toUpperCase(),
-                                        style: LabStyles.mono(context,
-                                            fontSize: 7,
-                                            color: uiTagBodyposition)),
-                                  )),
-                            ],
-                          ),
-                        ],
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () =>
+                            widget.onToggleExpanded(!widget.expanded),
+                        onLongPress: () =>
+                            _showComplexModsModal(context),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Builder(builder: (c) {
+                              return Text(e.fullName,
+                                  style: LabStyles.headline(context).copyWith(
+                                      fontSize: 18, color: Colors.white));
+                            }),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (e.primaryMuscleGroup != null)
+                                  Text(e.primaryMuscleGroup!.toUpperCase(),
+                                      style: LabStyles.mono(context,
+                                          color: uiTagPrimaryMuscle,
+                                          fontSize: 8,
+                                          fontWeight: FontWeight.bold)),
+                                ...e.bodyPositionTags.map((tag) => Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 4, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: uiTagBodyposition.withValues(
+                                            alpha: 0.1),
+                                        border: Border.all(
+                                            color: uiTagBodyposition.withValues(
+                                                alpha: 0.3),
+                                            width: 0.5),
+                                      ),
+                                      child: Text(tag.toUpperCase(),
+                                          style: LabStyles.mono(context,
+                                              fontSize: 7,
+                                              color: uiTagBodyposition)),
+                                    )),
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -3249,7 +2416,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
             ],
           ),
         ),
-        if (_isExpanded) ...[
+        if (widget.expanded) ...[
           const Divider(height: 1, color: LabColors.cyanBorder, thickness: 0.2),
           Padding(
             padding: const EdgeInsets.all(16),
@@ -3563,6 +2730,8 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     }
     // 3) Invalidate batch names provider so THEME.MDFYR updates
     if (context.mounted) ref.invalidate(allBatchNamesProvider);
+    final parent = context.findAncestorStateOfType<_WorkoutDayPageState>();
+    parent?.expandBatch(batchName);
   }
 
   Future<void> _renameBatch(
@@ -4041,7 +3210,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
 
   Widget _buildGroupedSetSlot(_GroupedSetSlot slot, int slotIndex) {
     if (slot.isPair) {
-      return _UnilateralPairFrame(
+      return UnilateralPairFrame(
         key: ValueKey('pair_${slot.set.id}_${slot.leftSet.id}'),
         rightSet: _WorkoutSetInstance(
           key: ValueKey('set_${slot.set.id}'),
@@ -4249,11 +3418,8 @@ class _WorkoutSetInstance extends ConsumerStatefulWidget {
 class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   late TextEditingController _lC,
       _rC,
-      _tC,
-      _rsC,
       _rpeC,
       _rirC,
-      _fC,
       _techC,
       _commentC;
   Timer? _db;
@@ -4261,9 +3427,10 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   bool _exp = false;
   bool _showComment = false;
   bool _isIso = false;
-
-  Stopwatch? _restStopwatch;
-  Timer? _tickTimer;
+  bool _hasVpPr = false;
+  double _vpValue = 0;
+  double _vpMultiplier = 1.0;
+  Timer? _vpTimer;
 
   String _formatInputValue(double value) {
     if (value.isFinite && value == value.truncateToDouble()) {
@@ -4272,21 +3439,24 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     return value.toString();
   }
 
+  double _computeVp() {
+    final isJst = widget.isJst;
+    final isL = widget.loadType == 'LASTRE';
+    final w = isJst ? widget.bodyWeight : (double.tryParse(_lC.text) ?? 0);
+    final tL = w + (isL ? widget.bodyWeight : 0);
+    final reps = double.tryParse(_rC.text) ?? 0;
+    final tonnage = tL * reps;
+    final setOrdinal = widget.index + 1;
+    return tonnage * (1 + _vpMultiplier * log(setOrdinal + 1));
+  }
+
   @override
   void initState() {
     super.initState();
     _lC = TextEditingController(text: _formatInputValue(widget.set.weight));
     _rC = TextEditingController(text: _formatInputValue(widget.set.reps));
-    _tC = TextEditingController(
-        text: (widget.set.trackName ?? '').replaceAll('[RED_PR]', '').trim());
-    _rsC = TextEditingController(
-        text: _formatInputValue(widget.set.restTimeSeconds?.toDouble() ?? 0));
     _rpeC = TextEditingController(text: widget.set.rpe?.toString() ?? '');
     _rirC = TextEditingController(text: widget.set.rir?.toString() ?? '');
-    _fC = TextEditingController(
-        text: widget.set.restTimeSeconds != null
-            ? _formatInputValue(widget.set.restTimeSeconds! / 10)
-            : '');
     _techC =
         TextEditingController(text: widget.set.technique?.toString() ?? '');
     _commentC = TextEditingController(text: widget.set.notes);
@@ -4296,35 +3466,65 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     }
     // Isometric detection for conditional UI
     _isIso = widget.isIso;
+    // VP initialisation
+    _vpMultiplier =
+        (widget.exercise.parsedComplexMetadata["vpMultiplier"] as num?)?.toDouble() ?? 1.0;
+    if (widget.set.complexMetadata != null &&
+        widget.set.complexMetadata!.isNotEmpty) {
+      try {
+        final meta = jsonDecode(widget.set.complexMetadata!);
+        _vpValue = (meta['vp'] as num?)?.toDouble() ?? 0;
+      } catch (_) {}
+    }
+    if (_vpValue == 0) _vpValue = _computeVp();
   }
 
   @override
   void dispose() {
     _db?.cancel();
     _prDb?.cancel();
-    _tickTimer?.cancel();
+    _vpTimer?.cancel();
     _lC.dispose();
     _rC.dispose();
-    _tC.dispose();
-    _rsC.dispose();
     _rpeC.dispose();
     _rirC.dispose();
-    _fC.dispose();
     _techC.dispose();
     _commentC.dispose();
     super.dispose();
   }
 
-  void _onChanged() {
+  void _onChanged({bool includePr = true, int rawDelayMs = 100}) {
     _db?.cancel();
     _prDb?.cancel();
+    _vpTimer?.cancel();
 
-    _db = Timer(const Duration(milliseconds: 100), () async {
+    _db = Timer(Duration(milliseconds: rawDelayMs), () async {
       await _saveCurrentSetRaw();
+      if (!includePr || !mounted) return;
+      _prDb = Timer(const Duration(milliseconds: 1200), () async {
+        await _recalculatePrsAndEorm();
+      });
     });
 
-    _prDb = Timer(const Duration(milliseconds: 1200), () async {
-      await _recalculatePrsAndEorm();
+    // VP: 20s debounce — no recalcula mientras editas
+    _vpTimer = Timer(const Duration(seconds: 10), () async {
+      if (!mounted) return;
+      _vpValue = _computeVp();
+      final db = ref.read(databaseProvider);
+      Map<String, dynamic> existingMeta = {};
+      if (widget.set.complexMetadata != null &&
+          widget.set.complexMetadata!.isNotEmpty) {
+        try {
+          existingMeta = jsonDecode(widget.set.complexMetadata!);
+        } catch (_) {}
+      }
+      existingMeta["vp"] = _vpValue;
+      await (db.update(db.workoutSets)
+            ..where((t) => t.id.equals(widget.set.id)))
+          .write(WorkoutSetsCompanion(
+        complexMetadata: drift.Value(jsonEncode(existingMeta)),
+      ));
+      if (mounted) setState(() {});
     });
   }
 
@@ -4336,12 +3536,12 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     final r = double.tryParse(_rC.text) ?? 0;
     final rpe = double.tryParse(_rpeC.text);
     final rir = double.tryParse(_rirC.text);
-    final f = double.tryParse(_fC.text) ?? 1;
     final te = int.tryParse(_techC.text);
     final isJst = widget.isJst;
+
     final actualWeight = isJst ? widget.bodyWeight : w;
-    final rest = int.tryParse(_rsC.text) ?? (f * 10).toInt();
-    final track = _tC.text.trim().replaceFirst('[RED_PR]', '').trim();
+    final rest = widget.set.restTimeSeconds ?? 120;
+    final track = (widget.set.trackName ?? '').replaceFirst('[RED_PR]', '').trim();
     final notes = _commentC.text.trim();
 
     await (db.update(db.workoutSets)..where((t) => t.id.equals(widget.set.id)))
@@ -4365,7 +3565,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     final r = double.tryParse(_rC.text) ?? 0;
     final rpe = double.tryParse(_rpeC.text);
     final rir = double.tryParse(_rirC.text);
-    final f = double.tryParse(_fC.text) ?? 1;
     final te = int.tryParse(_techC.text);
 
     final isL = widget.loadType == 'LASTRE';
@@ -4392,6 +3591,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
         maxerecHistM = {},
         maxetHistM = {};
     final Map<String?, Map<double, double>> w2rHistM = {};
+    double maxHistoricalVp = 0;
 
     String? sideOf(WorkoutSet s) {
       if (!widget.exercise.isUnilateral) return null;
@@ -4430,7 +3630,16 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
       if (hErc > (maxerecHistM[sideKey] ?? 0)) maxerecHistM[sideKey] = hErc;
       final hEt = hE * (s.technique ?? 1);
       if (hEt > (maxetHistM[sideKey] ?? 0)) maxetHistM[sideKey] = hEt;
+      // VP PR detection — merged with histBefore loop
+      if (s.complexMetadata != null && s.complexMetadata!.isNotEmpty) {
+        try {
+          final meta = jsonDecode(s.complexMetadata!);
+          final histVp = (meta['vp'] as num?)?.toDouble() ?? 0;
+          if (histVp > maxHistoricalVp) maxHistoricalVp = histVp;
+        } catch (_) {}
+      }
     }
+    _hasVpPr = _computeVp() > maxHistoricalVp;
 
     // 2. Get all sets TODAY to find session winner
     final nextDay = today.add(const Duration(days: 1));
@@ -4489,8 +3698,8 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
         sRir = rir;
         ste = te ?? 1;
         sNotes = _commentC.text.trim();
-        sRest = int.tryParse(_rsC.text) ?? (f * 10).toInt();
-        sTrack = _tC.text.trim().replaceFirst('[RED_PR]', '').trim();
+        sRest = widget.set.restTimeSeconds ?? 120;
+        sTrack = (widget.set.trackName ?? '').replaceFirst('[RED_PR]', '').trim();
       }
 
       final sTL = sw + (isL ? widget.bodyWeight : 0);
@@ -4553,52 +3762,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     }
   }
 
-  void _showTrackSearchOverlay() async {
-    final db = ref.read(databaseProvider);
-    final sets = await db.select(db.workoutSets).get();
-
-    final Set<String> tracks = {};
-    for (var s in sets) {
-      if (s.trackName != null && s.trackName!.isNotEmpty) {
-        final clean = s.trackName!.replaceFirst('[RED_PR] ', '').trim();
-        if (clean.isNotEmpty) tracks.add(clean);
-      }
-    }
-
-    if (!mounted) return;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: LabColors.background,
-      isScrollControlled: true,
-      builder: (c) => QualitySearchPicker(
-        title: "SELECT_TRACK",
-        values: tracks.toList()..sort(),
-        onSelected: (v) {
-          setState(() {
-            _tC.text = v;
-          });
-          _onChanged();
-        },
-      ),
-    );
-  }
-
-  void _toggleRestTimer() {
-    if (_restStopwatch == null || !_restStopwatch!.isRunning) {
-      _restStopwatch = Stopwatch()..start();
-      _tickTimer =
-          Timer.periodic(const Duration(seconds: 1), (t) => setState(() {}));
-    } else {
-      _restStopwatch!.stop();
-      _tickTimer?.cancel();
-      _rsC.text = _restStopwatch!.elapsed.inSeconds.toString();
-      _restStopwatch = null;
-      _onChanged();
-    }
-    setState(() {});
-  }
-
   void _showComplexSetModsModal(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -4613,29 +3776,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
               Text('COMPLEX_SET_MODS',
                   style: LabStyles.headline(context).copyWith(fontSize: 16)),
               const SizedBox(height: 24),
-              // --- ACOUSTIC SECTION (IN MODAL) ---
-              _buildModalAcousticCard(context, setModalState),
-              const SizedBox(height: 16),
-              // --- REST TIMER SECTION (IN MODAL) ---
-              Row(
-                children: [
-                  Expanded(
-                      child: _buildModalGridInput(context, 'REST_SAVED', _rsC)),
-                  const SizedBox(width: 8),
-                  _buildModalRestTimerBox(context, setModalState, flex: 1),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 140,
-                    child: _buildModalGridInput(context, 'FATIGUE_FACTOR', _fC),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
 
               // --- ACTION SECTION ---
               _buildModCard(context, 'PURGE_SET', Icons.delete_forever,
@@ -4646,45 +3786,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
         ),
       ),
     );
-  }
-
-  Widget _buildModalRestTimerBox(
-      BuildContext context, StateSetter setModalState,
-      {int flex = 1}) {
-    final isRunning = _restStopwatch?.isRunning ?? false;
-    final elapsed = _restStopwatch?.elapsed.inSeconds ?? 0;
-    return Expanded(
-        flex: flex,
-        child: InkWell(
-            onTap: () {
-              setModalState(() => _toggleRestTimer());
-            },
-            child: Container(
-                height: 64,
-                decoration: BoxDecoration(
-                    color: isRunning
-                        ? LabColors.primary.withValues(alpha: 0.1)
-                        : LabColors.surfaceContainerHigh,
-                    border: Border.all(
-                        color:
-                            isRunning ? LabColors.primary : Colors.grey[800]!,
-                        width: 0.5)),
-                child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('REST_TIMER',
-                          style: LabStyles.mono(context,
-                              fontSize: 7,
-                              color:
-                                  isRunning ? LabColors.primary : Colors.grey)),
-                      const SizedBox(height: 4),
-                      Text(isRunning ? "${elapsed}S" : "START",
-                          style: LabStyles.mono(context,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color:
-                                  isRunning ? Colors.white : LabColors.primary))
-                    ]))));
   }
 
   Widget _buildModalGridInput(
@@ -4712,102 +3813,10 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                       fontSize: 20, color: Colors.white),
                   decoration: const InputDecoration(
                       border: InputBorder.none, isDense: true),
+                  textInputAction: TextInputAction.next,
+                  autocorrect: false,
+                  enableSuggestions: false,
                   onChanged: (_) => _onChanged()))
-        ]));
-  }
-
-  Widget _buildModalAcousticCard(
-      BuildContext context, StateSetter setModalState) {
-    final db = ref.read(databaseProvider);
-    return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-            color: LabColors.surfaceContainerLow,
-            border: Border.all(
-                color: Colors.white.withValues(alpha: 0.1), width: 0.5)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Text('ACOUSTIC',
-                style:
-                    LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
-            Row(
-                children: List.generate(7, (i) {
-              final lvl = i + 1;
-              final lit = (widget.set.hypeLevel ?? 0) >= lvl;
-              return GestureDetector(
-                  onTap: () async {
-                    await db.update(db.workoutSets).replace(
-                        widget.set.copyWith(hypeLevel: drift.Value(lvl)));
-                    setModalState(() {});
-                  },
-                  child: Container(
-                      width: 14,
-                      height: 14,
-                      margin: const EdgeInsets.only(left: 4),
-                      decoration: BoxDecoration(
-                          color: lit ? LabColors.primary : Colors.transparent,
-                          border: Border.all(
-                              color:
-                                  lit ? LabColors.primary : Colors.grey[800]!,
-                              width: 0.5))));
-            }))
-          ]),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(
-                child: TextField(
-                    controller: _tC,
-                    style: LabStyles.mono(context,
-                        fontSize: 10, color: Colors.white),
-                    decoration: InputDecoration(
-                        hintText: 'TRACK_NAME',
-                        hintStyle: LabStyles.mono(context,
-                            fontSize: 8, color: Colors.grey[700]!),
-                        isDense: true,
-                        prefixIcon: const Icon(Icons.music_note,
-                            size: 14, color: Colors.grey),
-                        enabledBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(color: Colors.grey[800]!))),
-                    onChanged: (_) => _onChanged())),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.manage_search,
-                  color: LabColors.primary, size: 18),
-              onPressed: () {
-                _showTrackSearchOverlay();
-                setModalState(() {});
-              },
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-            ),
-            const SizedBox(width: 12),
-            GestureDetector(
-                onTap: () async {
-                  await db.update(db.workoutSets).replace(
-                      widget.set.copyWith(isPrSong: !widget.set.isPrSong));
-                  setModalState(() {});
-                },
-                child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                        color: widget.set.isPrSong
-                            ? LabColors.accent.withValues(alpha: 0.1)
-                            : Colors.transparent,
-                        border: Border.all(
-                            color: widget.set.isPrSong
-                                ? LabColors.accent
-                                : Colors.grey[800]!,
-                            width: 0.5)),
-                    child: Icon(
-                        widget.set.isPrSong
-                            ? Icons.music_note
-                            : Icons.music_note_outlined,
-                        color: widget.set.isPrSong
-                            ? LabColors.accent
-                            : Colors.grey[600],
-                        size: 16))),
-          ])
         ]));
   }
 
@@ -4869,15 +3878,9 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
 
   @override
   Widget build(BuildContext context) {
-    final intentionText = widget.exercise.intention ?? '';
-    final metaMatch =
-        RegExp(r'\[NT:(.*)\|ISO:(.*)\]').firstMatch(intentionText);
-    final isL =
-        (metaMatch?.group(1) == 'LASTRE') || widget.exercise.field == 'LASTRE';
-    final isJst =
-        (metaMatch?.group(1) == 'JST.BW') || widget.exercise.field == 'JST.BW';
-    final isIso = (metaMatch?.group(2) == 'true') ||
-        (widget.exercise.intention ?? '').contains('[ISO]');
+    final isL = widget.loadType == 'LASTRE';
+    final isJst = widget.isJst;
+    final isIso = widget.isIso;
     final w = isJst ? widget.bodyWeight : (double.tryParse(_lC.text) ?? 0);
     final tL = w + (isL ? widget.bodyWeight : 0);
     final isRed = (widget.set.trackName ?? '').contains('[RED_PR]');
@@ -4896,129 +3899,128 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
 
     return Container(
         margin: const EdgeInsets.only(bottom: 12),
-        child: AnimatedSize(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeInOut,
-            alignment: Alignment.topCenter,
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Container(
-                decoration: BoxDecoration(
-                    border: Border.all(
-                        color: isRed
-                            ? Colors.redAccent
-                            : (_exp
-                                ? LabColors.primary.withValues(alpha: 0.4)
-                                : Colors.grey[800]!),
-                        width: isRed ? 2 : 0.5),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            decoration: BoxDecoration(
+                border: Border.all(
                     color: isRed
-                        ? Colors.redAccent.withValues(alpha: 0.08)
+                        ? Colors.redAccent
                         : (_exp
-                            ? LabColors.surfaceContainerLow
-                            : Colors.transparent),
-                    boxShadow: isRed
+                            ? LabColors.primary.withValues(alpha: 0.4)
+                            : Colors.grey[800]!),
+                    width: isRed ? 2 : 0.5),
+                color: isRed
+                    ? Colors.redAccent.withValues(alpha: 0.08)
+                    : (_exp
+                        ? LabColors.surfaceContainerLow
+                        : Colors.transparent),
+                boxShadow: isRed
+                    ? [
+                        BoxShadow(
+                            color: Colors.redAccent.withValues(alpha: 0.275),
+                            blurRadius: 14)
+                      ]
+                    : (_exp
                         ? [
                             BoxShadow(
                                 color:
-                                    Colors.redAccent.withValues(alpha: 0.275),
-                                blurRadius: 14)
+                                    LabColors.primary.withValues(alpha: 0.05),
+                                blurRadius: 6)
                           ]
-                        : (_exp
-                            ? [
-                                BoxShadow(
-                                    color: LabColors.primary
-                                        .withValues(alpha: 0.05),
-                                    blurRadius: 6)
-                              ]
-                            : null)),
-                child: IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildSetNumberWithCheckbox(completedColor,
-                          (widget.index + 1).toString().padLeft(2, '0'),
-                          flex: 15, sideColor: sideColor),
-                      _buildGridInput(
-                          isJst ? 'BODYWEIGHT' : (isL ? 'ADDED' : 'LOAD'), _lC,
-                          flex: 27, enabled: !isJst),
-                      _buildGridInput(isIso ? 'SECS' : 'REPS', _rC, flex: 30),
-                      _buildPRBox(flex: 25, isRed: isRed),
-                      _buildCompletedCheck(completedColor),
+                        : null)),
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildSetNumberWithCheckbox(completedColor,
+                      (widget.index + 1).toString().padLeft(2, '0'),
+                      flex: 15, sideColor: sideColor),
+                  _buildGridInput(
+                      isJst ? 'BODYWEIGHT' : (isL ? 'ADDED' : 'LOAD'), _lC,
+                      flex: 27, enabled: !isJst),
+                  _buildGridInput(isIso ? 'SECS' : 'REPS', _rC, flex: 30),
+                  _buildPRBox(flex: 25, isRed: isRed),
+                  _buildCompletedCheck(completedColor),
+                ],
+              ),
+            ),
+          ),
+          if (_showComment)
+            Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                    color: LabColors.surfaceDim,
+                    border: Border(
+                        left: const BorderSide(
+                            color: LabColors.primary, width: 1),
+                        bottom:
+                            BorderSide(color: Colors.grey[900]!, width: 0.5),
+                        right:
+                            BorderSide(color: Colors.grey[900]!, width: 0.5))),
+                child: TextField(
+                    controller: _commentC,
+                    maxLines: null,
+                    style: LabStyles.mono(context,
+                        fontSize: 10, color: Colors.white),
+                    decoration: InputDecoration(
+                        hintText: 'WRITE_SESSION_INTEL...',
+                        hintStyle: LabStyles.mono(context,
+                            fontSize: 8, color: Colors.grey[700]!),
+                        border: InputBorder.none,
+                        isDense: true),
+                    textInputAction: TextInputAction.newline,
+                    keyboardType: TextInputType.multiline,
+                    textCapitalization: TextCapitalization.sentences,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    onChanged: (_) =>
+                        _onChanged(includePr: false, rawDelayMs: 300))),
+          if (_exp) ...[
+            const SizedBox(height: 12),
+            Row(children: [
+              _buildSummaryBox('TONNAGE',
+                  (tL * (double.tryParse(_rC.text) ?? 0)).toStringAsFixed(1)),
+              const SizedBox(width: 4),
+              _buildSummaryBox(
+                  'eORM',
+                  WorkoutCalculator.calculateEpley1RM(
+                          tL, double.tryParse(_rC.text) ?? 0)
+                      .toStringAsFixed(1)),
+              const SizedBox(width: 4),
+              _buildSummaryBox('VP', _vpValue.toStringAsFixed(1)),
+            ]),
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey[700]!, width: 0.5),
+                color: LabColors.surfaceContainerLow,
+              ),
+              child: IntrinsicHeight(
+                child: Row(
+                  children: [
+                    _buildGridInput('RPE', _rpeC, flex: 1, noBorder: true),
+                    if (!_isIso) ...[
+                      Container(width: 0.5, color: Colors.grey[700]),
+                      _buildGridInput('RIR', _rirC, flex: 1, noBorder: true),
                     ],
-                  ),
+                    Container(width: 0.5, color: Colors.grey[700]),
+                    _buildGridInput('TECH', _techC, flex: 1, noBorder: true),
+                  ],
                 ),
               ),
-              if (_showComment)
-                Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                        color: LabColors.surfaceDim,
-                        border: Border(
-                            left: const BorderSide(
-                                color: LabColors.primary, width: 1),
-                            bottom: BorderSide(
-                                color: Colors.grey[900]!, width: 0.5),
-                            right: BorderSide(
-                                color: Colors.grey[900]!, width: 0.5))),
-                    child: TextField(
-                        controller: _commentC,
-                        maxLines: null,
-                        style: LabStyles.mono(context,
-                            fontSize: 10, color: Colors.white),
-                        decoration: InputDecoration(
-                            hintText: 'WRITE_SESSION_INTEL...',
-                            hintStyle: LabStyles.mono(context,
-                                fontSize: 8, color: Colors.grey[700]!),
-                            border: InputBorder.none,
-                            isDense: true),
-                        onChanged: (_) => _onChanged())),
-              if (_exp) ...[
-                const SizedBox(height: 12),
-                Row(children: [
-                  _buildSummaryBox(
-                      'TONNAGE',
-                      (tL * (double.tryParse(_rC.text) ?? 0))
-                          .toStringAsFixed(1)),
-                  const SizedBox(width: 4),
-                  _buildSummaryBox(
-                      'eORM',
-                      WorkoutCalculator.calculateEpley1RM(
-                              tL, double.tryParse(_rC.text) ?? 0)
-                          .toStringAsFixed(1)),
-                ]),
-                const SizedBox(height: 12),
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey[700]!, width: 0.5),
-                    color: LabColors.surfaceContainerLow,
-                  ),
-                  child: IntrinsicHeight(
-                    child: Row(
-                      children: [
-                        _buildGridInput('RPE', _rpeC, flex: 1, noBorder: true),
-                        if (!_isIso) ...[
-                          Container(width: 0.5, color: Colors.grey[700]),
-                          _buildGridInput('RIR', _rirC,
-                              flex: 1, noBorder: true),
-                        ],
-                        Container(width: 0.5, color: Colors.grey[700]),
-                        _buildGridInput('TECH', _techC,
-                            flex: 1, noBorder: true),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _buildSomaticCard(),
-                const SizedBox(height: 8),
-                _buildNotesToggleCard(),
-                const SizedBox(height: 12),
-                _buildFailurePhaseCard(),
-                _buildComplexSetModsButton(),
-                const SizedBox(height: 12),
-                _buildParticularTogglesCard(),
-                const SizedBox(height: 20),
-              ]
-            ])));
+            ),
+            const SizedBox(height: 12),
+            _buildSomaticCard(),
+            const SizedBox(height: 8),
+            _buildNotesToggleCard(),
+            const SizedBox(height: 12),
+            _buildFailurePhaseCard(),
+            _buildComplexSetModsButton(),
+            const SizedBox(height: 12),
+            _buildParticularTogglesCard(),
+            const SizedBox(height: 20),
+          ]
+        ]));
   }
 
   Widget _buildParticularTogglesCard() {
@@ -5104,41 +4106,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     await (db.update(db.workoutSets)..where((t) => t.id.equals(widget.set.id)))
         .write(WorkoutSetsCompanion(
             complexMetadata: drift.Value(jsonEncode(setMeta))));
-  }
-
-  Widget _buildRestTimerBox({int flex = 1}) {
-    final isRunning = _restStopwatch?.isRunning ?? false;
-    final elapsed = _restStopwatch?.elapsed.inSeconds ?? 0;
-    return Expanded(
-        flex: flex,
-        child: InkWell(
-            onTap: _toggleRestTimer,
-            child: Container(
-                height: 64,
-                decoration: BoxDecoration(
-                    color: isRunning
-                        ? LabColors.primary.withValues(alpha: 0.1)
-                        : LabColors.surfaceContainerHigh,
-                    border: Border.all(
-                        color:
-                            isRunning ? LabColors.primary : Colors.grey[800]!,
-                        width: 0.5)),
-                child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('REST_TIMER',
-                          style: LabStyles.mono(context,
-                              fontSize: 7,
-                              color:
-                                  isRunning ? LabColors.primary : Colors.grey)),
-                      const SizedBox(height: 4),
-                      Text(isRunning ? "${elapsed}S" : "START",
-                          style: LabStyles.mono(context,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color:
-                                  isRunning ? Colors.white : LabColors.primary))
-                    ]))));
   }
 
   Widget _buildNotesToggleCard() {
@@ -5335,7 +4302,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 color: isRed
                     ? highlightColor.withValues(alpha: 0.2)
-                    : (hasPr
+                    : (hasPr || _hasVpPr
                         ? Colors.white.withValues(alpha: 0.05)
                         : LabColors.surfaceContainerHigh),
                 child: Text('PR',
@@ -5344,28 +4311,42 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                         fontSize: 8,
                         color: isRed
                             ? Colors.white
-                            : (hasPr ? LabColors.accent : Colors.grey))),
+                            : (hasPr || _hasVpPr ? LabColors.accent : Colors.grey))),
               ),
-              // BOTTOM: Trophy / empty
+              // BOTTOM: Trophy / V! / both
               Container(
                   height: 44,
                   alignment: Alignment.center,
-                  child: hasPr
-                      ? (isRed
-                          ? Icon(Icons.emoji_events,
-                              color: highlightColor, size: 24)
-                          : ShaderMask(
-                              shaderCallback: (bounds) =>
-                                  const LinearGradient(colors: [
-                                    Colors.red,
-                                    Colors.orange,
-                                    Colors.yellow,
-                                    Colors.green,
-                                    Colors.blue,
-                                    Colors.purple
-                                  ]).createShader(bounds),
-                              child: const Icon(Icons.emoji_events,
-                                  color: Colors.white, size: 20)))
+                  child: (hasPr || _hasVpPr)
+                      ? Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (hasPr)
+                              isRed
+                                  ? Icon(Icons.emoji_events,
+                                      color: highlightColor, size: 20)
+                                  : ShaderMask(
+                                      shaderCallback: (bounds) =>
+                                          const LinearGradient(colors: [
+                                            Colors.red,
+                                            Colors.orange,
+                                            Colors.yellow,
+                                            Colors.green,
+                                            Colors.blue,
+                                            Colors.purple
+                                          ]).createShader(bounds),
+                                      child: const Icon(Icons.emoji_events,
+                                          color: Colors.white, size: 18)),
+                            if (_hasVpPr) ...[
+                              if (hasPr) const SizedBox(width: 4),
+                              Text('V!',
+                                  style: LabStyles.mono(context,
+                                      fontSize: 14,
+                                      color: Colors.cyanAccent,
+                                      fontWeight: FontWeight.bold)),
+                            ],
+                          ],
+                        )
                       : const SizedBox())
             ])));
   }
@@ -5397,7 +4378,9 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
       {int flex = 1, bool enabled = true, bool noBorder = false}) {
     return Expanded(
         flex: flex,
-        child: Container(
+        child: Material(
+            color: Colors.transparent,
+            child: Container(
             decoration: BoxDecoration(
                 border: noBorder
                     ? null
@@ -5426,8 +4409,11 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           color: enabled ? Colors.white : Colors.grey),
                       decoration: const InputDecoration(
                           border: InputBorder.none, isDense: true),
+                      textInputAction: TextInputAction.next,
+                      autocorrect: false,
+                      enableSuggestions: false,
                       onChanged: (_) => _onChanged()))
-            ])));
+            ]))));
   }
 
   void _confirmDel(BuildContext c) {
@@ -5544,95 +4530,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                                 fontSize: 10, color: LabColors.primary)),
                       ]),
                 ))));
-  }
-
-  Widget _buildAcousticCard() {
-    final db = ref.read(databaseProvider);
-    return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-            color: LabColors.surfaceContainerLow,
-            border: Border.all(
-                color: Colors.white.withValues(alpha: 0.1), width: 0.5)),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Text('ACOUSTIC',
-                style:
-                    LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
-            Row(
-                children: List.generate(7, (i) {
-              final lvl = i + 1;
-              final lit = (widget.set.hypeLevel ?? 0) >= lvl;
-              return GestureDetector(
-                  onTap: () async {
-                    await db.update(db.workoutSets).replace(
-                        widget.set.copyWith(hypeLevel: drift.Value(lvl)));
-                  },
-                  child: Container(
-                      width: 14,
-                      height: 14,
-                      margin: const EdgeInsets.only(left: 4),
-                      decoration: BoxDecoration(
-                          color: lit ? LabColors.primary : Colors.transparent,
-                          border: Border.all(
-                              color:
-                                  lit ? LabColors.primary : Colors.grey[800]!,
-                              width: 0.5))));
-            }))
-          ]),
-          const SizedBox(height: 12),
-          Row(children: [
-            Expanded(
-                child: TextField(
-                    controller: _tC,
-                    style: LabStyles.mono(context,
-                        fontSize: 10, color: Colors.white),
-                    decoration: InputDecoration(
-                        hintText: 'TRACK_NAME',
-                        hintStyle: LabStyles.mono(context,
-                            fontSize: 8, color: Colors.grey[700]!),
-                        isDense: true,
-                        prefixIcon: const Icon(Icons.music_note,
-                            size: 14, color: Colors.grey),
-                        enabledBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(color: Colors.grey[800]!))),
-                    onChanged: (_) => _onChanged())),
-            const SizedBox(width: 8),
-            IconButton(
-              icon: const Icon(Icons.manage_search,
-                  color: LabColors.primary, size: 18),
-              onPressed: _showTrackSearchOverlay,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-            ),
-            const SizedBox(width: 12),
-            GestureDetector(
-                onTap: () async {
-                  await db.update(db.workoutSets).replace(
-                      widget.set.copyWith(isPrSong: !widget.set.isPrSong));
-                },
-                child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                        color: widget.set.isPrSong
-                            ? LabColors.accent.withValues(alpha: 0.1)
-                            : Colors.transparent,
-                        border: Border.all(
-                            color: widget.set.isPrSong
-                                ? LabColors.accent
-                                : Colors.grey[800]!,
-                            width: 0.5)),
-                    child: Icon(
-                        widget.set.isPrSong
-                            ? Icons.music_note
-                            : Icons.music_note_outlined,
-                        color: widget.set.isPrSong
-                            ? LabColors.accent
-                            : Colors.grey[600],
-                        size: 16))),
-          ])
-        ]));
   }
 
   Widget _buildSomaticCard() {
@@ -5913,7 +4810,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           SizedBox(
                             width: 48,
                             height: 42,
-                            child: _QuickActionButton(
+                            child: QuickActionButton(
                               label: "SEARCH",
                               icon: Icons.search,
                               color: LabColors.accent,
@@ -5959,7 +4856,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           SizedBox(
                             width: 48,
                             height: 42,
-                            child: _QuickActionButton(
+                            child: QuickActionButton(
                               label: "SEARCH",
                               icon: Icons.tag,
                               color: Colors.purpleAccent,
@@ -6341,285 +5238,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   }
 }
 
-class _QuickActionButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  final double fontSize;
-
-  const _QuickActionButton(
-      {required this.label,
-      required this.icon,
-      required this.color,
-      required this.onTap,
-      this.fontSize = 7});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-        decoration: BoxDecoration(
-            border: Border.all(color: color.withValues(alpha: 0.3), width: 0.5),
-            color: color.withValues(alpha: 0.05)),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 14),
-            const SizedBox(height: 2),
-            Text(label,
-                style:
-                    LabStyles.mono(context, fontSize: fontSize, color: color),
-                textAlign: TextAlign.center,
-                maxLines: 1),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _UnilateralPairFrame extends ConsumerWidget {
-  final Widget rightSet;
-  final Widget leftSet;
-  final int index;
-  const _UnilateralPairFrame(
-      {super.key,
-      required this.rightSet,
-      required this.leftSet,
-      required this.index});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(themeSettingsProvider).value ?? {};
-    final tC = ref.read(themeControllerProvider);
-    final rightColor =
-        tC.getColor(settings, "UI_UNILATERAL_RIGHT", nameSeed: "RIGHT");
-    final leftColor =
-        tC.getColor(settings, "UI_UNILATERAL_LEFT", nameSeed: "LEFT");
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.02),
-        border: Border.all(
-            color: LabColors.primary.withValues(alpha: 0.15), width: 1),
-      ),
-      child: Column(
-        children: [
-          _SideLabel(label: "RIGHT_SIDE", color: rightColor),
-          rightSet,
-          const Divider(height: 16, color: Colors.white10, thickness: 0.5),
-          _SideLabel(label: "LEFT_SIDE", color: leftColor),
-          leftSet,
-        ],
-      ),
-    );
-  }
-}
-
-class _SideLabel extends StatelessWidget {
-  final String label;
-  final Color color;
-  const _SideLabel({required this.label, required this.color});
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4, left: 4),
-      child: Row(
-        children: [
-          Container(width: 2, height: 10, color: color),
-          const SizedBox(width: 6),
-          Text(label,
-              style: LabStyles.mono(context,
-                  fontSize: 7,
-                  color: color.withValues(alpha: 0.8),
-                  fontWeight: FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-}
-
-class _EditableSessionTimer extends ConsumerStatefulWidget {
-  const _EditableSessionTimer();
-  @override
-  ConsumerState<_EditableSessionTimer> createState() =>
-      _EditableSessionTimerState();
-}
-
-class _EditableSessionTimerState extends ConsumerState<_EditableSessionTimer> {
-  late TextEditingController _controller;
-  bool _isEditing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _updateFromLog(WorkoutLog? log) {
-    if (_isEditing) return;
-
-    final isRunning = log?.workoutStartTime != null;
-    final accumulated = log?.accumulatedSeconds ?? 0;
-    final startTime = log?.workoutStartTime;
-
-    final totalSeconds = isRunning
-        ? accumulated + DateTime.now().difference(startTime!).inSeconds
-        : accumulated;
-
-    final h = (totalSeconds ~/ 3600).toString().padLeft(2, '0');
-    final m = ((totalSeconds % 3600) ~/ 60).toString().padLeft(2, '0');
-    final s = (totalSeconds % 60).toString().padLeft(2, '0');
-
-    final newText = "$h:$m:$s";
-    if (_controller.text != newText) {
-      _controller.text = newText;
-    }
-  }
-
-  Future<void> _saveManualTime(WorkoutLog log) async {
-    final parts = _controller.text.split(':');
-    int totalSeconds = 0;
-    try {
-      if (parts.length == 3) {
-        totalSeconds = (int.parse(parts[0]) * 3600) +
-            (int.parse(parts[1]) * 60) +
-            int.parse(parts[2]);
-      } else if (parts.length == 2) {
-        totalSeconds = (int.parse(parts[0]) * 60) + int.parse(parts[1]);
-      } else if (parts.length == 1) {
-        totalSeconds = int.parse(parts[0]);
-      }
-
-      final db = ref.read(databaseProvider);
-      await (db.update(db.workoutLogs)..where((t) => t.id.equals(log.id)))
-          .write(WorkoutLogsCompanion(
-        accumulatedSeconds: drift.Value(totalSeconds),
-        durationMinutes: drift.Value(totalSeconds ~/ 60),
-      ));
-    } catch (e) {
-      debugPrint("Error parsing timer: $e");
-    }
-    setState(() => _isEditing = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final logAsync = ref.watch(currentWorkoutLogProvider);
-    ref.listen(timerTickProvider, (_, __) {
-      _updateFromLog(logAsync.value);
-    });
-
-    return logAsync.when(
-      data: (log) {
-        _updateFromLog(log);
-        final isRunning = log?.workoutStartTime != null;
-        final accumulated = log?.accumulatedSeconds ?? 0;
-        final startTime = log?.workoutStartTime;
-
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: LabColors.surfaceContainerLow,
-            border: Border.all(
-                color: LabColors.primary.withValues(alpha: 0.3), width: 0.5),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.timer,
-                      color: isRunning ? LabColors.primary : Colors.grey,
-                      size: 16),
-                  const SizedBox(width: 12),
-                  SizedBox(
-                    width: 100,
-                    child: TextField(
-                      controller: _controller,
-                      enabled: !isRunning,
-                      onTap: () => setState(() => _isEditing = true),
-                      onSubmitted: (_) =>
-                          log != null ? _saveManualTime(log) : null,
-                      onChanged: (_) => _isEditing = true,
-                      style: LabStyles.mono(context,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: isRunning ? Colors.white : Colors.grey),
-                      decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.zero),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 16),
-              Flexible(
-                child: LabButton(
-                  label: isRunning
-                      ? "STOP_SESSION"
-                      : (accumulated == 0 ? "START_SESSION" : "RESUME"),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  onPressed: () async {
-                    final db = ref.read(databaseProvider);
-                    if (!isRunning) {
-                      if (log == null) {
-                        await db
-                            .into(db.workoutLogs)
-                            .insert(WorkoutLogsCompanion.insert(
-                              date: DateTime.now(),
-                              workoutStartTime: drift.Value(DateTime.now()),
-                            ));
-                      } else {
-                        await (db.update(db.workoutLogs)
-                              ..where((t) => t.id.equals(log.id)))
-                            .write(WorkoutLogsCompanion(
-                                workoutStartTime: drift.Value(DateTime.now())));
-                      }
-                    } else {
-                      final sessionElapsed =
-                          DateTime.now().difference(startTime!).inSeconds;
-                      final newAccumulated = accumulated + sessionElapsed;
-                      await (db.update(db.workoutLogs)
-                            ..where((t) => t.id.equals(log!.id)))
-                          .write(WorkoutLogsCompanion(
-                        workoutStartTime: const drift.Value(null),
-                        accumulatedSeconds: drift.Value(newAccumulated),
-                        durationMinutes: drift.Value(newAccumulated ~/ 60),
-                      ));
-                    }
-                  },
-                  color: isRunning ? Colors.redAccent : LabColors.primary,
-                  isOutlined: true,
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-      loading: () => Container(
-          height: 60,
-          alignment: Alignment.center,
-          child: const CircularProgressIndicator(color: LabColors.primary)),
-      error: (e, s) => Text('TIMER_ERROR: $e',
-          style:
-              LabStyles.mono(context, color: Colors.redAccent, fontSize: 10)),
-    );
-  }
-}
 
 // WORKOUT OPTS BOTTOM SHEET — modular slice architecture
 // ═══════════════════════════════════════════════════════════════
@@ -6633,12 +5251,16 @@ class _WorkoutOptsSheet extends ConsumerStatefulWidget {
   final List<drift.TypedResult> results;
   final VoidCallback onMakeBlueprint;
   final VoidCallback onDeleteAll;
+  final bool maintainExtended;
+  final VoidCallback onToggleMaintainExtended;
 
   const _WorkoutOptsSheet({
     required this.date,
     required this.results,
     required this.onMakeBlueprint,
     required this.onDeleteAll,
+    required this.maintainExtended,
+    required this.onToggleMaintainExtended,
   });
 
   @override
@@ -7028,21 +5650,31 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
   Widget build(BuildContext context) {
     // -- Define slices here -------------------------------------------
     // Add / remove / reorder slices freely. Each slice is modular.
-    final slices = <_WorkoutOptsSlice>[
-      _WorkoutOptsSlice(
-        label: 'MAKE BLUEPRINT\nFROM CURRENT',
+    final slices = <WorkoutOptsSlice>[
+      WorkoutOptsSlice(
+        label: 'MAKE BLUEPRINT FROM CURRENT',
         icon: Icons.layers,
         color: _tc('UI_TAG_WO_BLUEPRINT', 'WO_BLUEPRINT'),
         onTap: widget.onMakeBlueprint,
       ),
-      _WorkoutOptsSlice(
-        label: 'DELETE\nALL SETS',
+      WorkoutOptsSlice(
+        label: 'DELETE ALL SETS',
         icon: Icons.delete_forever,
         color: _tc('UI_TAG_WO_PURGE', 'WO_PURGE'),
         onTap: widget.onDeleteAll,
       ),
-      _WorkoutOptsSlice(
-        label: 'VIEW WB\nPROJECTIONS',
+      WorkoutOptsSlice(
+        label: widget.maintainExtended
+            ? 'MAINTAIN EXTENDED ON'
+            : 'MAINTAIN EXTENDED',
+        icon: widget.maintainExtended ? Icons.visibility : Icons.visibility_off,
+        color: widget.maintainExtended
+            ? LabColors.primary
+            : _tc('UI_TAG_WORKOUT_OPTS', 'WORKOUT_OPTS'),
+        onTap: widget.onToggleMaintainExtended,
+      ),
+      WorkoutOptsSlice(
+        label: 'VIEW WB PROJECTIONS',
         icon: Icons.analytics,
         color: LabColors.accent,
         onTap: () => _showWbProjections(context, ref),
@@ -7080,7 +5712,7 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
     );
   }
 
-  Widget _buildSlice(BuildContext context, _WorkoutOptsSlice slice) {
+  Widget _buildSlice(BuildContext context, WorkoutOptsSlice slice) {
     return GestureDetector(
       onTap: slice.onTap,
       child: Container(
@@ -7111,113 +5743,237 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
   }
 }
 
-class _WorkoutOptsSlice {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
+class _KnsInjectOptions {
+  bool injectPloadAsLoad;
+  bool injectMaxRepsAsReps;
+  bool injectMinRepsAsReps;
+  bool injectRpeAsRpe;
 
-  const _WorkoutOptsSlice({
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.onTap,
+  _KnsInjectOptions({
+    this.injectPloadAsLoad = false,
+    this.injectMaxRepsAsReps = true,
+    this.injectMinRepsAsReps = false,
+    this.injectRpeAsRpe = false,
   });
 }
 
 class _InjectOptions {
-  final bool usePload;
+  final bool injectPloadAsLoad;
+  final bool injectMaxRepsAsReps;
+  final bool injectMinRepsAsReps;
+  final bool injectRpeAsRpe;
+  final bool applyToAll;
   final bool allSets;
-  const _InjectOptions({required this.usePload, required this.allSets});
+  final Map<int, _KnsInjectOptions> knsOptions;
+
+  const _InjectOptions({
+    this.injectPloadAsLoad = false,
+    this.injectMaxRepsAsReps = true,
+    this.injectMinRepsAsReps = false,
+    this.injectRpeAsRpe = false,
+    this.applyToAll = true,
+    this.allSets = true,
+    this.knsOptions = const <int, _KnsInjectOptions>{},
+  });
+
+  WbInjectionOptions toServiceOptions() {
+    final serviceKnsOptions = <int, WbKnsInjectionOptions>{
+      for (final entry in knsOptions.entries)
+        entry.key: WbKnsInjectionOptions(
+          injectPloadAsLoad: entry.value.injectPloadAsLoad,
+          injectMaxRepsAsReps: entry.value.injectMaxRepsAsReps,
+          injectMinRepsAsReps: entry.value.injectMinRepsAsReps,
+          injectRpeAsRpe: entry.value.injectRpeAsRpe,
+        ),
+    };
+    return WbInjectionOptions(
+      injectPloadAsLoad: injectPloadAsLoad,
+      injectMaxRepsAsReps: injectMaxRepsAsReps,
+      injectMinRepsAsReps: injectMinRepsAsReps,
+      injectRpeAsRpe: injectRpeAsRpe,
+      applyToAll: applyToAll,
+      allSets: allSets,
+      knsOptions: serviceKnsOptions,
+    );
+  }
 }
 
 class _WbInjectConfigDialog extends StatefulWidget {
   final Map<String, dynamic> wbData;
-  final Function(bool usePload, bool allSets) onInject;
+  final List<int> knsIds;
+  final Function(_InjectOptions options) onInject;
   final VoidCallback onCancel;
-  const _WbInjectConfigDialog(
-      {super.key,
-      required this.wbData,
-      required this.onInject,
-      required this.onCancel});
+  const _WbInjectConfigDialog({
+    super.key,
+    required this.wbData,
+    required this.knsIds,
+    required this.onInject,
+    required this.onCancel,
+  });
   @override
   State<_WbInjectConfigDialog> createState() => _WbInjectConfigDialogState();
 }
 
 class _WbInjectConfigDialogState extends State<_WbInjectConfigDialog> {
-  bool _usePload = false;
+  bool _applyToAll = true;
+  bool _injectPloadAsLoad = false;
+  bool _injectMaxRepsAsReps = true;
+  bool _injectMinRepsAsReps = false;
+  bool _injectRpeAsRpe = false;
   bool _allSets = true;
+  late Map<int, _KnsInjectOptions> _knsOptions;
+
+  @override
+  void initState() {
+    super.initState();
+    _knsOptions = {
+      for (final id in widget.knsIds) id: _KnsInjectOptions(),
+    };
+  }
+
+  void _syncKnsFromGlobal() {
+    setState(() {
+      _knsOptions = {
+        for (final id in widget.knsIds)
+          id: _KnsInjectOptions(
+            injectPloadAsLoad: _injectPloadAsLoad,
+            injectMaxRepsAsReps: _injectMaxRepsAsReps,
+            injectMinRepsAsReps: _injectMinRepsAsReps,
+            injectRpeAsRpe: _injectRpeAsRpe,
+          ),
+      };
+    });
+  }
+
+  void _setKnsOption(int knsId, void Function(_KnsInjectOptions) update) {
+    setState(() {
+      final current = _knsOptions[knsId] ?? _KnsInjectOptions();
+      final next = _KnsInjectOptions(
+        injectPloadAsLoad: current.injectPloadAsLoad,
+        injectMaxRepsAsReps: current.injectMaxRepsAsReps,
+        injectMinRepsAsReps: current.injectMinRepsAsReps,
+        injectRpeAsRpe: current.injectRpeAsRpe,
+      );
+      update(next);
+      _knsOptions[knsId] = next;
+    });
+  }
+
+  Widget _optionRow({
+    required String label,
+    required bool value,
+    required void Function(bool?) onTap,
+    bool disabled = false,
+    bool compareWithGlobal = false,
+  }) {
+    final effectiveValue = compareWithGlobal && _applyToAll
+        ? value == _globalValueFor(label)
+        : value;
+    return CheckboxListTile(
+      value: effectiveValue,
+      onChanged: disabled ? null : onTap,
+      title: Text(label,
+          style: LabStyles.mono(context, fontSize: 10, color: Colors.white)),
+      controlAffinity: ListTileControlAffinity.leading,
+      contentPadding: EdgeInsets.zero,
+      visualDensity: VisualDensity.compact,
+      activeColor: LabColors.primary,
+      checkColor: Colors.black,
+    );
+  }
+
+  bool _globalValueFor(String label) {
+    switch (label) {
+      case 'P.LOAD -> LOAD':
+        return _injectPloadAsLoad;
+      case 'MAX REPS -> REPS':
+        return _injectMaxRepsAsReps;
+      case 'MIN REPS -> REPS':
+        return _injectMinRepsAsReps;
+      case 'RPE -> RPE':
+        return _injectRpeAsRpe;
+      default:
+        return false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
       backgroundColor: LabColors.background,
-      title: Text('INJECT WB',
+      title: Text('INJECT WB OPTIONS',
           style: LabStyles.mono(context,
               fontSize: 14, fontWeight: FontWeight.bold)),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('${widget.wbData['name']}',
-              style: LabStyles.headline(context)
-                  .copyWith(fontSize: 16, color: LabColors.primary)),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey[700]!, width: 0.5)),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('LOAD OPTIONS',
-                    style: LabStyles.mono(context,
-                        fontSize: 10,
-                        color: Colors.grey[400],
-                        fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                InkWell(
-                  onTap: () => setState(() => _usePload = !_usePload),
-                  child: Row(children: [
-                    Icon(
-                        _usePload
-                            ? Icons.check_box
-                            : Icons.check_box_outline_blank,
-                        color: LabColors.primary,
-                        size: 20),
-                    const SizedBox(width: 8),
-                    Text('USE P.LOAD AS LOAD',
+      content: SizedBox(
+        width: double.maxFinite,
+        height: MediaQuery.of(context).size.height * 0.62,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('${widget.wbData['name']}',
+                  style: LabStyles.headline(context)
+                      .copyWith(fontSize: 16, color: LabColors.primary)),
+              const SizedBox(height: 12),
+              _chipRow(),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                    border: Border.all(
+                        color: LabColors.primary.withValues(alpha: 0.55),
+                        width: 0.5)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('GLOBAL KNS/SET OPTIONS',
                         style: LabStyles.mono(context,
-                            fontSize: 10, color: Colors.white)),
-                  ]),
+                            fontSize: 10,
+                            color: LabColors.primary,
+                            fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    _optionRow(
+                      label: 'P.LOAD -> LOAD',
+                      value: _injectPloadAsLoad,
+                      onTap: (_) => setState(
+                          () => _injectPloadAsLoad = !_injectPloadAsLoad),
+                      disabled: !_applyToAll,
+                    ),
+                    _optionRow(
+                      label: 'MAX REPS -> REPS',
+                      value: _injectMaxRepsAsReps,
+                      onTap: (_) => setState(
+                          () => _injectMaxRepsAsReps = !_injectMaxRepsAsReps),
+                      disabled: !_applyToAll,
+                    ),
+                    _optionRow(
+                      label: 'MIN REPS -> REPS',
+                      value: _injectMinRepsAsReps,
+                      onTap: (_) => setState(
+                          () => _injectMinRepsAsReps = !_injectMinRepsAsReps),
+                      disabled: !_applyToAll,
+                    ),
+                    _optionRow(
+                      label: 'RPE -> RPE',
+                      value: _injectRpeAsRpe,
+                      onTap: (_) =>
+                          setState(() => _injectRpeAsRpe = !_injectRpeAsRpe),
+                      disabled: !_applyToAll,
+                    ),
+                    const SizedBox(height: 8),
+                    _optionRow(
+                      label: 'INJECT ALL SETS',
+                      value: _allSets,
+                      onTap: (_) => setState(() => _allSets = !_allSets),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                InkWell(
-                  onTap: () => setState(() => _allSets = !_allSets),
-                  child: Row(children: [
-                    Icon(
-                        _allSets
-                            ? Icons.check_box
-                            : Icons.check_box_outline_blank,
-                        color: LabColors.primary,
-                        size: 20),
-                    const SizedBox(width: 8),
-                    Text('INJECT ALL SETS',
-                        style: LabStyles.mono(context,
-                            fontSize: 10, color: Colors.white)),
-                  ]),
-                ),
-                if (!_allSets)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4, left: 28),
-                    child: Text('(SINGLE DEFAULT SET ONLY)',
-                        style: LabStyles.mono(context,
-                            fontSize: 8, color: Colors.grey[500])),
-                  ),
-              ],
-            ),
+              ),
+              if (!_applyToAll) ..._perKnsSections(),
+            ],
           ),
-        ],
+        ),
       ),
       actions: [
         TextButton(
@@ -7225,10 +5981,133 @@ class _WbInjectConfigDialogState extends State<_WbInjectConfigDialog> {
             child: Text('CANCEL',
                 style: LabStyles.mono(context, color: Colors.grey))),
         TextButton(
-            onPressed: () => widget.onInject(_usePload, _allSets),
+            onPressed: () => widget.onInject(_InjectOptions(
+                  injectPloadAsLoad: _injectPloadAsLoad,
+                  injectMaxRepsAsReps: _injectMaxRepsAsReps,
+                  injectMinRepsAsReps: _injectMinRepsAsReps,
+                  injectRpeAsRpe: _injectRpeAsRpe,
+                  applyToAll: _applyToAll,
+                  allSets: _allSets,
+                  knsOptions: _knsOptions,
+                )),
             child: Text('INJECT',
                 style: LabStyles.mono(context, color: LabColors.primary))),
       ],
     );
+  }
+
+  Widget _chipRow() {
+    final applyColor = _applyToAll ? LabColors.primary : Colors.grey[800]!;
+    final perColor = _applyToAll ? Colors.grey[800]! : LabColors.primary;
+    return Row(
+      children: [
+        _scopeChip(
+          label: 'APPLY TO ALL KNS/SETS',
+          active: _applyToAll,
+          color: applyColor,
+          onTap: () {
+            setState(() {
+              _applyToAll = true;
+              _knsOptions = {
+                for (final id in widget.knsIds)
+                  id: _KnsInjectOptions(
+                    injectPloadAsLoad: _injectPloadAsLoad,
+                    injectMaxRepsAsReps: _injectMaxRepsAsReps,
+                    injectMinRepsAsReps: _injectMinRepsAsReps,
+                    injectRpeAsRpe: _injectRpeAsRpe,
+                  ),
+              };
+            });
+          },
+        ),
+        const SizedBox(width: 8),
+        _scopeChip(
+          label: 'EACH KNS',
+          active: !_applyToAll,
+          color: perColor,
+          onTap: () {
+            setState(() => _applyToAll = false);
+            if (_knsOptions.isEmpty) _syncKnsFromGlobal();
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _scopeChip({
+    required String label,
+    required bool active,
+    required Color color,
+    required void Function() onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+              color: active
+                  ? LabColors.primary.withValues(alpha: 0.8)
+                  : Colors.grey[800]!,
+              width: 0.5),
+        ),
+        child: Text(label,
+            style: LabStyles.mono(context,
+                fontSize: 8, color: active ? Colors.black : Colors.white)),
+      ),
+    );
+  }
+
+  List<Widget> _perKnsSections() {
+    final sections = <Widget>[];
+    for (final id in widget.knsIds) {
+      final opts = _knsOptions[id] ?? _KnsInjectOptions();
+      sections.add(const SizedBox(height: 12));
+      sections.add(Text('KNS #$id',
+          style: LabStyles.mono(context,
+              fontSize: 10,
+              color: LabColors.primary,
+              fontWeight: FontWeight.bold)));
+      sections.add(Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey[800]!, width: 0.5)),
+        child: Column(
+          children: [
+            _optionRow(
+              label: 'P.LOAD -> LOAD',
+              value: opts.injectPloadAsLoad,
+              compareWithGlobal: true,
+              onTap: (_) => _setKnsOption(
+                  id, (o) => o.injectPloadAsLoad = !o.injectPloadAsLoad),
+            ),
+            _optionRow(
+              label: 'MAX REPS -> REPS',
+              value: opts.injectMaxRepsAsReps,
+              compareWithGlobal: true,
+              onTap: (_) => _setKnsOption(
+                  id, (o) => o.injectMaxRepsAsReps = !o.injectMaxRepsAsReps),
+            ),
+            _optionRow(
+              label: 'MIN REPS -> REPS',
+              value: opts.injectMinRepsAsReps,
+              compareWithGlobal: true,
+              onTap: (_) => _setKnsOption(
+                  id, (o) => o.injectMinRepsAsReps = !o.injectMinRepsAsReps),
+            ),
+            _optionRow(
+              label: 'RPE -> RPE',
+              value: opts.injectRpeAsRpe,
+              compareWithGlobal: true,
+              onTap: (_) => _setKnsOption(
+                  id, (o) => o.injectRpeAsRpe = !o.injectRpeAsRpe),
+            ),
+          ],
+        ),
+      ));
+    }
+    return sections;
   }
 }

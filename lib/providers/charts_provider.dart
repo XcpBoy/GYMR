@@ -296,49 +296,6 @@ final oneRmProgressionProvider = StreamProvider.family<List<OneRmPoint>, (int, D
   });
 });
 
-final acousticCorrelationProvider = StreamProvider.family<List<AcousticMetric>, (int?, DateTimeRange?)>((ref, arg) {
-  final exerciseId = arg.$1;
-  final range = arg.$2;
-  final db = ref.watch(databaseProvider);
-
-  var query = db.select(db.workoutSets).join([
-    innerJoin(db.baseExercises, db.baseExercises.id.equalsExp(db.workoutSets.baseExerciseId)),
-  ])..where(db.workoutSets.trackName.isNotNull());
-
-  if (exerciseId != null) {
-    query.where(db.workoutSets.baseExerciseId.equals(exerciseId));
-  }
-  if (range != null) {
-    query.where(db.workoutSets.timestamp.isBetweenValues(range.start, range.end));
-  }
-
-  return query.watch().map((rows) {
-    final Map<String, int> counts = {};
-    for (final row in rows) {
-      final set = row.readTable(db.workoutSets);
-      final exercise = row.readTable(db.baseExercises);
-      
-      // Filter out Acoustic Level 0 (defaults) and empty track names
-      if ((set.hypeLevel ?? 0) == 0) continue;
-
-      final rawTrack = set.trackName?.trim().toUpperCase() ?? "";
-      if (rawTrack.isEmpty || rawTrack == "NONE" || rawTrack == "NULL") continue;
-
-      final key = exerciseId == null ? rawTrack : "$rawTrack|${exercise.name}";
-      counts[key] = (counts[key] ?? 0) + 1;
-    }
-
-    return counts.entries.map((e) {
-      if (exerciseId == null) {
-        return AcousticMetric(trackName: e.key, exerciseName: "ALL", count: e.value);
-      } else {
-        final parts = e.key.split('|');
-        return AcousticMetric(trackName: parts[0], exerciseName: parts[1], count: e.value);
-      }
-    }).toList()..sort((a, b) => b.count.compareTo(a.count));
-  });
-});
-
 final phaseFailureProvider = StreamProvider.family<List<PhaseMetric>, (int?, DateTimeRange?)>((ref, arg) {
   final exerciseId = arg.$1;
   final range = arg.$2;

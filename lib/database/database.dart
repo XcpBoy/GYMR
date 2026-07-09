@@ -343,6 +343,24 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  // Workout Blocks / plan_day_blocks are not version-gated in onUpgrade:
+  // they're created and column-patched here in beforeOpen instead, so a DB
+  // file restored from an older backup (not just a normal version upgrade)
+  // still self-heals. That means their real schema history lives in this
+  // method, not in the onUpgrade "from < X" ladder above.
+  //
+  // beforeOpen runs on every app launch, so naively re-running ALTER TABLE
+  // ADD COLUMN forever and swallowing the resulting "duplicate column"
+  // error hides genuine failures. Check first instead.
+  Future<void> _addColumnIfMissing(
+      String table, String column, String columnDef) async {
+    final cols = await customSelect('PRAGMA table_info($table)').get();
+    final exists = cols.any((row) => row.data['name'] == column);
+    if (!exists) {
+      await customStatement('ALTER TABLE $table ADD COLUMN $column $columnDef');
+    }
+  }
+
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
@@ -650,30 +668,17 @@ class AppDatabase extends _$AppDatabase {
         ''');
         // Repair legacy plan_day_blocks schemas that used day/block aliases before
         // the Drift table was standardized to day_id / block_id.
-        try {
-          await customStatement(
-              'ALTER TABLE plan_day_blocks ADD COLUMN day_id INTEGER NOT NULL DEFAULT 0');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE plan_day_blocks ADD COLUMN plan_day_id INTEGER NOT NULL DEFAULT 0');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE plan_day_blocks ADD COLUMN block_id INTEGER NOT NULL DEFAULT 0');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE plan_day_blocks ADD COLUMN workout_block_id INTEGER NOT NULL DEFAULT 0');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE plan_day_blocks ADD COLUMN order_index INTEGER NOT NULL DEFAULT 0');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE plan_day_blocks ADD COLUMN notes TEXT');
-        } catch (_) {}
+        await _addColumnIfMissing(
+            'plan_day_blocks', 'day_id', 'INTEGER NOT NULL DEFAULT 0');
+        await _addColumnIfMissing(
+            'plan_day_blocks', 'plan_day_id', 'INTEGER NOT NULL DEFAULT 0');
+        await _addColumnIfMissing(
+            'plan_day_blocks', 'block_id', 'INTEGER NOT NULL DEFAULT 0');
+        await _addColumnIfMissing(
+            'plan_day_blocks', 'workout_block_id', 'INTEGER NOT NULL DEFAULT 0');
+        await _addColumnIfMissing(
+            'plan_day_blocks', 'order_index', 'INTEGER NOT NULL DEFAULT 0');
+        await _addColumnIfMissing('plan_day_blocks', 'notes', 'TEXT');
         for (final alias in const ['plan_day_id', 'plan_days_id', 'plan_day']) {
           try {
             await customStatement('''
@@ -711,93 +716,63 @@ class AppDatabase extends _$AppDatabase {
           ''');
         } catch (_) {}
         // Add missing columns (safe for hot restart where beforeOpen doesn't re-run)
-        try {
-          await customStatement(
-              'ALTER TABLE workout_blocks ADD COLUMN intention TEXT');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_blocks ADD COLUMN description TEXT');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_blocks ADD COLUMN deleted_at INTEGER');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_block_kns ADD COLUMN utilities TEXT');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_block_kns ADD COLUMN batch_name TEXT');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_block_kns ADD COLUMN metadata TEXT');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_block_sets ADD COLUMN reps_min REAL');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_block_sets ADD COLUMN reps_max REAL');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_block_sets ADD COLUMN pload REAL');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_block_sets ADD COLUMN rpe REAL');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_block_sets ADD COLUMN rir REAL');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_block_sets ADD COLUMN set_intention TEXT');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_block_sets ADD COLUMN side TEXT');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_block_sets ADD COLUMN tags TEXT');
-        } catch (_) {}
-        try {
-          await customStatement(
-              'ALTER TABLE workout_block_sets ADD COLUMN metadata TEXT');
-        } catch (_) {}
+        await _addColumnIfMissing('workout_blocks', 'intention', 'TEXT');
+        await _addColumnIfMissing('workout_blocks', 'description', 'TEXT');
+        await _addColumnIfMissing('workout_blocks', 'deleted_at', 'INTEGER');
+        await _addColumnIfMissing('workout_block_kns', 'utilities', 'TEXT');
+        await _addColumnIfMissing('workout_block_kns', 'batch_name', 'TEXT');
+        await _addColumnIfMissing('workout_block_kns', 'metadata', 'TEXT');
+        await _addColumnIfMissing('workout_block_sets', 'reps_min', 'REAL');
+        await _addColumnIfMissing('workout_block_sets', 'reps_max', 'REAL');
+        await _addColumnIfMissing('workout_block_sets', 'pload', 'REAL');
+        await _addColumnIfMissing('workout_block_sets', 'rpe', 'REAL');
+        await _addColumnIfMissing('workout_block_sets', 'rir', 'REAL');
+        await _addColumnIfMissing(
+            'workout_block_sets', 'set_intention', 'TEXT');
+        await _addColumnIfMissing('workout_block_sets', 'side', 'TEXT');
+        await _addColumnIfMissing('workout_block_sets', 'tags', 'TEXT');
+        await _addColumnIfMissing('workout_block_sets', 'metadata', 'TEXT');
       },
     );
   }
 }
 
+final Map<String, dynamic> _defaultComplexMetadata = {
+  "regressions": [],
+  "progressions": [],
+  "alters": [],
+  "particular_toggles": [],
+  "description": ""
+};
+
+// jsonDecode is synchronous and complexMetadata is read on every rebuild
+// (search/filter loops over the full exercise list call this per item, per
+// keystroke). Cache by raw JSON string so repeated reads of the same value
+// don't reparse. Safe to share the returned map across callers: nothing in
+// the codebase mutates the result, it's read-only lookups everywhere.
+final Map<String, Map<String, dynamic>> _complexMetadataCache = {};
+
 extension BaseExerciseExtension on BaseExercise {
   Map<String, dynamic> get parsedComplexMetadata {
-    final defaultMap = {
-      "regressions": [],
-      "progressions": [],
-      "alters": [],
-      "particular_toggles": [],
-      "description": ""
-    };
-    if (complexMetadata == null || complexMetadata!.isEmpty) {
-      return defaultMap;
+    final raw = complexMetadata;
+    if (raw == null || raw.isEmpty) {
+      return _defaultComplexMetadata;
     }
+    final cached = _complexMetadataCache[raw];
+    if (cached != null) return cached;
+    Map<String, dynamic> result;
     try {
-      final decoded = jsonDecode(complexMetadata!) as Map<String, dynamic>;
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
       // Ensure all keys exist with correct types
-      defaultMap.forEach((key, value) {
+      _defaultComplexMetadata.forEach((key, value) {
         decoded.putIfAbsent(key, () => value);
       });
-      return decoded;
+      result = decoded;
     } catch (_) {
-      return defaultMap;
+      result = _defaultComplexMetadata;
     }
+    _complexMetadataCache[raw] = result;
+    return result;
   }
 
   List<Map<String, dynamic>> get _parsedBodyPositions {

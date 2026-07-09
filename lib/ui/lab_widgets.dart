@@ -497,7 +497,14 @@ class QualitySearchPicker extends StatefulWidget {
   final String title;
   final List<String> values;
   final Function(String) onSelected;
-  const QualitySearchPicker({super.key, required this.title, required this.values, required this.onSelected});
+  final bool closeOnSelect;
+  const QualitySearchPicker({
+    super.key,
+    required this.title,
+    required this.values,
+    required this.onSelected,
+    this.closeOnSelect = true,
+  });
   @override State<QualitySearchPicker> createState() => _QualitySearchPickerState();
 }
 
@@ -545,7 +552,10 @@ class _QualitySearchPickerState extends State<QualitySearchPicker> {
               itemCount: flt.length,
               itemBuilder: (c, i) => ListTile(
                 title: Text(flt[i].toUpperCase(), style: LabStyles.mono(context, fontSize: 12)),
-                onTap: () { widget.onSelected(flt[i]); Navigator.pop(context); }
+                onTap: () {
+                  widget.onSelected(flt[i]);
+                  if (widget.closeOnSelect) Navigator.pop(context);
+                }
               )
             )
           )
@@ -579,7 +589,9 @@ class LabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
       onTap: onPressed,
       child: Container(
         width: double.infinity,
@@ -596,6 +608,7 @@ class LabButton extends StatelessWidget {
           style: LabStyles.mono(context, color: color, fontWeight: FontWeight.bold, fontSize: fontSize),
         ),
       ),
+    ),
     );
   }
 }

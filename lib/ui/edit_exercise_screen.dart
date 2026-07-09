@@ -7,7 +7,7 @@ import '../database/database.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
-import 'workout_manager.dart';
+import 'wb_shared/wb_shared_widgets.dart';
 import 'complex_metadata_screen.dart'; // NEW
 
 class EditExerciseScreen extends ConsumerStatefulWidget {
@@ -31,6 +31,7 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
   late TextEditingController _tissueNameController;
   late TextEditingController _numPhasesController;
   late TextEditingController _descriptionController;
+  late TextEditingController _vpMultiplierController;
 
   String _loadType = 'EXT.LOAD';
   bool _isIsometric = false;
@@ -74,6 +75,8 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
 
     _numPhasesController = TextEditingController(text: (e.numPhases ?? 1).toString());
     _descriptionController = TextEditingController(text: e.parsedComplexMetadata["description"] ?? "");
+    _vpMultiplierController = TextEditingController(
+        text: (e.parsedComplexMetadata["vpMultiplier"] as num?)?.toString() ?? "1.0");
 
     final rawImplements = e.implements?.split(',') ?? [];
     for (var i in rawImplements) {
@@ -126,6 +129,7 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
     _nameController.dispose(); _primaryMuscleController.dispose(); _secondaryMuscleController.dispose();
     _fieldController.dispose(); _intentionController.dispose(); _patternTypeController.dispose();
     _tissueTypeController.dispose(); _tissueNameController.dispose(); _numPhasesController.dispose();
+    _vpMultiplierController.dispose();
     for (var c in [..._prefixControllers, ..._suffixControllers, ..._implementControllers, ..._bodyPositionControllers, ..._phaseDescriptionControllers]) {
       c.dispose();
     }
@@ -177,7 +181,7 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
           suffixes: drift.Value(suffixes.isEmpty ? null : suffixes.toUpperCase()),
           numPhases: drift.Value(int.tryParse(_numPhasesController.text) ?? 1),
           phaseDescriptions: drift.Value(jsonEncode(metadata)),
-          complexMetadata: drift.Value(jsonEncode({..._complexMetadata, "classification": _classification, "description": _descriptionController.text.trim()})),
+          complexMetadata: drift.Value(jsonEncode({..._complexMetadata, "classification": _classification, "description": _descriptionController.text.trim(), "vpMultiplier": double.tryParse(_vpMultiplierController.text) ?? 1.0})),
           isUnilateral: drift.Value(_isUnilateral),
         ),
       );
@@ -450,6 +454,15 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
               _buildIsometricToggle(),
               const SizedBox(height: 8),
               _buildUnilateralToggle(),
+              const SizedBox(height: 16),
+              Row(children: [
+                Expanded(
+                    child: LabTextField(
+                        controller: _vpMultiplierController,
+                        label: 'VP MULTIPLIER',
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true))),
+              ]),
 
               const SizedBox(height: 32),
               _buildSectionTitle('TARGETING'),

@@ -20,7 +20,7 @@ class PerformanceDashboard extends ConsumerStatefulWidget {
   ConsumerState<PerformanceDashboard> createState() => _PerformanceDashboardState();
 }
 
-enum ChartTab { session, muscle, movement, oneRm, acoustic, failure, somatic }
+enum ChartTab { session, muscle, movement, oneRm, failure, somatic }
 
 class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
   late ChartTab _selectedTab;
@@ -30,7 +30,6 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
   // Filters
   DateTimeRange? _globalTimeRange;
   int? _oneRmExId;
-  int? _acousticExId;
   int? _failureExId;
 
   // Somatic specific
@@ -42,7 +41,6 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
     _selectedTab = widget.initialTab ?? ChartTab.session;
     if (widget.initialExerciseId != null) {
       _oneRmExId = widget.initialExerciseId;
-      _acousticExId = widget.initialExerciseId;
       _failureExId = widget.initialExerciseId;
     }
     // Performance optimization: Default to last 30 days
@@ -66,7 +64,6 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
     final sessionData = ref.watch(sessionsMetricsProvider(_globalTimeRange));
     final muscleData = ref.watch(muscleMetricsProvider((_selectedMuscleMetric, _globalTimeRange)));
     final movementData = ref.watch(exerciseMetricsProvider((_selectedExerciseMetric, _globalTimeRange)));
-    final acousticData = ref.watch(acousticCorrelationProvider((_acousticExId, _globalTimeRange)));
     final phaseData = ref.watch(phaseFailureProvider((_failureExId, _globalTimeRange)));
     final discomfortData = ref.watch(discomfortMetricsProvider(_globalTimeRange));
     final exercises = ref.watch(allExercisesProvider);
@@ -99,7 +96,6 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
               sessionData: sessionData,
               muscleData: muscleData,
               movementData: movementData,
-              acousticData: acousticData,
               phaseData: phaseData,
               discomfortData: discomfortData,
               exercises: exercises,
@@ -200,7 +196,6 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
     required AsyncValue<List<SessionMetric>> sessionData,
     required AsyncValue<List<MuscleMetric>> muscleData,
     required AsyncValue<List<MuscleMetric>> movementData,
-    required AsyncValue<List<AcousticMetric>> acousticData,
     required AsyncValue<List<PhaseMetric>> phaseData,
     required AsyncValue<List<DiscomfortMetric>> discomfortData,
     required AsyncValue<List<BaseExercise>> exercises,
@@ -309,59 +304,6 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
                     loading: () => const Center(child: CircularProgressIndicator()),
                     error: (e, s) => const Text("ERR"),
                   ),
-            ),
-          ],
-        );
-
-      case ChartTab.acoustic:
-        return Column(
-          children: [
-            _buildSearchableSelector(exercises, _acousticExId, (val) => setState(() => _acousticExId = val), allowAll: true),
-            const SizedBox(height: 16),
-            acousticData.when(
-              data: (data) {
-                // Filter out anomalies and requested patterns
-                final filteredData = data.where((e) {
-                  final name = e.trackName.toUpperCase();
-                  return !name.contains("RED PR") && !name.contains("REP PR");
-                }).toList();
-
-                final acousticProportionData = filteredData.take(20).toList().asMap().entries.map((entry) {
-                  return MuscleMetric(
-                    muscle: entry.value.trackName
-                      .replaceAll(RegExp(r'\[RED_PR\]|REP PR|RED PR', caseSensitive: false), '')
-                      .trim(),
-                    value: entry.value.count.toDouble(),
-                    color: HSVColor.fromAHSV(1.0, (entry.key * 137.5) % 360, 0.7, 1.0).toColor(), // 100+ Neon distribution
-                  );
-                }).toList();
-
-                return Column(
-                  children: [
-                    LabChartContainer(
-                      title: "06.ACOUSTIC_PLOT",
-                      child: TechnicalBarChart(
-                        values: filteredData.take(10).map((e) => e.count.toDouble()).toList(),
-                        labels: filteredData.take(10).map((e) => e.trackName
-                          .replaceAll(RegExp(r'\[RED_PR\]|REP PR|RED PR', caseSensitive: false), '')
-                          .trim()).toList(),
-                        color: LabColors.primaryDim,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    LabChartContainer(
-                      title: "6.1 ACOUSTIC_PROPORTIONS",
-                      child: MuscleDonutChart(
-                        data: acousticProportionData,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildLegend(acousticProportionData, null, customUnit: "SETS"),
-                  ],
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, s) => const Text("ERR"),
             ),
           ],
         );
