@@ -290,6 +290,10 @@ class WorkoutBlockSets extends Table {
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
+  // For tests only: pass an in-memory NativeDatabase instead of the real
+  // on-disk file, so smoke tests never touch a user's actual data.
+  AppDatabase.forTesting(QueryExecutor executor) : super(executor);
+
   @override
   int get schemaVersion => 29;
 
