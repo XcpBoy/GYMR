@@ -59,32 +59,6 @@ class WbKnsInjectionOptions {
 class OvarchPlanInjectionService {
   static Future<List<Map<String, dynamic>>> activeWorkoutBlocks(
       AppDatabase db) async {
-    final legacyById = <int, Map<String, dynamic>>{};
-    var hasLegacySnapshot = false;
-    try {
-      final legacyRows =
-          await db.customSelect('SELECT data FROM wb_store WHERE id = 1').get();
-      hasLegacySnapshot = legacyRows.isNotEmpty;
-      if (hasLegacySnapshot) {
-        final raw = legacyRows.first.data['data'] as String;
-        final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
-        for (final item in list) {
-          final id = int.tryParse(item['id'].toString().replaceAll('wb_', ''));
-          if (id == null || id <= 0) continue;
-          final name = (item['name'] as String?).toString().trim();
-          if (name.isEmpty) continue;
-          legacyById[id] = <String, dynamic>{
-            'id': id,
-            'name': name.toUpperCase(),
-            'intention': item['intention'] as String?,
-            'description': item['description'] as String?,
-            'createdAt': item['createdAt'] as int?,
-            'source': 'legacy',
-          };
-        }
-      }
-    } catch (_) {}
-
     final realRows = await db.customSelect('''
       SELECT id, name, intention, description, created_at, deleted_at
       FROM workout_blocks
@@ -92,57 +66,20 @@ class OvarchPlanInjectionService {
       ORDER BY lower(name) ASC
     ''').get();
 
-    final activeById = <int, Map<String, dynamic>>{};
-    final deletedRealIds = <int>{};
-    for (final row in realRows) {
-      final id = row.data['id'] as int;
-      final deletedAt = row.data['deleted_at'] as int?;
-      if (deletedAt != null && deletedAt > 0) {
-        deletedRealIds.add(id);
-        continue;
-      }
-      if (hasLegacySnapshot && !legacyById.containsKey(id)) continue;
-      activeById[id] = <String, dynamic>{
-        'id': id,
-        'name': row.data['name'] as String,
-        'intention': row.data['intention'] as String?,
-        'description': row.data['description'] as String?,
-        'createdAt': row.data['created_at'] as int?,
-        'source': 'real',
-      };
-    }
-
-    for (final entry in legacyById.entries) {
-      final id = entry.key;
-      if (deletedRealIds.contains(id)) continue;
-      final legacy = entry.value;
-      if (activeById.containsKey(id)) {
-        final real = activeById[id]!;
-        if ((real['name'] as String).isEmpty ||
-            RegExp(r'^WB\s*\d+$').hasMatch(real['name'] as String)) {
-          real['name'] = legacy['name'];
-        }
-        real['createdAt'] ??= legacy['createdAt'];
-      } else {
-        activeById[id] = legacy;
-      }
-    }
-
-    final values = activeById.values.toList()
+    final values = realRows
+        .map((row) => <String, dynamic>{
+              'id': row.data['id'] as int,
+              'name': row.data['name'] as String,
+              'intention': row.data['intention'] as String?,
+              'description': row.data['description'] as String?,
+              'createdAt': row.data['created_at'] as int?,
+            })
+        .toList()
       ..sort((a, b) => (a['name'] as String)
           .toLowerCase()
           .compareTo((b['name'] as String).toLowerCase()));
-    print(
-        '[OVARCH_ACTIVE_WB] hasLegacy=$hasLegacySnapshot legacy=${legacyById.length} active=${values.length} deletedReal=${deletedRealIds.length}');
-    return values
-        .map((item) => <String, dynamic>{
-              'id': item['id'] as int,
-              'name': item['name'] as String,
-              'intention': item['intention'] as String?,
-              'description': item['description'] as String?,
-              'createdAt': item['createdAt'] as int?,
-            })
-        .toList();
+    print('[OVARCH_ACTIVE_WB] active=${values.length}');
+    return values;
   }
 
   static Future<List<Map<String, dynamic>>> planDaysWithBlocks(
@@ -211,8 +148,6 @@ class OvarchPlanInjectionService {
         '[OVARCH_INJECT] workoutBlockById rows=$blockId rowsFound=${rows.length}');
 
     if (rows.isEmpty) {
-      final legacy = await _legacyWorkoutBlockPayload(db, blockId);
-      if (legacy != null) return legacy;
       final activeBlocks = await activeWorkoutBlocks(db);
       if (activeBlocks.length == 1) {
         final fallback = activeBlocks.first;
@@ -235,39 +170,6 @@ class OvarchPlanInjectionService {
     print(
         '[OVARCH_INJECT] workoutBlockById FOUND id=${payload['id']} name=${payload['name']}');
     return payload;
-  }
-
-  static Future<Map<String, dynamic>?> _legacyWorkoutBlockPayload(
-      AppDatabase db, int blockId) async {
-    try {
-      final legacyRows =
-          await db.customSelect('SELECT data FROM wb_store WHERE id = 1').get();
-      if (legacyRows.isEmpty) return null;
-      final raw = legacyRows.first.data['data'] as String;
-      final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
-      final match = list.firstWhere((item) {
-        final idRaw = item['id'];
-        final idText = idRaw?.toString().replaceAll('wb_', '') ?? '';
-        final idNum = int.tryParse(idText);
-        final createdAt = int.tryParse(item['createdAt']?.toString() ?? '');
-        return idNum == blockId || createdAt == blockId;
-      }, orElse: () => <String, dynamic>{});
-      if (match.isEmpty) return null;
-      final payload = <String, dynamic>{
-        'id': blockId,
-        'name': (match['name'] as String?)?.toString().trim().toUpperCase() ??
-            'WB $blockId',
-        'intention': match['intention'] as String?,
-        'description': match['description'] as String?,
-        'createdAt': int.tryParse(match['createdAt']?.toString() ?? ''),
-        'source': 'legacy',
-      };
-      print(
-          '[OVARCH_INJECT] workoutBlockById LEGACY_FALLBACK id=$blockId name=${payload['name']}');
-      return payload;
-    } catch (_) {
-      return null;
-    }
   }
 
   static Future<void> injectWorkoutBlock(

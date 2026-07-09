@@ -1963,37 +1963,10 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                               [canonical.id, r.id],
                             );
                             // Update workout_block_kns references
-                            final leftRows = await db
-                                .customSelect('SELECT data FROM wb_kns_store')
-                                .get();
-                            for (final knsRow in leftRows) {
-                              try {
-                                final decoded =
-                                    jsonDecode(knsRow.data['data'] as String);
-                                final List<Map<String, dynamic>> knsList;
-                                if (decoded is Map) {
-                                  knsList = (decoded['kns'] as List?)
-                                          ?.cast<Map<String, dynamic>>() ??
-                                      [];
-                                } else {
-                                  knsList = (decoded as List)
-                                      .cast<Map<String, dynamic>>();
-                                }
-                                bool modified = false;
-                                for (final kns in knsList) {
-                                  if (kns['baseExerciseId'] == r.id) {
-                                    kns['baseExerciseId'] = canonical.id;
-                                    modified = true;
-                                  }
-                                }
-                                if (modified) {
-                                  final newData = decoded is Map
-                                      ? jsonEncode(decoded)
-                                      : jsonEncode(knsList);
-                                  // block_id is embedded in the store row — need it
-                                }
-                              } catch (_) {}
-                            }
+                            await db.customStatement(
+                              'UPDATE workout_block_kns SET base_exercise_id = ? WHERE base_exercise_id = ?',
+                              [canonical.id, r.id],
+                            );
                             // Update set_intent_definitions if any FK
                             // Delete the merged row
                             await (db.delete(db.baseExercises)

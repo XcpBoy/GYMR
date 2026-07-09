@@ -5286,28 +5286,37 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
     }
 
     // Find which blocks were injected into this c.wo date via complexMetadata.
+    // Resolve the day's log ids through Drift's typed DateTime comparison
+    // (not a raw millisecondsSinceEpoch literal against wl.date — Drift
+    // stores DateTimeColumn as unix seconds, so that comparison never
+    // matched anything).
     final selectedDate = widget.date;
     final todayStart =
         DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
     final todayEnd = DateTime(
         selectedDate.year, selectedDate.month, selectedDate.day, 23, 59, 59);
+    final logsToday = await (db.select(db.workoutLogs)
+          ..where((t) => t.date.isBetweenValues(todayStart, todayEnd)))
+        .get();
     final injectedBlockIds = <int>{};
-    try {
-      final injectedSets = await db
-          .customSelect(
-              "SELECT DISTINCT json_extract(ws.complex_metadata, '\$.injectedFromBlock') as block_id "
-              "FROM workout_sets ws "
-              "JOIN workout_logs wl ON wl.id = ws.log_id "
-              "WHERE wl.date >= ${todayStart.millisecondsSinceEpoch} AND wl.date <= ${todayEnd.millisecondsSinceEpoch} "
-              "AND ws.complex_metadata LIKE '%injectedFromBlock%'")
-          .get();
-      for (final row in injectedSets) {
-        final rawBid = row.data['block_id'];
-        final bid =
-            rawBid is int ? rawBid : int.tryParse(rawBid?.toString() ?? '');
-        if (bid != null) injectedBlockIds.add(bid);
-      }
-    } catch (_) {}
+    if (logsToday.isNotEmpty) {
+      try {
+        final logIds = logsToday.map((l) => l.id).join(',');
+        final injectedSets = await db
+            .customSelect(
+                "SELECT DISTINCT json_extract(ws.complex_metadata, '\$.injectedFromBlock') as block_id "
+                "FROM workout_sets ws "
+                "WHERE ws.log_id IN ($logIds) "
+                "AND ws.complex_metadata LIKE '%injectedFromBlock%'")
+            .get();
+        for (final row in injectedSets) {
+          final rawBid = row.data['block_id'];
+          final bid =
+              rawBid is int ? rawBid : int.tryParse(rawBid?.toString() ?? '');
+          if (bid != null) injectedBlockIds.add(bid);
+        }
+      } catch (_) {}
+    }
 
     if (injectedBlockIds.isEmpty) {
       if (context.mounted)

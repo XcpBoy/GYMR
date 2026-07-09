@@ -2198,71 +2198,6 @@ class ExportService {
     };
   }
 
-  static Future<List<Map<String, dynamic>>> _legacyWorkoutBlockList(
-      AppDatabase db) async {
-    try {
-      final wbRows =
-          await db.customSelect('SELECT data FROM wb_store WHERE id = 1').get();
-      if (wbRows.isEmpty) return [];
-      final raw = wbRows.first.data['data'] as String;
-      if (raw.isEmpty) return [];
-      final decoded = jsonDecode(raw);
-      if (decoded is List) return decoded.cast<Map<String, dynamic>>();
-    } catch (_) {}
-    return [];
-  }
-
-  static Future<List<Map<String, dynamic>>> _combinedFromLegacy(
-      AppDatabase db, List<Map<String, dynamic>> wbList) async {
-    final combined = <Map<String, dynamic>>[];
-    for (final wb in wbList) {
-      final blockId = _toInt(wb['id']?.toString().replaceAll('wb_', '')) ??
-          _toInt(wb['createdAt']) ??
-          0;
-      if (blockId == 0) continue;
-
-      final knsRows = await db
-          .customSelect(
-              'SELECT id, base_exercise_id, order_index, utilities, batch_name, metadata FROM workout_block_kns WHERE block_id = $blockId ORDER BY order_index ASC')
-          .get();
-
-      if (knsRows.isNotEmpty) {
-        combined.add(await _buildWorkoutBlockCombined(
-          db,
-          blockId,
-          {
-            'id': wb['id'] ?? 'wb_$blockId',
-            'name': wb['name'] ?? 'WB $blockId',
-            'folder': wb['folder'],
-            'intention': wb['intention'],
-            'description': wb['description'],
-            'createdAt': _toInt(wb['createdAt']) ?? 0,
-          },
-          knsRows,
-        ));
-        continue;
-      }
-
-      final legacyKnsRows = await db
-          .customSelect(
-              'SELECT data FROM wb_kns_store WHERE block_id = $blockId')
-          .get();
-      List<Map<String, dynamic>> knsList = [];
-      if (legacyKnsRows.isNotEmpty) {
-        final knsDecoded =
-            jsonDecode(legacyKnsRows.first.data['data'] as String);
-        if (knsDecoded is Map) {
-          knsList =
-              (knsDecoded['kns'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-        } else if (knsDecoded is List) {
-          knsList = knsDecoded.cast<Map<String, dynamic>>();
-        }
-      }
-      combined.add({'wb': wb, 'kns': knsList, 'description': null});
-    }
-    return combined;
-  }
-
   static Future<Map<String, dynamic>> _buildWorkoutBlockCombined(
     AppDatabase db,
     int blockId,
@@ -2344,54 +2279,35 @@ class ExportService {
     };
   }
 
-  static Future<List<Map<String, dynamic>>> _legacyWorkoutBlocksCombinedData(
-      AppDatabase db) async {
-    final legacyList = await _legacyWorkoutBlockList(db);
-    if (legacyList.isEmpty) return [];
-    return _combinedFromLegacy(db, legacyList);
-  }
-
-  static Future<List<Map<String, dynamic>>> _realWorkoutBlocksCombinedData(
+  // workout_blocks (+ workout_block_kns/workout_block_sets) is the sole
+  // source of truth for the WB list. The legacy wb_store/wb_kns_store JSON
+  // blobs are gone — see database.dart's _backfillFolderFromLegacyWbStore,
+  // which backfilled anything that only existed in them and dropped the
+  // tables.
+  static Future<List<Map<String, dynamic>>> loadWorkoutBlocksCombinedData(
       AppDatabase db) async {
     await _ensureWorkoutBlockTables(db);
-    final legacyIds = (await _legacyWorkoutBlockList(db))
-        .map((wb) => _toInt(wb['id']?.toString().replaceAll('wb_', '')))
-        .whereType<int>()
-        .toSet();
     final combined = <Map<String, dynamic>>[];
     final realRows = await db
         .customSelect(
-            'SELECT id, name, intention, description, created_at FROM workout_blocks WHERE COALESCE(deleted_at, 0) = 0 ORDER BY id ASC')
+            'SELECT id, name, folder, intention, description, created_at FROM workout_blocks WHERE COALESCE(deleted_at, 0) = 0 ORDER BY id ASC')
         .get();
 
-    for (final wbRow in legacyIds.isEmpty
-        ? realRows
-        : realRows.where((r) {
-            final id = _toInt(r.data['id']);
-            return id != null && legacyIds.contains(id);
-          })) {
+    for (final wbRow in realRows) {
       final blockId = wbRow.data['id'] as int;
       final wb = {
         'id': 'wb_$blockId',
         'name': wbRow.data['name'] as String,
-        'folder': null,
+        'folder': wbRow.data['folder'] as String?,
         'intention': wbRow.data['intention'] as String?,
         'description': wbRow.data['description'] as String?,
         'createdAt': _toInt(wbRow.data['created_at']) ?? 0,
       };
 
-      var knsRows = await db
+      final knsRows = await db
           .customSelect(
               'SELECT id, base_exercise_id, order_index, utilities, batch_name, metadata FROM workout_block_kns WHERE block_id = $blockId ORDER BY order_index ASC')
           .get();
-
-      if (knsRows.isEmpty) {
-        final legacyCombined = await _combinedFromLegacy(db, [wb]);
-        if (legacyCombined.isNotEmpty) {
-          combined.add(legacyCombined.first);
-          continue;
-        }
-      }
 
       combined.add(await _buildWorkoutBlockCombined(
         db,
@@ -2402,20 +2318,6 @@ class ExportService {
     }
 
     return combined;
-  }
-
-  static Future<List<Map<String, dynamic>>> loadWorkoutBlocksCombinedData(
-      AppDatabase db) async {
-    await _ensureWorkoutBlockTables(db);
-    final countRows = await db
-        .customSelect('SELECT COUNT(*) AS real_count FROM workout_blocks')
-        .get();
-    final realCount = _toInt(countRows.first.data['real_count']) ?? 0;
-    if (realCount == 0) {
-      return _legacyWorkoutBlocksCombinedData(db);
-    }
-
-    return _realWorkoutBlocksCombinedData(db);
   }
 
   static List<Map<String, dynamic>> _parseWorkoutBlockRows(
@@ -2549,18 +2451,6 @@ class ExportService {
 
   static Future<void> _ensureWorkoutBlockTables(AppDatabase db) async {
     await db.customStatement('''
-      CREATE TABLE IF NOT EXISTS wb_store (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        data TEXT NOT NULL
-      )
-    ''');
-    await db.customStatement('''
-      CREATE TABLE IF NOT EXISTS wb_kns_store (
-        block_id INTEGER PRIMARY KEY,
-        data TEXT NOT NULL
-      )
-    ''');
-    await db.customStatement('''
       CREATE TABLE IF NOT EXISTS workout_blocks (
         id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -2666,16 +2556,6 @@ class ExportService {
     int knsCount = 0;
 
     await db.transaction(() async {
-      final existingRows =
-          await db.customSelect('SELECT data FROM wb_store WHERE id = 1').get();
-      List<Map<String, dynamic>> wbList = [];
-      if (existingRows.isNotEmpty) {
-        final raw = existingRows.first.data['data'] as String;
-        if (raw.isNotEmpty) {
-          wbList = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
-        }
-      }
-
       for (final item in parsedBlocks) {
         final wb = item['wb'] as Map<String, dynamic>;
         final wbName = wb['name']?.toString() ?? '';
@@ -2685,38 +2565,25 @@ class ExportService {
         final blockId =
             _toInt(wb['id']?.toString().replaceAll('wb_', '')) ?? createdAt;
         final folder = wb['folder']?.toString();
+        final resolvedFolder = folder?.isNotEmpty == true ? folder : null;
         final intention = wb['intention']?.toString();
         final description =
             item['description']?.toString() ?? wb['description']?.toString();
 
-        final existingWbIndex = wbList.indexWhere((w) =>
-            _toInt(w['id']?.toString().replaceAll('wb_', '')) == blockId);
-        final wbEntry = {
-          'id': 'wb_$blockId',
-          'name': wbName,
-          'folder': folder?.isNotEmpty == true ? folder : null,
-          'createdAt': createdAt,
-        };
-        if (existingWbIndex >= 0) {
-          wbList[existingWbIndex] = wbEntry;
-        } else {
-          wbList.add(wbEntry);
-        }
         blocksCount++;
 
         await db.customStatement(
-          'INSERT OR IGNORE INTO workout_blocks (id, name, intention, description, created_at, deleted_at) VALUES (?, ?, ?, ?, ?, 0)',
-          [blockId, wbName, intention, description, createdAt],
+          'INSERT OR IGNORE INTO workout_blocks (id, name, folder, intention, description, created_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, 0)',
+          [blockId, wbName, resolvedFolder, intention, description, createdAt],
         );
         await db.customStatement(
-            'UPDATE workout_blocks SET name = ?, intention = ?, description = ?, created_at = ?, deleted_at = 0 WHERE id = ?',
-            [wbName, intention, description, createdAt, blockId]);
+            'UPDATE workout_blocks SET name = ?, folder = ?, intention = ?, description = ?, created_at = ?, deleted_at = 0 WHERE id = ?',
+            [wbName, resolvedFolder, intention, description, createdAt, blockId]);
         await db.customStatement(
             'DELETE FROM workout_block_kns WHERE block_id = ?', [blockId]);
 
         final knsList =
             (item['kns'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-        final legacyKns = <Map<String, dynamic>>[];
         var localKnsIndex = 0;
         var fallbackSetIdSeed =
             DateTime.now().microsecondsSinceEpoch + 2000000000;
@@ -2814,40 +2681,10 @@ class ExportService {
             );
           }
 
-          legacyKns.add({
-            'id': knsId,
-            'baseExerciseId': baseExerciseId,
-            'exerciseName': exName,
-            'orderIndex': orderIndex,
-            'utilities': utilities,
-            'batchName': batchName?.isNotEmpty == true ? batchName : null,
-            'intention': meta['intention'] as String?,
-            'isUnilateral': meta['isUnilateral'] as bool? ?? false,
-            'hasSideRows': hasSideRows,
-            'field': kns['field'],
-            'primaryMuscleGroup': kns['primaryMuscleGroup'],
-            'prefixes': kns['prefixes'],
-            'suffixes': kns['suffixes'],
-            'bodyPositions': kns['bodyPositions'],
-            'implements': kns['implements'],
-            'sets': sets,
-          });
           localKnsIndex++;
           knsCount++;
         }
-
-        await db.customStatement(
-          'INSERT OR REPLACE INTO wb_kns_store (block_id, data) VALUES (?, ?)',
-          [
-            blockId,
-            jsonEncode({'description': description, 'kns': legacyKns})
-          ],
-        );
       }
-
-      await db.customStatement(
-          'INSERT OR REPLACE INTO wb_store (id, data) VALUES (1, ?)',
-          [jsonEncode(wbList)]);
     });
 
     return {'blocks': blocksCount, 'kns': knsCount};

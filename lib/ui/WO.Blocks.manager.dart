@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'dart:convert';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
@@ -48,88 +47,62 @@ class WorkoutBlockListNotifier extends StateNotifier<List<WorkoutBlockEntry>> {
   final Ref _ref;
 
   WorkoutBlockListNotifier(this._ref) : super([]) {
-    _initTable();
+    _load();
   }
 
   Future<AppDatabase> _db() async => _ref.read(databaseProvider);
 
-  Future<void> _initTable() async {
-    final db = await _db();
-    await db.customStatement('''
-      CREATE TABLE IF NOT EXISTS wb_store (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        data TEXT NOT NULL
-      )
-    ''');
-    try {
-      await db.customStatement(
-          'ALTER TABLE workout_blocks ADD COLUMN deleted_at INTEGER');
-    } catch (_) {}
-    await _load();
-  }
-
   Future<void> _load() async {
     try {
       final db = await _db();
-      final rows =
-          await db.customSelect('SELECT data FROM wb_store WHERE id = 1').get();
-      if (rows.isNotEmpty) {
-        final raw = rows.first.data['data'] as String;
-        final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
-        state = list.map((j) => WorkoutBlockEntry.fromJson(j)).toList();
-      }
+      final rows = await db.customSelect(
+              'SELECT id, name, folder, created_at FROM workout_blocks WHERE COALESCE(deleted_at, 0) = 0 ORDER BY created_at DESC')
+          .get();
+      state = rows.map((row) {
+        final id = row.data['id'] as int;
+        final createdAtMs = row.data['created_at'] as int;
+        return WorkoutBlockEntry(
+          id: 'wb_$id',
+          name: row.data['name'] as String,
+          folder: row.data['folder'] as String?,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(createdAtMs),
+        );
+      }).toList();
     } catch (e) {
       debugPrint('[WB_LOAD] error: $e');
     }
   }
 
-  Future<void> _save() async {
-    try {
-      final db = await _db();
-      final data = jsonEncode(state.map((b) => b.toJson()).toList());
-      await db.customStatement(
-        'INSERT OR REPLACE INTO wb_store (id, data) VALUES (1, ?)',
-        [data],
-      );
-      for (final b in state) {
-        final blockId = int.tryParse(b.id.replaceAll('wb_', '')) ?? 0;
-        if (blockId == 0) continue;
-        await db.customStatement(
-          'INSERT OR IGNORE INTO workout_blocks (id, name, created_at, deleted_at) VALUES (?, ?, ?, 0)',
-          [blockId, b.name.toUpperCase(), b.createdAt.millisecondsSinceEpoch],
-        );
-        await db.customStatement(
-          'UPDATE workout_blocks SET name = ?, created_at = ?, deleted_at = 0 WHERE id = ?',
-          [b.name.toUpperCase(), b.createdAt.millisecondsSinceEpoch, blockId],
-        );
-      }
-    } catch (e) {
-      debugPrint('[WB_SAVE] error: $e');
-    }
-  }
-
   Future<void> add(String name, {String? folder}) async {
-    final id = 'wb_${DateTime.now().millisecondsSinceEpoch}';
-    state = [
-      ...state,
-      WorkoutBlockEntry(id: id, name: name.toUpperCase(), folder: folder)
-    ];
-    await _save();
+    final db = await _db();
+    final createdAt = DateTime.now();
+    final blockId = createdAt.millisecondsSinceEpoch;
+    try {
+      await db.customStatement(
+        'INSERT INTO workout_blocks (id, name, folder, created_at, deleted_at) VALUES (?, ?, ?, ?, 0)',
+        [blockId, name.trim().toUpperCase(), folder, createdAt.millisecondsSinceEpoch],
+      );
+    } catch (e) {
+      debugPrint('[WB_ADD] error: $e');
+    }
+    await _load();
   }
 
   Future<void> rename(String id, String name) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) return;
-    state = state
-        .map((b) => b.id == id
-            ? WorkoutBlockEntry(
-                id: b.id,
-                name: trimmed.toUpperCase(),
-                folder: b.folder,
-                createdAt: b.createdAt)
-            : b)
-        .toList();
-    await _save();
+    final blockId = int.tryParse(id.replaceAll('wb_', '')) ?? 0;
+    if (blockId == 0) return;
+    final db = await _db();
+    try {
+      await db.customStatement(
+        'UPDATE workout_blocks SET name = ? WHERE id = ?',
+        [trimmed.toUpperCase(), blockId],
+      );
+    } catch (e) {
+      debugPrint('[WB_RENAME] error: $e');
+    }
+    await _load();
   }
 
   Future<void> remove(String id) async {
@@ -140,11 +113,8 @@ class WorkoutBlockListNotifier extends StateNotifier<List<WorkoutBlockEntry>> {
       await db.customStatement(
           'UPDATE workout_blocks SET deleted_at = ? WHERE id = ?',
           [deletedAt, blockId]);
-      await db.customStatement(
-          'DELETE FROM wb_kns_store WHERE block_id = ?', [blockId]);
     }
-    state = state.where((b) => b.id != id).toList();
-    await _save();
+    await _load();
   }
 
   Future<void> removeAll() async {
@@ -156,12 +126,9 @@ class WorkoutBlockListNotifier extends StateNotifier<List<WorkoutBlockEntry>> {
         await db.customStatement(
             'UPDATE workout_blocks SET deleted_at = ? WHERE id = ?',
             [deletedAt, blockId]);
-        await db.customStatement(
-            'DELETE FROM wb_kns_store WHERE block_id = ?', [blockId]);
       }
     }
-    state = [];
-    await _save();
+    await _load();
   }
 
   Future<void> removePastAggressively() async {
@@ -174,24 +141,11 @@ class WorkoutBlockListNotifier extends StateNotifier<List<WorkoutBlockEntry>> {
 
     final allIds = <int>{};
     try {
-      final realRows =
+      final rows =
           await db.customSelect('SELECT id FROM workout_blocks').get();
-      for (final row in realRows) {
+      for (final row in rows) {
         final id = row.data['id'] as int?;
         if (id != null && id > 0) allIds.add(id);
-      }
-    } catch (_) {}
-    try {
-      final legacyRows =
-          await db.customSelect('SELECT data FROM wb_store WHERE id = 1').get();
-      if (legacyRows.isNotEmpty) {
-        final list =
-            (jsonDecode(legacyRows.first.data['data'] as String) as List)
-                .cast<Map<String, dynamic>>();
-        for (final item in list) {
-          final id = int.tryParse(item['id'].toString().replaceAll('wb_', ''));
-          if (id != null && id > 0) allIds.add(id);
-        }
       }
     } catch (_) {}
 
@@ -213,27 +167,24 @@ class WorkoutBlockListNotifier extends StateNotifier<List<WorkoutBlockEntry>> {
     } catch (_) {}
     try {
       await db.customStatement(
-          'DELETE FROM wb_kns_store WHERE block_id IN ($staleWhere)');
-    } catch (_) {}
-    try {
-      await db.customStatement(
           'DELETE FROM workout_blocks WHERE id IN ($staleWhere)');
     } catch (_) {}
-    state = state.where((b) {
-      final blockId = int.tryParse(b.id.replaceAll('wb_', '')) ?? 0;
-      return !staleIds.contains(blockId);
-    }).toList();
-    await _save();
+    await _load();
   }
 
   Future<void> setFolder(String id, String? folder) async {
-    state = state
-        .map((b) => b.id == id
-            ? WorkoutBlockEntry(
-                id: b.id, name: b.name, folder: folder, createdAt: b.createdAt)
-            : b)
-        .toList();
-    await _save();
+    final blockId = int.tryParse(id.replaceAll('wb_', '')) ?? 0;
+    if (blockId == 0) return;
+    final db = await _db();
+    try {
+      await db.customStatement(
+        'UPDATE workout_blocks SET folder = ? WHERE id = ?',
+        [folder, blockId],
+      );
+    } catch (e) {
+      debugPrint('[WB_SET_FOLDER] error: $e');
+    }
+    await _load();
   }
 }
 

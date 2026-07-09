@@ -719,6 +719,7 @@ class AppDatabase extends _$AppDatabase {
         await _addColumnIfMissing('workout_blocks', 'intention', 'TEXT');
         await _addColumnIfMissing('workout_blocks', 'description', 'TEXT');
         await _addColumnIfMissing('workout_blocks', 'deleted_at', 'INTEGER');
+        await _addColumnIfMissing('workout_blocks', 'folder', 'TEXT');
         await _addColumnIfMissing('workout_block_kns', 'utilities', 'TEXT');
         await _addColumnIfMissing('workout_block_kns', 'batch_name', 'TEXT');
         await _addColumnIfMissing('workout_block_kns', 'metadata', 'TEXT');
@@ -732,8 +733,66 @@ class AppDatabase extends _$AppDatabase {
         await _addColumnIfMissing('workout_block_sets', 'side', 'TEXT');
         await _addColumnIfMissing('workout_block_sets', 'tags', 'TEXT');
         await _addColumnIfMissing('workout_block_sets', 'metadata', 'TEXT');
+        await _backfillFolderFromLegacyWbStore();
       },
     );
+  }
+
+  // One-time bridge for the migration off the legacy wb_store/wb_kns_store
+  // JSON blobs. workout_blocks is now the sole source of truth for the WB
+  // list (including `folder`, which used to live only in the wb_store
+  // blob). Two things to backfill for any install that still has old
+  // wb_store data:
+  //   1. A block that only ever existed in wb_store (very old install that
+  //      predates the real table) — insert it.
+  //   2. `folder` on a block that already exists in workout_blocks but
+  //      never got its folder copied over.
+  // Once that's done, the legacy tables have nothing left depending on
+  // them, so drop them. Safe to run on every launch: the backfill loop is
+  // a no-op the moment wb_store no longer exists, and DROP TABLE IF EXISTS
+  // is a no-op once already dropped.
+  Future<void> _backfillFolderFromLegacyWbStore() async {
+    try {
+      final rows =
+          await customSelect('SELECT data FROM wb_store WHERE id = 1').get();
+      if (rows.isNotEmpty) {
+        final raw = rows.first.data['data'] as String?;
+        if (raw != null && raw.isNotEmpty) {
+          final list = (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+          for (final entry in list) {
+            final rawId = entry['id']?.toString().replaceAll('wb_', '');
+            final blockId = int.tryParse(rawId ?? '');
+            if (blockId == null) continue;
+            final name = entry['name']?.toString();
+            if (name == null || name.isEmpty) continue;
+            final folder = entry['folder']?.toString();
+            final createdAt = entry['createdAt'] is int
+                ? entry['createdAt'] as int
+                : int.tryParse(entry['createdAt']?.toString() ?? '') ??
+                    blockId;
+
+            await customStatement(
+              'INSERT OR IGNORE INTO workout_blocks (id, name, folder, created_at, deleted_at) VALUES (?, ?, ?, ?, 0)',
+              [blockId, name, folder, createdAt],
+            );
+            if (folder != null && folder.isNotEmpty) {
+              await customStatement(
+                "UPDATE workout_blocks SET folder = ? WHERE id = ? AND (folder IS NULL OR folder = '')",
+                [folder, blockId],
+              );
+            }
+          }
+        }
+      }
+    } catch (_) {
+      // wb_store may not exist — nothing to backfill.
+    }
+    try {
+      await customStatement('DROP TABLE IF EXISTS wb_store');
+    } catch (_) {}
+    try {
+      await customStatement('DROP TABLE IF EXISTS wb_kns_store');
+    } catch (_) {}
   }
 }
 
