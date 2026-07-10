@@ -2015,14 +2015,14 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
       builder: (c) => AlertDialog(
         backgroundColor: LabColors.background,
         title: Text('CRITICAL_PURGE',
-            style: LabStyles.mono(c,
+            style: LabStyles.mono(context,
                 color: Colors.redAccent, fontWeight: FontWeight.bold)),
         content: Text('DELETE ALL LOGGED SETS FOR THIS SESSION?',
-            style: LabStyles.mono(c, fontSize: 12)),
+            style: LabStyles.mono(context, fontSize: 12)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c),
-              child: Text('ABORT', style: LabStyles.mono(c))),
+              child: Text('ABORT', style: LabStyles.mono(context))),
           TextButton(
             onPressed: () async {
               final db = ref.read(databaseProvider);
@@ -2030,10 +2030,10 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                   results.map((r) => r.readTable(db.workoutSets).id).toList();
               await (db.delete(db.workoutSets)..where((t) => t.id.isIn(ids)))
                   .go();
-              if (c.mounted) Navigator.pop(c);
+              if (context.mounted) Navigator.pop(c);
             },
             child: Text('PURGE_ALL',
-                style: LabStyles.mono(c, color: Colors.redAccent)),
+                style: LabStyles.mono(context, color: Colors.redAccent)),
           )
         ],
       ),
@@ -2063,7 +2063,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
         builder: (c) => AlertDialog(
           backgroundColor: LabColors.background,
           title: Text('GENERATE_BLUEPRINT',
-              style: LabStyles.headline(c).copyWith(fontSize: 16)),
+              style: LabStyles.headline(context).copyWith(fontSize: 16)),
           content: LabTextField(
               controller: nameC,
               label: 'BLUEPRINT_NAME',
@@ -2071,7 +2071,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(c),
-                child: Text('ABORT', style: LabStyles.mono(c))),
+                child: Text('ABORT', style: LabStyles.mono(context))),
             TextButton(
               onPressed: () async {
                 if (nameC.text.isEmpty) return;
@@ -2100,7 +2100,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                 }
               },
               child: Text('GENERATE',
-                  style: LabStyles.mono(c, color: LabColors.accent)),
+                  style: LabStyles.mono(context, color: LabColors.accent)),
             )
           ],
         ),
@@ -3305,14 +3305,14 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
         builder: (c) => AlertDialog(
                 backgroundColor: LabColors.background,
                 title: Text('PURGE_MODULE',
-                    style: LabStyles.mono(c,
+                    style: LabStyles.mono(context,
                         color: Colors.redAccent, fontWeight: FontWeight.bold)),
                 content: Text('DELETE ALL SETS?',
-                    style: LabStyles.mono(c, fontSize: 12)),
+                    style: LabStyles.mono(context, fontSize: 12)),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(c),
-                      child: Text('ABORT', style: LabStyles.mono(c))),
+                      child: Text('ABORT', style: LabStyles.mono(context))),
                   TextButton(
                       onPressed: () async {
                         final db = ref.read(databaseProvider);
@@ -3322,10 +3322,11 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                         await (db.delete(db.workoutSets)
                               ..where((t) => t.id.isIn(ids)))
                             .go();
-                        if (c.mounted) Navigator.pop(c);
+                        if (context.mounted) Navigator.pop(c);
                       },
                       child: Text('PURGE',
-                          style: LabStyles.mono(c, color: Colors.redAccent)))
+                          style:
+                              LabStyles.mono(context, color: Colors.redAccent)))
                 ]));
   }
 
@@ -4109,24 +4110,22 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
 
   Widget _buildNotesToggleCard() {
     final hasNotes = widget.set.notes?.isNotEmpty ?? false;
-    final settings = ref.watch(themeSettingsProvider).value ?? {};
-    final notesColor = ref.read(themeControllerProvider).getColor(
-        settings, 'UI_TAG_ADD_SET_NOTES',
-        defaultColor: const Color(0xFF2979FF));
     return InkWell(
         onTap: () => setState(() => _showComment = !_showComment),
         child: Container(
             height: 52,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-                border: Border.all(color: notesColor.withValues(alpha: 0.5)),
+                border:
+                    Border.all(color: LabColors.primary.withValues(alpha: 0.5)),
                 color: _showComment
-                    ? notesColor.withValues(alpha: 0.05)
+                    ? LabColors.primary.withValues(alpha: 0.05)
                     : Colors.transparent),
             child: Text(
                 hasNotes ? '[ ! ] EDIT SET NOTES' : '[ + ] ADD SET NOTES',
                 textAlign: TextAlign.center,
-                style: LabStyles.mono(context, fontSize: 8, color: notesColor))));
+                style: LabStyles.mono(context,
+                    fontSize: 8, color: LabColors.primary))));
   }
 
   Widget _buildSetNumberWithCheckbox(Color completedColor, String value,
@@ -4288,9 +4287,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     final highlightColor = ref
         .read(themeControllerProvider)
         .getColor(settings, 'UI_EORM_HIGHLIGHT', nameSeed: 'EORM_HIGHLIGHT');
-    final prColor = ref.read(themeControllerProvider).getColor(
-        settings, 'UI_TAG_PR_HIGHLIGHT',
-        defaultColor: const Color(0xFFE0242F));
     const completedColor = Colors.greenAccent;
 
     return Expanded(
@@ -4307,7 +4303,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                 color: isRed
                     ? highlightColor.withValues(alpha: 0.2)
                     : (hasPr || _hasVpPr
-                        ? prColor.withValues(alpha: 0.12)
+                        ? Colors.white.withValues(alpha: 0.05)
                         : LabColors.surfaceContainerHigh),
                 child: Text('PR',
                     textAlign: TextAlign.center,
@@ -4315,7 +4311,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                         fontSize: 8,
                         color: isRed
                             ? Colors.white
-                            : (hasPr || _hasVpPr ? prColor : Colors.grey))),
+                            : (hasPr || _hasVpPr ? LabColors.accent : Colors.grey))),
               ),
               // BOTTOM: Trophy / V! / both
               Container(
@@ -4426,7 +4422,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
         builder: (c) => AlertDialog(
                 backgroundColor: LabColors.background,
                 title: Text('PURGE_SET',
-                    style: LabStyles.mono(c, color: Colors.redAccent)),
+                    style: LabStyles.mono(context, color: Colors.redAccent)),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(c),
@@ -4538,12 +4534,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
 
   Widget _buildSomaticCard() {
     final db = ref.read(databaseProvider);
-    final settings = ref.watch(themeSettingsProvider).value ?? {};
-    final tC = ref.read(themeControllerProvider);
-    final anomalyColor = tC.getColor(settings, 'UI_TAG_SOMATIC_ANOMALY',
-        defaultColor: Colors.redAccent);
-    final recoveryColor = tC.getColor(settings, 'UI_TAG_SOMATIC_RECOVERY',
-        defaultColor: Colors.greenAccent);
     return FutureBuilder<List<drift.QueryRow>>(
         future: db
             .customSelect(
@@ -4569,11 +4559,12 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                               border: Border.all(
-                                  color: anomalyColor.withValues(alpha: 0.5))),
+                                  color:
+                                      Colors.redAccent.withValues(alpha: 0.5))),
                           child: Text('[ + ] SOMATIC ANOMALY',
                               textAlign: TextAlign.center,
                               style: LabStyles.mono(context,
-                                  fontSize: 7.68, color: anomalyColor)),
+                                  fontSize: 7.68, color: Colors.redAccent)),
                         ),
                       )
                     : InkWell(
@@ -4582,8 +4573,9 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           height: 52,
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           decoration: BoxDecoration(
-                              color: anomalyColor.withValues(alpha: 0.1),
-                              border: Border.all(color: anomalyColor, width: 1)),
+                              color: Colors.redAccent.withValues(alpha: 0.1),
+                              border: Border.all(
+                                  color: Colors.redAccent, width: 1)),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -4592,7 +4584,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                                       'SOMATIC_ANOMALIES: ${anomalies.length}',
                                       style: LabStyles.mono(context,
                                           fontSize: 6.72,
-                                          color: anomalyColor,
+                                          color: Colors.redAccent,
                                           fontWeight: FontWeight.bold),
                                       overflow: TextOverflow.ellipsis)),
                               Text('EDIT',
@@ -4615,11 +4607,12 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                               border: Border.all(
-                                  color: recoveryColor.withValues(alpha: 0.5))),
+                                  color: Colors.greenAccent
+                                      .withValues(alpha: 0.5))),
                           child: Text('[ + ] SOMATIC RECOVERY',
                               textAlign: TextAlign.center,
                               style: LabStyles.mono(context,
-                                  fontSize: 7.68, color: recoveryColor)),
+                                  fontSize: 7.68, color: Colors.greenAccent)),
                         ),
                       )
                     : InkWell(
@@ -4628,9 +4621,9 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           height: 52,
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           decoration: BoxDecoration(
-                              color: recoveryColor.withValues(alpha: 0.1),
-                              border:
-                                  Border.all(color: recoveryColor, width: 1)),
+                              color: Colors.greenAccent.withValues(alpha: 0.1),
+                              border: Border.all(
+                                  color: Colors.greenAccent, width: 1)),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -4639,7 +4632,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                                       'SOMATIC_RECOVERIES: ${recoveries.length}',
                                       style: LabStyles.mono(context,
                                           fontSize: 6.72,
-                                          color: recoveryColor,
+                                          color: Colors.greenAccent,
                                           fontWeight: FontWeight.bold),
                                       overflow: TextOverflow.ellipsis)),
                               Text('EDIT',

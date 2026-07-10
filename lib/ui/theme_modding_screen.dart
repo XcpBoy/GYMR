@@ -104,7 +104,17 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen> {
       "TAG_WORKOUT_OPTS", // WORKOUT OPTS button + sheet title
       "TAG_WO_BLUEPRINT", // Workout Opts slice: Blueprint
       "TAG_WO_PURGE", // Workout Opts slice: Delete All
+      "TAG_SOMATIC_ANOMALY", // Set card: [ + ] SOMATIC ANOMALY button
+      "TAG_SOMATIC_RECOVERY", // Set card: [ + ] SOMATIC RECOVERY button
+      "TAG_ADD_SET_NOTES", // Set card: [ + ] ADD SET NOTES toggle
+      "TAG_PR_HIGHLIGHT", // Set card: PR label when a set is a personal record
     ];
+    final Map<String, Color> woHeaderDefaults = {
+      "TAG_SOMATIC_ANOMALY": Colors.redAccent,
+      "TAG_SOMATIC_RECOVERY": Colors.greenAccent,
+      "TAG_ADD_SET_NOTES": const Color(0xFF2979FF),
+      "TAG_PR_HIGHLIGHT": const Color(0xFFE0242F),
+    };
 
     // ── WORKOUT SCREEN: TAG FILTERS (Exercise Picker) ──
     final List<String> woFilterUI = [
@@ -289,7 +299,8 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen> {
               context, "CURRENT WORKOUT INTERFACE", "7 SECTIONS"),
           const SizedBox(height: 12),
           _buildSection(context, "HEADER & OPTS (${woHeaderUI.length})",
-              "wo_header", woHeaderUI, settings),
+              "wo_header", woHeaderUI, settings,
+              defaults: woHeaderDefaults),
           const SizedBox(height: 6),
           _buildSection(context, "TAG FILTERS (${woFilterUI.length})",
               "wo_filters", woFilterUI, settings),
