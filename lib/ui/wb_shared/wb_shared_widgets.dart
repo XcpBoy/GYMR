@@ -13,11 +13,24 @@ import '../styles.dart';
 import '../lab_widgets.dart';
 
 // ─── GENERAL NOTES MODULE ───────────────────────────────────────────
+// Generic multi-note editor: numbered notes stored as one delimited string.
+// Used for both session-level notes (WorkoutLog.notes) and per-set notes
+// (WorkoutSet.notes) — callers own the actual DB write via [onSave], so this
+// widget has no idea which table it's writing to.
 class GeneralNotesModule extends ConsumerStatefulWidget {
-  final WorkoutLog log;
+  final String? initialNotes;
   final String cardKey;
-  const GeneralNotesModule(
-      {super.key, required this.log, required this.cardKey});
+  final Future<void> Function(String rawNotes) onSave;
+  // Only WorkoutLog.notes carries a "[S:7.5]" sleep-hours prefix ahead of
+  // the note list; set notes have no such concept.
+  final bool stripSleepHeader;
+  const GeneralNotesModule({
+    super.key,
+    required this.initialNotes,
+    required this.cardKey,
+    required this.onSave,
+    this.stripSleepHeader = false,
+  });
   @override
   ConsumerState<GeneralNotesModule> createState() =>
       _GeneralNotesModuleState();
@@ -32,14 +45,17 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
   bool _isExpanded = false;
 
   String _getSleepHeader() {
+    if (!widget.stripSleepHeader) return '';
     final sleepMatch =
-        RegExp(r'\[S:[\d.]+\]').firstMatch(widget.log.notes ?? '');
+        RegExp(r'\[S:[\d.]+\]').firstMatch(widget.initialNotes ?? '');
     return sleepMatch != null ? '${sleepMatch.group(0)} ' : '';
   }
 
   List<String> _parseNotes(String raw) {
     // Strip sleep header
-    final clean = raw.replaceAll(RegExp(r'\[S:[\d.]+\]\s*'), '').trim();
+    final clean = widget.stripSleepHeader
+        ? raw.replaceAll(RegExp(r'\[S:[\d.]+\]\s*'), '').trim()
+        : raw.trim();
     if (clean.isEmpty) return [];
     return clean
         .split(_noteSeparator)
@@ -50,18 +66,13 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
 
   Future<void> _persistNotes() async {
     if (!mounted) return;
-
-    final logId = widget.log.id;
     final sleepHeader = _getSleepHeader();
     final texts = _controllers
         .map((c) => c.text.trim())
         .where((t) => t.isNotEmpty)
         .toList();
     final joined = texts.join(_noteSeparator);
-    final db = ref.read(databaseProvider);
-    await (db.update(db.workoutLogs)..where((t) => t.id.equals(logId))).write(
-      WorkoutLogsCompanion(notes: drift.Value(sleepHeader + joined)),
-    );
+    await widget.onSave(sleepHeader + joined);
   }
 
   void _scheduleDebounce(int index) {
@@ -74,6 +85,7 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
     setState(() {
       _controllers.add(TextEditingController());
       _debounceTimers.add(null);
+      _isExpanded = true;
     });
   }
 
@@ -90,7 +102,7 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
   @override
   void initState() {
     super.initState();
-    final notes = _parseNotes(widget.log.notes ?? '');
+    final notes = _parseNotes(widget.initialNotes ?? '');
     _controllers = <TextEditingController>[
       ...notes.map((n) => TextEditingController(text: n))
     ];
@@ -118,7 +130,10 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
         defaultColor: LabColors.accent);
     return Container(
       margin: const EdgeInsets.only(top: 8, bottom: 24),
-      decoration: LabStyles.hairlineBorder(color: notesColor),
+      decoration: BoxDecoration(
+        color: LabColors.surfaceDim,
+        border: Border(top: BorderSide(color: notesColor, width: 2)),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -128,7 +143,7 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
             onTap: () => setState(() => _isExpanded = !_isExpanded),
             child: Container(
               padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
-              color: notesColor.withOpacity(0.06),
+              color: notesColor.withValues(alpha: 0.06),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -143,7 +158,7 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        widget.cardKey,
+                        '${widget.cardKey} (${_controllers.length})',
                         style: LabStyles.mono(context,
                             color: notesColor,
                             fontSize: 10,
@@ -158,7 +173,7 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
                           horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                         border: Border.all(color: notesColor, width: 0.5),
-                        color: notesColor.withOpacity(0.08),
+                        color: notesColor.withValues(alpha: 0.08),
                       ),
                       child: Text(
                         '+ ADD.NOTE',
@@ -175,39 +190,32 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
           ),
 
           if (_isExpanded) ...[
-            // ── Empty state ──
-            if (_controllers.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: Text(
-                  'NO_NOTES // TAP + ADD.NOTE',
-                  style: LabStyles.mono(context,
-                      fontSize: 10, color: Colors.grey[700]),
-                ),
-              ),
+            if (_controllers.isNotEmpty) const SizedBox(height: 8),
 
             // ── Note blocks ──
             ...List.generate(_controllers.length, (i) {
               return Container(
                 margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[850]!, width: 0.5),
-                  color: Colors.white.withOpacity(0.03),
+                  color: Colors.white.withValues(alpha: 0.03),
+                  border: Border(
+                      left: BorderSide(color: notesColor, width: 2),
+                      bottom: BorderSide(color: Colors.grey[850]!, width: 0.5),
+                      top: BorderSide(color: Colors.grey[850]!, width: 0.5),
+                      right:
+                          BorderSide(color: Colors.grey[850]!, width: 0.5)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Index tag
-                    Container(
-                      width: 28,
-                      color: LabColors.primary.withOpacity(0.12),
-                      alignment: Alignment.topCenter,
-                      padding: const EdgeInsets.only(top: 10),
+                    // Index badge
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(10, 10, 0, 0),
                       child: Text(
-                        '${i + 1}',
+                        '${i + 1}.',
                         style: LabStyles.mono(context,
-                            fontSize: 10,
-                            color: LabColors.primary,
+                            fontSize: 11,
+                            color: notesColor,
                             fontWeight: FontWeight.bold),
                       ),
                     ),
@@ -224,13 +232,13 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
                           border: InputBorder.none,
                           isDense: true,
                           contentPadding:
-                              const EdgeInsets.fromLTRB(10, 10, 4, 10),
+                              const EdgeInsets.fromLTRB(8, 10, 4, 10),
                         ),
                         textInputAction: TextInputAction.newline,
                         keyboardType: TextInputType.multiline,
                         textCapitalization: TextCapitalization.sentences,
-                        autocorrect: false,
-                        enableSuggestions: false,
+                        autocorrect: true,
+                        enableSuggestions: true,
                         onChanged: (_) => _scheduleDebounce(i),
                       ),
                     ),

@@ -1599,10 +1599,20 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                       children: mainWidgets,
                     ),
                     if (currentLog != null) ...[
-                      GeneralNotesModule(
-                          key: const ValueKey('general_notes'),
-                          log: currentLog,
-                          cardKey: 'WB.NOTES'),
+                      Builder(builder: (context) {
+                        final log = currentLog!;
+                        return GeneralNotesModule(
+                            key: ValueKey('general_notes_${log.id}'),
+                            initialNotes: log.notes,
+                            cardKey: 'WB.NOTES',
+                            stripSleepHeader: true,
+                            onSave: (raw) async {
+                              await (db.update(db.workoutLogs)
+                                    ..where((t) => t.id.equals(log.id)))
+                                  .write(WorkoutLogsCompanion(
+                                      notes: drift.Value(raw)));
+                            });
+                      }),
                     ],
                   ],
                 );
@@ -3551,11 +3561,9 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
       _rC,
       _rpeC,
       _rirC,
-      _ploadC,
-      _commentC;
+      _ploadC;
   Timer? _db;
   bool _exp = false;
-  bool _showComment = false;
   bool _isIso = false;
   final List<String> _setTags = [];
   final List<String> _availableTags = [
@@ -3608,7 +3616,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     _rpeC = TextEditingController(text: set.rpe?.toString() ?? '');
     _rirC = TextEditingController(text: set.rir?.toString() ?? '');
     _ploadC = TextEditingController(text: set.weight.toString());
-    _commentC = TextEditingController(text: set.notes);
     // Restore tags from notes (backward compat)
     _setTags.clear();
     if (set.notes != null && set.notes!.isNotEmpty) {
@@ -3642,7 +3649,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     _rpeC.dispose();
     _rirC.dispose();
     _ploadC.dispose();
-    _commentC.dispose();
     super.dispose();
   }
 
@@ -3858,30 +3864,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                         _buildGridInput(_isIso ? 'MAX SEC' : 'MAX REPS', _rC,
                             flex: 25),
                       ]))),
-              if (_showComment)
-                Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                        color: LabColors.surfaceDim,
-                        border: Border(
-                            left: const BorderSide(
-                                color: LabColors.primary, width: 1),
-                            bottom: BorderSide(
-                                color: Colors.grey[900]!, width: 0.5),
-                            right: BorderSide(
-                                color: Colors.grey[900]!, width: 0.5))),
-                    child: TextField(
-                        controller: _commentC,
-                        maxLines: null,
-                        style: LabStyles.mono(context,
-                            fontSize: 10, color: Colors.white),
-                        decoration: InputDecoration(
-                            hintText: 'WRITE_SESSION_INTEL...',
-                            hintStyle: LabStyles.mono(context,
-                                fontSize: 8, color: Colors.grey[700]!),
-                            border: InputBorder.none,
-                            isDense: true),
-                        onChanged: (_) => _onChanged())),
               if (_exp) ...[
                 const SizedBox(height: 12),
                 Row(children: [
@@ -4159,26 +4141,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     await (db.update(db.workoutSets)..where((t) => t.id.equals(widget.set.id)))
         .write(WorkoutSetsCompanion(
             complexMetadata: drift.Value(jsonEncode(setMeta))));
-  }
-
-  Widget _buildNotesToggleCard() {
-    final hasNotes = widget.set.notes?.isNotEmpty ?? false;
-    return InkWell(
-        onTap: () => setState(() => _showComment = !_showComment),
-        child: Container(
-            height: 52,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-                border:
-                    Border.all(color: LabColors.primary.withValues(alpha: 0.5)),
-                color: _showComment
-                    ? LabColors.primary.withValues(alpha: 0.05)
-                    : Colors.transparent),
-            child: Text(
-                hasNotes ? '[ ! ] EDIT SET NOTES' : '[ + ] ADD SET NOTES',
-                textAlign: TextAlign.center,
-                style: LabStyles.mono(context,
-                    fontSize: 8, color: LabColors.primary))));
   }
 
   Widget _buildSetNumberWithCheckbox(Color completedColor, String value,
