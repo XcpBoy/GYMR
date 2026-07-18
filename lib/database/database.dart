@@ -611,17 +611,24 @@ class AppDatabase extends _$AppDatabase {
             created_at INTEGER NOT NULL DEFAULT 0
           )
         ''');
-        // Seed from existing workout_sets complex_metadata on first run
-        await customStatement('''
-          INSERT OR IGNORE INTO batch_definitions (name, created_at)
-          SELECT DISTINCT 
-            json_extract(complex_metadata, '\$.batch'),
-            CAST(strftime('%s', 'now') * 1000 AS INTEGER)
-          FROM workout_sets 
-          WHERE complex_metadata IS NOT NULL 
-            AND json_extract(complex_metadata, '\$.batch') IS NOT NULL
-            AND json_extract(complex_metadata, '\$.batch') != ''
-        ''');
+        // Seed from existing workout_sets complex_metadata — this scans
+        // every row's JSON metadata, so only run it on a fresh install or
+        // version upgrade (details.versionBefore != versionNow), not on
+        // every normal app launch. INSERT OR IGNORE means existing users
+        // already have this seeded; re-running it on every open was pure
+        // wasted full-table-scan cost with schema-versions growing.
+        if (details.versionBefore != details.versionNow) {
+          await customStatement('''
+            INSERT OR IGNORE INTO batch_definitions (name, created_at)
+            SELECT DISTINCT
+              json_extract(complex_metadata, '\$.batch'),
+              CAST(strftime('%s', 'now') * 1000 AS INTEGER)
+            FROM workout_sets
+            WHERE complex_metadata IS NOT NULL
+              AND json_extract(complex_metadata, '\$.batch') IS NOT NULL
+              AND json_extract(complex_metadata, '\$.batch') != ''
+          ''');
+        }
 
         // Workout Blocks tables (safety net for legacy DBs)
         await customStatement('''

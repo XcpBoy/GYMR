@@ -72,18 +72,24 @@ final bodyWeightAtDateProvider =
 /// Only dates that have at least one registered workout set count as sessions.
 final sessionNumbersProvider = StreamProvider<Map<String, int>>((ref) {
   final db = ref.watch(databaseProvider);
-  return (db.select(db.workoutSets).join([
-    drift.innerJoin(
-        db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId))
-  ])
-        ..orderBy([drift.OrderingTerm.asc(db.workoutLogs.date)]))
-      .watch()
-      .map((rows) {
+  // One row per LOG (grouped), not per SET — the previous version joined
+  // and streamed every individual set just to extract distinct dates,
+  // which meant editing any single set anywhere in the app's history
+  // re-scanned and re-looped over the entire workout_sets table.
+  final query = db.selectOnly(db.workoutLogs)
+    ..addColumns([db.workoutLogs.date])
+    ..join([
+      drift.innerJoin(
+          db.workoutSets, db.workoutSets.logId.equalsExp(db.workoutLogs.id))
+    ])
+    ..groupBy([db.workoutLogs.id])
+    ..orderBy([drift.OrderingTerm.asc(db.workoutLogs.date)]);
+  return query.watch().map((rows) {
     final seen = <String>{};
     final result = <String, int>{};
     int counter = 0;
     for (final row in rows) {
-      final date = row.readTable(db.workoutLogs).date;
+      final date = row.read(db.workoutLogs.date)!;
       final key = DateFormat('yyyy-MM-dd').format(date);
       if (seen.contains(key)) continue;
       seen.add(key);
