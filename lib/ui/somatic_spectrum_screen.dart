@@ -8,6 +8,87 @@ import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
 
+// Shared across SomaticLogsScreen and _FolderDetailScreen — negative values
+// are "anomaly" (pain), positive are "recovery".
+Color spectrumColor(int val) {
+  if (val < 0) {
+    final t = (val + 10) / 10.0;
+    return Color.lerp(Colors.redAccent, Colors.grey[600]!, t)!;
+  } else if (val == 0) {
+    return Colors.grey[600]!;
+  } else {
+    return Color.lerp(Colors.greenAccent, Colors.blueAccent, val / 10.0)!;
+  }
+}
+
+Future<Map<int, String>> loadSpectrumLabels(AppDatabase db) async {
+  final rows =
+      await db.customSelect('SELECT value, label FROM spectrum_references').get();
+  return {for (final r in rows) r.data['value'] as int: r.data['label'] as String};
+}
+
+// A compact horizontal -10..+10 gauge with a marker at the value, plus the
+// resolved label from `spectrum_references` (e.g. "+7 · ENERGIZED").
+class SpectrumGauge extends StatelessWidget {
+  final int value;
+  final String? label;
+  final double width;
+  final double height;
+  final bool showLabel;
+  const SpectrumGauge({
+    super.key,
+    required this.value,
+    this.label,
+    this.width = 80,
+    this.height = 8,
+    this.showLabel = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final markerX = ((value + 10) / 20.0).clamp(0.0, 1.0) * width;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: width,
+          height: height,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [
+                    Colors.redAccent,
+                    Colors.grey[700]!,
+                    Colors.blueAccent,
+                  ]),
+                  border: Border.all(color: Colors.white24, width: 0.5),
+                ),
+              ),
+              Positioned(
+                left: (markerX - 1).clamp(0, width - 2),
+                top: -2,
+                bottom: -2,
+                child: Container(width: 2, color: Colors.white),
+              ),
+            ],
+          ),
+        ),
+        if (showLabel) ...[
+          const SizedBox(height: 2),
+          Text(
+            '${value > 0 ? '+' : ''}$value${label != null ? ' · $label' : ''}',
+            style: LabStyles.mono(context,
+                fontSize: 7, color: spectrumColor(value), fontWeight: FontWeight.bold),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class SomaticLogsScreen extends ConsumerStatefulWidget {
   const SomaticLogsScreen({super.key});
 
@@ -21,8 +102,8 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
   final _folderNameController = TextEditingController();
   final TextEditingController _logSearchC = TextEditingController();
   _LogSortMode _sortMode = _LogSortMode.newestFirst;
-  bool _foldersExpanded = false;
-  bool _logsExpanded = true;
+  bool _selectMode = false;
+  final Set<int> _selectedLogIds = {};
 
   String get _sortLabel {
     switch (_sortMode) {
@@ -42,17 +123,6 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
     super.dispose();
   }
 
-  Color _spectrumColor(int val) {
-    if (val < 0) {
-      final t = (val + 10) / 10.0;
-      return Color.lerp(Colors.redAccent, Colors.grey[600]!, t)!;
-    } else if (val == 0) {
-      return Colors.grey[600]!;
-    } else {
-      return Color.lerp(Colors.greenAccent, Colors.blueAccent, val / 10.0)!;
-    }
-  }
-
   Future<void> _createFolder(String name) async {
     final db = ref.read(databaseProvider);
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -68,31 +138,45 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
     await db.customStatement('DELETE FROM somatic_folders WHERE id = $folderId');
   }
 
+  Future<void> _assignLogsToFolder(int folderId, Set<int> logIds) async {
+    final db = ref.read(databaseProvider);
+    for (final logId in logIds) {
+      await db.customStatement(
+          'INSERT OR IGNORE INTO somatic_folder_logs (folder_id, log_id) VALUES ($folderId, $logId)');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final db = ref.read(databaseProvider);
 
     return MainScaffold(
-      title: 'SOMATIC_LOGS',
+      title: 'SOMATIC_SPECTRUM',
       body: RefreshIndicator(
         onRefresh: () async => setState(() {}),
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildFolderSection(context, db),
-              const SizedBox(height: 24),
-              _buildLogsSection(context, db),
-            ],
-          ),
+        child: FutureBuilder<Map<int, String>>(
+          future: loadSpectrumLabels(db),
+          builder: (context, labelsSnap) {
+            final labels = labelsSnap.data ?? {};
+            return SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildFoldersRow(context, db),
+                  const SizedBox(height: 16),
+                  _buildLogsSection(context, db, labels),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _buildFolderSection(BuildContext context, AppDatabase db) {
+  Widget _buildFoldersRow(BuildContext context, AppDatabase db) {
     return FutureBuilder<List<drift.QueryRow>>(
       future: db.customSelect('''
         SELECT f.id, f.name, f.created_at,
@@ -106,269 +190,513 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
       ''').get(),
       builder: (context, snapshot) {
         final folders = snapshot.data ?? [];
-
-        return Container(
-          width: double.infinity,
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.white10, width: 0.5),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              GestureDetector(
-                onTap: () => setState(() => _foldersExpanded = !_foldersExpanded),
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  color: LabColors.surfaceContainerLow,
-                  child: Row(
-                    children: [
-                      Icon(_foldersExpanded ? Icons.expand_less : Icons.expand_more, size: 14, color: Colors.grey[400]),
-                      const SizedBox(width: 8),
-                      Text('FOLDERS (${folders.length})', style: LabStyles.mono(context, fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold)),
-                      const Spacer(),
-                      GestureDetector(
-                        onTap: () => _showCreateFolderDialog(context, db),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(border: Border.all(color: LabColors.primary.withValues(alpha: 0.3), width: 0.5)),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.add, size: 12, color: LabColors.primary),
-                              const SizedBox(width: 4),
-                              Text('CREATE', style: LabStyles.mono(context, fontSize: 8, color: LabColors.primary, fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text('FOLDERS (${folders.length})',
+                    style: LabStyles.mono(context,
+                        fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () => _showCreateFolderDialog(context, db),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                        border: Border.all(
+                            color: LabColors.primary.withValues(alpha: 0.3), width: 0.5)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add, size: 12, color: LabColors.primary),
+                        const SizedBox(width: 4),
+                        Text('CREATE',
+                            style: LabStyles.mono(context,
+                                fontSize: 8,
+                                color: LabColors.primary,
+                                fontWeight: FontWeight.bold)),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              if (_foldersExpanded) ...[
-                if (folders.isEmpty)
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    child: Center(child: Text('NO_FOLDERS_YET', style: LabStyles.mono(context, fontSize: 8, color: Colors.grey[700]!))),
-                  )
-                else
-                  ...folders.map((row) {
-                    final id = row.data['id'] as int;
-                    final name = row.data['name'] as String;
-                    final count = (row.data['log_count'] as int?) ?? 0;
-                    final avg = (row.data['avg_spectrum'] as num?)?.toDouble() ?? 0;
-                    final avgInt = avg.round();
-                    final color = _spectrumColor(avgInt);
-
-                    return GestureDetector(
-                      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (c) => _FolderDetailScreen(folderId: id, folderName: name))),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                        decoration: BoxDecoration(
-                          border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.06), width: 0.5)),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(width: 3, height: 28, color: color),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(name.toUpperCase(), style: LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
-                                  const SizedBox(height: 2),
-                                  Text('$count LOGS · AVG $avgInt', style: LabStyles.mono(context, fontSize: 7, color: Colors.grey[600]!)),
-                                ],
-                              ),
-                            ),
-                            Icon(Icons.chevron_right, size: 14, color: Colors.grey[500]),
-                            IconButton(
-                              icon: const Icon(Icons.delete_outline, size: 14, color: Colors.redAccent),
-                              onPressed: () async {
-                                await _deleteFolder(id);
-                                setState(() {});
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
               ],
-            ],
-          ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 76,
+              child: folders.isEmpty
+                  ? Container(
+                      width: double.infinity,
+                      alignment: Alignment.centerLeft,
+                      child: Text('NO_FOLDERS_YET',
+                          style: LabStyles.mono(context,
+                              fontSize: 8, color: Colors.grey[700]!)),
+                    )
+                  : ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: folders.length,
+                      itemBuilder: (context, i) {
+                        final row = folders[i];
+                        final id = row.data['id'] as int;
+                        final name = row.data['name'] as String;
+                        final count = (row.data['log_count'] as int?) ?? 0;
+                        final avg = (row.data['avg_spectrum'] as num?)?.toDouble() ?? 0;
+                        final avgInt = avg.round();
+                        final color = spectrumColor(avgInt);
+                        return GestureDetector(
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (c) =>
+                                      _FolderDetailScreen(folderId: id, folderName: name))),
+                          onLongPress: () async {
+                            final ok = await _confirmDeleteFolder(context, name);
+                            if (ok) {
+                              await _deleteFolder(id);
+                              setState(() {});
+                            }
+                          },
+                          child: Container(
+                            width: 130,
+                            margin: const EdgeInsets.only(right: 8),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: LabColors.surfaceDim,
+                              border: Border(top: BorderSide(color: color, width: 2)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(name.toUpperCase(),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: LabStyles.mono(context,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white)),
+                                Text('$count LOGS',
+                                    style: LabStyles.mono(context,
+                                        fontSize: 7, color: Colors.grey[600]!)),
+                                if (count > 0) SpectrumGauge(value: avgInt, width: 100, height: 6, showLabel: false),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
         );
       },
     );
   }
 
-  Widget _buildLogsSection(BuildContext context, AppDatabase db) {
+  Widget _buildLogsSection(
+      BuildContext context, AppDatabase db, Map<int, String> labels) {
+    return FutureBuilder<List<drift.QueryRow>>(
+      future: db.customSelect('''
+        SELECT sl.id, sl.description, sl.spectrum_value, sl.tags, sl.created_at,
+               COALESCE(be.name, 'DELETED') AS exercise_name
+        FROM somatic_logs sl
+        LEFT JOIN workout_sets ws ON ws.id = sl.set_id
+        LEFT JOIN base_exercises be ON be.id = ws.base_exercise_id
+        ORDER BY sl.created_at DESC
+        LIMIT 200
+      ''').get(),
+      builder: (context, snapshot) {
+        final allLogs = snapshot.data ?? [];
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildSpectrumOverview(context, allLogs),
+            const SizedBox(height: 16),
+            _buildToolbar(context),
+            if (_selectMode && _selectedLogIds.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              _buildSelectionBar(context, db),
+            ],
+            const SizedBox(height: 8),
+            _buildFilteredSortedList(context, allLogs, labels),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSpectrumOverview(BuildContext context, List<drift.QueryRow> logs) {
+    final counts = <int, int>{for (var v = -10; v <= 10; v++) v: 0};
+    var anomalyCount = 0;
+    var recoveryCount = 0;
+    for (final row in logs) {
+      final v = row.data['spectrum_value'] as int;
+      counts[v] = (counts[v] ?? 0) + 1;
+      if (v < 0) anomalyCount++;
+      if (v > 0) recoveryCount++;
+    }
+    final maxCount = counts.values.fold(0, (a, b) => a > b ? a : b);
+
     return Container(
       width: double.infinity,
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.white10, width: 0.5),
-      ),
+          color: LabColors.surfaceDim, border: Border.all(color: Colors.white10, width: 0.5)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GestureDetector(
-            onTap: () => setState(() => _logsExpanded = !_logsExpanded),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              color: LabColors.surfaceContainerLow,
-              child: Row(
-                children: [
-                  Icon(_logsExpanded ? Icons.expand_less : Icons.expand_more, size: 14, color: Colors.grey[400]),
-                  const SizedBox(width: 8),
-                  Text('ALL LOGS', style: LabStyles.mono(context, fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold)),
-                  const Spacer(),
-                ],
-              ),
+          Text('SPECTRUM_OVERVIEW',
+              style: LabStyles.mono(context,
+                  fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 44,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (var v = -10; v <= 10; v++)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 0.5),
+                      child: Container(
+                        height: maxCount == 0 ? 2 : (2 + (counts[v]! / maxCount) * 40),
+                        color: (counts[v] ?? 0) > 0 ? spectrumColor(v) : Colors.white10,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
-          if (_logsExpanded) ...[
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: SizedBox(
-                          height: 32,
-                          child: TextField(
-                            controller: _logSearchC,
-                            style: LabStyles.mono(context, fontSize: 10, color: Colors.white),
-                            decoration: InputDecoration(
-                              hintText: 'SEARCH...',
-                              hintStyle: TextStyle(color: Colors.grey[600], fontSize: 9),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                              border: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey[800]!, width: 0.5)),
-                              enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey[800]!, width: 0.5)),
-                              isDense: true,
-                              filled: true,
-                              fillColor: LabColors.surfaceDim,
-                            ),
-                            onChanged: (_) => setState(() {}),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      SizedBox(
-                        height: 32,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.black,
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(0)),
-                            side: BorderSide(color: Colors.white24, width: 0.5),
-                          ),
-                          onPressed: () => setState(() => _sortMode = _LogSortMode.values[(_sortMode.index + 1) % _LogSortMode.values.length]),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(Icons.sort, size: 12, color: Colors.grey[400]),
-                            const SizedBox(width: 3),
-                            Text(_sortLabel, style: LabStyles.mono(context, fontSize: 8, color: Colors.white70)),
-                          ]),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  FutureBuilder<List<drift.QueryRow>>(
-                    future: db.customSelect('''
-                      SELECT sl.id, sl.description, sl.spectrum_value, sl.tags, sl.created_at,
-                             COALESCE(be.name, 'DELETED') AS exercise_name
-                      FROM somatic_logs sl
-                      LEFT JOIN workout_sets ws ON ws.id = sl.set_id
-                      LEFT JOIN base_exercises be ON be.id = ws.base_exercise_id
-                      ORDER BY sl.created_at DESC
-                      LIMIT 200
-                    ''').get(),
-                    builder: (context, snapshot) {
-                      var logs = snapshot.data ?? [];
-                      final q = _logSearchC.text.toLowerCase();
-                      if (q.isNotEmpty) {
-                        logs = logs.where((row) {
-                          final desc = (row.data['description'] as String).toLowerCase();
-                          final tags = (row.data['tags'] as String? ?? '').toLowerCase();
-                          final exName = (row.data['exercise_name'] as String).toLowerCase();
-                          return desc.contains(q) || tags.contains(q) || exName.contains(q);
-                        }).toList();
-                      }
-                      final sorted = List<drift.QueryRow>.from(logs);
-                      switch (_sortMode) {
-                        case _LogSortMode.newestFirst:
-                          sorted.sort((a, b) => (b.data['created_at'] as int).compareTo(a.data['created_at'] as int));
-                          break;
-                        case _LogSortMode.oldestFirst:
-                          sorted.sort((a, b) => (a.data['created_at'] as int).compareTo(b.data['created_at'] as int));
-                          break;
-                        case _LogSortMode.highestVal:
-                          sorted.sort((a, b) => (b.data['spectrum_value'] as int).compareTo(a.data['spectrum_value'] as int));
-                          break;
-                        case _LogSortMode.lowestVal:
-                          sorted.sort((a, b) => (a.data['spectrum_value'] as int).compareTo(b.data['spectrum_value'] as int));
-                          break;
-                        case _LogSortMode.tagAlpha:
-                          sorted.sort((a, b) => ((a.data['tags'] as String?) ?? '').compareTo((b.data['tags'] as String?) ?? ''));
-                          break;
-                        case _LogSortMode.tagRevAlpha:
-                          sorted.sort((a, b) => ((b.data['tags'] as String?) ?? '').compareTo((a.data['tags'] as String?) ?? ''));
-                          break;
-                      }
-                      return sorted.isEmpty
-                        ? Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(border: Border.all(color: Colors.white10, width: 0.5)),
-                            child: Center(child: Text('NO_SOMATIC_LOGS_YET', style: LabStyles.mono(context, fontSize: 8, color: Colors.grey[700]!))),
-                          )
-                        : Column(children: sorted.map((row) => _buildLogRow(context, row)).toList());
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              _statChip(context, 'TOTAL', '${logs.length}', Colors.white),
+              const SizedBox(width: 20),
+              _statChip(context, 'ANOMALY', '$anomalyCount', Colors.redAccent),
+              const SizedBox(width: 20),
+              _statChip(context, 'RECOVERY', '$recoveryCount', Colors.blueAccent),
+            ],
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildLogRow(BuildContext context, drift.QueryRow row) {
-    final val = row.data['spectrum_value'] as int;
-    final desc = row.data['description'] as String;
-    final tags = row.data['tags'] as String?;
-    final exName = row.data['exercise_name'] as String;
-    final color = _spectrumColor(val);
+  Widget _statChip(BuildContext context, String label, String value, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(value,
+            style: LabStyles.mono(context,
+                fontSize: 14, color: color, fontWeight: FontWeight.bold)),
+        Text(label, style: LabStyles.mono(context, fontSize: 7, color: Colors.grey[600])),
+      ],
+    );
+  }
 
+  Widget _buildToolbar(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 32,
+            child: TextField(
+              controller: _logSearchC,
+              style: LabStyles.mono(context, fontSize: 10, color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'SEARCH...',
+                hintStyle: TextStyle(color: Colors.grey[600], fontSize: 9),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                border: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey[800]!, width: 0.5)),
+                enabledBorder:
+                    OutlineInputBorder(borderSide: BorderSide(color: Colors.grey[800]!, width: 0.5)),
+                isDense: true,
+                filled: true,
+                fillColor: LabColors.surfaceDim,
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        SizedBox(
+          height: 32,
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              backgroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              shape: const RoundedRectangleBorder(),
+              side: const BorderSide(color: Colors.white24, width: 0.5),
+            ),
+            onPressed: () => setState(
+                () => _sortMode = _LogSortMode.values[(_sortMode.index + 1) % _LogSortMode.values.length]),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.sort, size: 12, color: Colors.grey[400]),
+              const SizedBox(width: 3),
+              Text(_sortLabel, style: LabStyles.mono(context, fontSize: 8, color: Colors.white70)),
+            ]),
+          ),
+        ),
+        const SizedBox(width: 6),
+        SizedBox(
+          height: 32,
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              backgroundColor: _selectMode ? LabColors.primary.withValues(alpha: 0.15) : Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              shape: const RoundedRectangleBorder(),
+              side: BorderSide(color: _selectMode ? LabColors.primary : Colors.white24, width: 0.5),
+            ),
+            onPressed: () => setState(() {
+              _selectMode = !_selectMode;
+              if (!_selectMode) _selectedLogIds.clear();
+            }),
+            child: Icon(Icons.checklist,
+                size: 14, color: _selectMode ? LabColors.primary : Colors.grey[400]),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSelectionBar(BuildContext context, AppDatabase db) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 4),
-      padding: const EdgeInsets.all(6),
-      decoration: BoxDecoration(border: Border.all(color: Colors.white.withValues(alpha: 0.06), width: 0.5)),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+          color: LabColors.primary.withValues(alpha: 0.08),
+          border: Border.all(color: LabColors.primary.withValues(alpha: 0.3), width: 0.5)),
       child: Row(
         children: [
-          Container(width: 24, height: 24, decoration: BoxDecoration(border: Border.all(color: color.withValues(alpha: 0.5), width: 0.5), color: color.withValues(alpha: 0.1)),
-            child: Center(child: Text('$val', style: LabStyles.mono(context, fontSize: 8, fontWeight: FontWeight.bold, color: color))),
+          Text('${_selectedLogIds.length} SELECTED',
+              style: LabStyles.mono(context,
+                  fontSize: 9, color: LabColors.primary, fontWeight: FontWeight.bold)),
+          const Spacer(),
+          GestureDetector(
+            onTap: () => _showAssignToFolderSheet(context, db),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('ADD TO FOLDER',
+                    style: LabStyles.mono(context,
+                        fontSize: 9, color: LabColors.primary, fontWeight: FontWeight.bold)),
+                const SizedBox(width: 2),
+                Icon(Icons.chevron_right, size: 14, color: LabColors.primary),
+              ],
+            ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(desc.toUpperCase(), style: LabStyles.mono(context, fontSize: 8, fontWeight: FontWeight.bold, color: Colors.white)),
-              Row(children: [
-                if (tags != null && tags.isNotEmpty) ...[Text(tags.toUpperCase(), style: LabStyles.mono(context, fontSize: 6, color: Colors.grey[500]!)), const SizedBox(width: 6)],
-                Text(exName.toUpperCase(), style: LabStyles.mono(context, fontSize: 6, color: Colors.grey[600]!)),
-              ]),
-            ]),
+          const SizedBox(width: 16),
+          GestureDetector(
+            onTap: () => setState(() {
+              _selectMode = false;
+              _selectedLogIds.clear();
+            }),
+            child: Text('CANCEL',
+                style: LabStyles.mono(context, fontSize: 9, color: Colors.grey[500])),
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildFilteredSortedList(
+      BuildContext context, List<drift.QueryRow> allLogs, Map<int, String> labels) {
+    var logs = allLogs;
+    final q = _logSearchC.text.toLowerCase();
+    if (q.isNotEmpty) {
+      logs = logs.where((row) {
+        final desc = (row.data['description'] as String).toLowerCase();
+        final tags = (row.data['tags'] as String? ?? '').toLowerCase();
+        final exName = (row.data['exercise_name'] as String).toLowerCase();
+        return desc.contains(q) || tags.contains(q) || exName.contains(q);
+      }).toList();
+    }
+    final sorted = List<drift.QueryRow>.from(logs);
+    switch (_sortMode) {
+      case _LogSortMode.newestFirst:
+        sorted.sort((a, b) => (b.data['created_at'] as int).compareTo(a.data['created_at'] as int));
+        break;
+      case _LogSortMode.oldestFirst:
+        sorted.sort((a, b) => (a.data['created_at'] as int).compareTo(b.data['created_at'] as int));
+        break;
+      case _LogSortMode.highestVal:
+        sorted.sort((a, b) => (b.data['spectrum_value'] as int).compareTo(a.data['spectrum_value'] as int));
+        break;
+      case _LogSortMode.lowestVal:
+        sorted.sort((a, b) => (a.data['spectrum_value'] as int).compareTo(b.data['spectrum_value'] as int));
+        break;
+      case _LogSortMode.tagAlpha:
+        sorted.sort((a, b) =>
+            ((a.data['tags'] as String?) ?? '').compareTo((b.data['tags'] as String?) ?? ''));
+        break;
+      case _LogSortMode.tagRevAlpha:
+        sorted.sort((a, b) =>
+            ((b.data['tags'] as String?) ?? '').compareTo((a.data['tags'] as String?) ?? ''));
+        break;
+    }
+
+    if (sorted.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(border: Border.all(color: Colors.white10, width: 0.5)),
+        child: Center(
+            child: Text('NO_SOMATIC_LOGS_YET',
+                style: LabStyles.mono(context, fontSize: 8, color: Colors.grey[700]!))),
+      );
+    }
+    return Column(children: sorted.map((row) => _buildLogRow(context, row, labels)).toList());
+  }
+
+  Widget _buildLogRow(BuildContext context, drift.QueryRow row, Map<int, String> labels) {
+    final id = row.data['id'] as int;
+    final val = row.data['spectrum_value'] as int;
+    final desc = row.data['description'] as String;
+    final tags = row.data['tags'] as String?;
+    final exName = row.data['exercise_name'] as String;
+    final selected = _selectedLogIds.contains(id);
+
+    return GestureDetector(
+      onLongPress: () => setState(() {
+        _selectMode = true;
+        _selectedLogIds.add(id);
+      }),
+      onTap: _selectMode
+          ? () => setState(() {
+                if (selected) {
+                  _selectedLogIds.remove(id);
+                } else {
+                  _selectedLogIds.add(id);
+                }
+              })
+          : null,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: selected ? LabColors.primary.withValues(alpha: 0.08) : Colors.transparent,
+          border: Border.all(
+              color: selected ? LabColors.primary : Colors.white.withValues(alpha: 0.06),
+              width: selected ? 1 : 0.5),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            if (_selectMode) ...[
+              Icon(selected ? Icons.check_box : Icons.check_box_outline_blank,
+                  size: 18, color: selected ? LabColors.primary : Colors.grey[600]),
+              const SizedBox(width: 8),
+            ],
+            SpectrumGauge(value: val, label: labels[val], width: 64, height: 8),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(desc.toUpperCase(),
+                      style: LabStyles.mono(context,
+                          fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
+                  Row(children: [
+                    if (tags != null && tags.isNotEmpty) ...[
+                      Text(tags.toUpperCase(),
+                          style: LabStyles.mono(context, fontSize: 6, color: Colors.grey[500]!)),
+                      const SizedBox(width: 6),
+                    ],
+                    Expanded(
+                      child: Text(exName.toUpperCase(),
+                          overflow: TextOverflow.ellipsis,
+                          style: LabStyles.mono(context, fontSize: 6, color: Colors.grey[600]!)),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showAssignToFolderSheet(BuildContext context, AppDatabase db) async {
+    final folders = await db
+        .customSelect('SELECT id, name FROM somatic_folders ORDER BY created_at DESC')
+        .get();
+    final selectedIds = Set<int>.from(_selectedLogIds);
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: LabColors.background,
+      builder: (c) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Text('ADD ${selectedIds.length} LOG(S) TO FOLDER',
+                  style: LabStyles.headline(c, color: Colors.white).copyWith(fontSize: 14)),
+            ),
+            if (folders.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text('NO_FOLDERS_YET — create one below.',
+                    style: LabStyles.mono(c, fontSize: 9, color: Colors.grey[600])),
+              ),
+            for (final f in folders)
+              ListTile(
+                title: Text((f.data['name'] as String).toUpperCase(),
+                    style: LabStyles.mono(c, fontSize: 11, color: Colors.white)),
+                trailing: Icon(Icons.arrow_forward, size: 14, color: LabColors.primary),
+                onTap: () async {
+                  await _assignLogsToFolder(f.data['id'] as int, selectedIds);
+                  if (c.mounted) Navigator.pop(c);
+                  setState(() {
+                    _selectMode = false;
+                    _selectedLogIds.clear();
+                  });
+                },
+              ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: SizedBox(
+                width: double.infinity,
+                child: LabButton(
+                  label: '+ NEW FOLDER',
+                  color: LabColors.primary,
+                  onPressed: () {
+                    Navigator.pop(c);
+                    _showCreateFolderDialog(context, db);
+                  },
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _confirmDeleteFolder(BuildContext context, String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: LabColors.background,
+        title: Text('DELETE FOLDER?',
+            style: LabStyles.headline(c, color: Colors.white).copyWith(fontSize: 14)),
+        content: Text('This removes "${name.toUpperCase()}" — logs stay, only the grouping is deleted.',
+            style: LabStyles.mono(c, fontSize: 10, color: Colors.white70)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: Text('CANCEL', style: LabStyles.mono(c, color: Colors.grey))),
+          TextButton(
+              onPressed: () => Navigator.pop(c, true),
+              child: Text('DELETE', style: LabStyles.mono(c, color: Colors.redAccent))),
+        ],
+      ),
+    );
+    return ok ?? false;
   }
 
   void _showCreateFolderDialog(BuildContext context, AppDatabase db) {
@@ -400,7 +728,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
                       onPressed: () async {
                         if (_folderNameController.text.trim().isNotEmpty) {
                           await _createFolder(_folderNameController.text);
-                          Navigator.pop(c);
+                          if (c.mounted) Navigator.pop(c);
                           setState(() {});
                         }
                       },
@@ -427,6 +755,13 @@ class _FolderDetailScreen extends ConsumerStatefulWidget {
 }
 
 class _FolderDetailScreenState extends ConsumerState<_FolderDetailScreen> {
+  Future<void> _removeFromFolder(int logId) async {
+    final db = ref.read(databaseProvider);
+    await db.customStatement(
+        'DELETE FROM somatic_folder_logs WHERE folder_id = ${widget.folderId} AND log_id = $logId');
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final db = ref.read(databaseProvider);
@@ -435,57 +770,73 @@ class _FolderDetailScreenState extends ConsumerState<_FolderDetailScreen> {
       title: widget.folderName.toUpperCase(),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(12),
-        child: FutureBuilder<List<drift.QueryRow>>(
-          future: db.customSelect('''
-            SELECT sl.id, sl.description, sl.spectrum_value, sl.tags, sl.created_at,
-                   COALESCE(be.name, 'DELETED') AS exercise_name
-            FROM somatic_logs sl
-            JOIN somatic_folder_logs sfl ON sfl.log_id = sl.id
-            LEFT JOIN workout_sets ws ON ws.id = sl.set_id
-            LEFT JOIN base_exercises be ON be.id = ws.base_exercise_id
-            WHERE sfl.folder_id = ${widget.folderId}
-            ORDER BY sl.created_at DESC
-          ''').get(),
-          builder: (context, snap) {
-            final logs = snap.data ?? [];
-            if (logs.isEmpty) {
-              return Center(child: Text('EMPTY_FOLDER', style: LabStyles.mono(context, fontSize: 10, color: Colors.grey[700]!)));
-            }
-            return Column(
-              children: logs.map((row) {
-                final val = row.data['spectrum_value'] as int;
-                final desc = row.data['description'] as String;
-                final tags = row.data['tags'] as String?;
-                final exName = row.data['exercise_name'] as String;
-                Color sc(int v) {
-                  if (v < 0) { final t = (v + 10) / 10.0; return Color.lerp(Colors.redAccent, Colors.grey[600]!, t)!; }
-                  else if (v == 0) { return Colors.grey[600]!; }
-                  else { return Color.lerp(Colors.greenAccent, Colors.blueAccent, v / 10.0)!; }
+        child: FutureBuilder<Map<int, String>>(
+          future: loadSpectrumLabels(db),
+          builder: (context, labelsSnap) {
+            final labels = labelsSnap.data ?? {};
+            return FutureBuilder<List<drift.QueryRow>>(
+              future: db.customSelect('''
+                SELECT sl.id, sl.description, sl.spectrum_value, sl.tags, sl.created_at,
+                       COALESCE(be.name, 'DELETED') AS exercise_name
+                FROM somatic_logs sl
+                JOIN somatic_folder_logs sfl ON sfl.log_id = sl.id
+                LEFT JOIN workout_sets ws ON ws.id = sl.set_id
+                LEFT JOIN base_exercises be ON be.id = ws.base_exercise_id
+                WHERE sfl.folder_id = ${widget.folderId}
+                ORDER BY sl.created_at DESC
+              ''').get(),
+              builder: (context, snap) {
+                final logs = snap.data ?? [];
+                if (logs.isEmpty) {
+                  return Center(
+                      child: Text('EMPTY_FOLDER',
+                          style: LabStyles.mono(context, fontSize: 10, color: Colors.grey[700]!)));
                 }
-                final color = sc(val);
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 4),
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(border: Border.all(color: Colors.white10, width: 0.5)),
-                  child: Row(
-                    children: [
-                      Container(width: 24, height: 24, decoration: BoxDecoration(border: Border.all(color: color.withValues(alpha: 0.5), width: 0.5), color: color.withValues(alpha: 0.1)),
-                        child: Center(child: Text('$val', style: LabStyles.mono(context, fontSize: 8, fontWeight: FontWeight.bold, color: color))),
+                return Column(
+                  children: logs.map((row) {
+                    final id = row.data['id'] as int;
+                    final val = row.data['spectrum_value'] as int;
+                    final desc = row.data['description'] as String;
+                    final tags = row.data['tags'] as String?;
+                    final exName = row.data['exercise_name'] as String;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(border: Border.all(color: Colors.white10, width: 0.5)),
+                      child: Row(
+                        children: [
+                          SpectrumGauge(value: val, label: labels[val], width: 64, height: 8),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text(desc.toUpperCase(),
+                                  style: LabStyles.mono(context,
+                                      fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
+                              Row(children: [
+                                if (tags != null && tags.isNotEmpty) ...[
+                                  Text(tags.toUpperCase(),
+                                      style: LabStyles.mono(context, fontSize: 7, color: Colors.grey[500]!)),
+                                  const SizedBox(width: 6),
+                                ],
+                                Expanded(
+                                  child: Text(exName.toUpperCase(),
+                                      overflow: TextOverflow.ellipsis,
+                                      style: LabStyles.mono(context, fontSize: 7, color: Colors.grey[600]!)),
+                                ),
+                              ]),
+                            ]),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle_outline, size: 16, color: Colors.grey),
+                            tooltip: 'REMOVE FROM FOLDER',
+                            onPressed: () => _removeFromFolder(id),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(desc.toUpperCase(), style: LabStyles.mono(context, fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white)),
-                          Row(children: [
-                            if (tags != null && tags.isNotEmpty) ...[Text(tags.toUpperCase(), style: LabStyles.mono(context, fontSize: 7, color: Colors.grey[500]!)), const SizedBox(width: 6)],
-                            Text(exName.toUpperCase(), style: LabStyles.mono(context, fontSize: 7, color: Colors.grey[600]!)),
-                          ]),
-                        ]),
-                      ),
-                    ],
-                  ),
+                    );
+                  }).toList(),
                 );
-              }).toList(),
+              },
             );
           },
         ),

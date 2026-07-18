@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'package:drift/drift.dart' hide Column, Table;
 import 'package:intl/intl.dart';
@@ -43,11 +44,15 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: _tableConfigs.length, vsync: this);
-    // Pre-cache columns and FK refs for all tables
+    // Pre-cache columns and FK refs for all tables, and kick off a
+    // lightweight COUNT(*) per table (cheap — just for the tab row-count
+    // badges, not a full page fetch) so every tab shows its size upfront.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final db = ref.read(databaseProvider);
       for (final cfg in _tableConfigs) {
         await _refreshColumns(cfg);
         await _refreshFKRefs(cfg);
+        _loadTabBadgeCount(db, cfg);
       }
     });
     _tabCtrl.addListener(() {
@@ -59,17 +64,30 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       }
     });
     _searchCtrl.addListener(() {
-      setState(() {
-        _searchQuery = _searchCtrl.text;
-        _perTableSearch[_tableConfigs[_tabCtrl.index].key] = _searchCtrl.text;
+      _searchDebounce?.cancel();
+      _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+        if (!mounted) return;
+        setState(() {
+          _searchQuery = _searchCtrl.text;
+          _perTableSearch[_tableConfigs[_tabCtrl.index].key] = _searchCtrl.text;
+        });
       });
     });
   }
+
+  Timer? _searchDebounce;
 
   @override
   void dispose() {
     _tabCtrl.dispose();
     _searchCtrl.dispose();
+    _searchDebounce?.cancel();
+    for (final c in _headerScrollControllers.values) {
+      c.dispose();
+    }
+    for (final c in _bodyScrollControllers.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -93,18 +111,14 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         icon: Icons.fitness_center,
         table: 'workout_sets',
         pkCol: 'id'),
-    _TableCfg(
-        key: 'blueprints',
-        label: 'BPS',
-        icon: Icons.layers,
-        table: 'blueprints',
-        pkCol: 'id'),
-    _TableCfg(
-        key: 'blueprintExercises',
-        label: 'BP-EX',
-        icon: Icons.format_list_numbered,
-        table: 'blueprint_exercises',
-        pkCol: 'id'),
+    // BPS (blueprints) hidden from this UI — the table is live and actively
+    // used (workout_manager.dart, WB.editor.dart, export_service.dart), with
+    // FK references from blueprint_exercises/plan_days, but not removed
+    // from the app.
+    // BP-EX (blueprint_exercises) hidden from this UI — the table is live
+    // and actively used (WB.editor.dart, workout_manager.dart,
+    // ledger_screen.dart), but its inspector tab was showing NO_DATA_FOUND;
+    // pending investigation, not removed from the app.
     _TableCfg(
         key: 'somaticLogs',
         label: 'SOMA',
@@ -1316,7 +1330,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                       style: LabStyles.mono(context,
                           fontSize: 12, color: Colors.white),
                       decoration: InputDecoration(
-                        hintText: 'SEARCH_ACROSS_TABLES...',
+                        hintText: 'FILTER_THIS_TABLE...',
                         hintStyle: LabStyles.mono(context,
                             fontSize: 10, color: Colors.grey),
                         prefixIcon: const Icon(Icons.search,
@@ -1330,25 +1344,44 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                   ),
                 ),
                 const SizedBox(width: 8),
-                // Undo button
-                IconButton(
+                // Undo history — shows the last few actions (most recent
+                // first). Only the top entry is actually undoable (undo is
+                // strictly LIFO); older entries are shown greyed-out so you
+                // can see what's queued without implying you can jump to it.
+                PopupMenuButton<int>(
+                  enabled: _canUndo,
                   icon: Icon(Icons.undo,
                       size: 16,
                       color: _canUndo ? LabColors.accent : Colors.grey[800]),
-                  onPressed: _canUndo
-                      ? () async {
-                          final snap = _undoStack.last;
-                          final ok = await _confirmAction(
-                              'UNDO', 'Revert: ${snap.label}');
-                          if (ok) await _undoLast();
-                        }
-                      : null,
-                  tooltip: _canUndo
-                      ? 'UNDO: ${_undoStack.last.label}'
-                      : 'NO_UNDO_HISTORY',
+                  tooltip: _canUndo ? 'UNDO HISTORY' : 'NO_UNDO_HISTORY',
+                  color: LabColors.surfaceContainerHigh,
+                  itemBuilder: (ctx) {
+                    final recent = _undoStack.reversed.take(5).toList();
+                    return [
+                      for (int i = 0; i < recent.length; i++)
+                        PopupMenuItem(
+                          value: i,
+                          enabled: i == 0,
+                          child: Text(
+                              i == 0
+                                  ? 'UNDO: ${recent[i].label}'
+                                  : '${i + 1}. ${recent[i].label}',
+                              style: LabStyles.mono(context,
+                                  fontSize: 10,
+                                  color: i == 0
+                                      ? LabColors.accent
+                                      : Colors.grey[600])),
+                        ),
+                    ];
+                  },
+                  onSelected: (i) async {
+                    if (i != 0) return;
+                    final snap = _undoStack.last;
+                    final ok =
+                        await _confirmAction('UNDO', 'Revert: ${snap.label}');
+                    if (ok) await _undoLast();
+                  },
                   padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 28, minHeight: 28),
                 ),
                 const SizedBox(width: 4),
                 // Batch ops menu
@@ -1357,33 +1390,48 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                   color: LabColors.surfaceContainerHigh,
                   itemBuilder: (ctx) => [
                     PopupMenuItem(
-                        value: 'findReplace',
-                        child: Text('FIND & REPLACE ALL',
-                            style: LabStyles.mono(context, fontSize: 10))),
+                      enabled: false,
+                      height: 24,
+                      child: Text('VIEW',
+                          style: LabStyles.mono(context,
+                              fontSize: 8,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.bold)),
+                    ),
+                    _batchMenuItem('config', Icons.tune, 'VIEW CONFIG',
+                        LabColors.primary),
+                    const PopupMenuDivider(height: 12),
                     PopupMenuItem(
-                        value: 'categoryReplace',
-                        child: Text('CATEGORY REPLACE',
-                            style: LabStyles.mono(context, fontSize: 10))),
+                      enabled: false,
+                      height: 24,
+                      child: Text('EDIT',
+                          style: LabStyles.mono(context,
+                              fontSize: 8,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.bold)),
+                    ),
+                    _batchMenuItem('findReplace', Icons.find_replace,
+                        'FIND & REPLACE ALL', LabColors.accent),
+                    _batchMenuItem('categoryReplace', Icons.swap_horiz,
+                        'CATEGORY REPLACE', LabColors.accent),
+                    _batchMenuItem('autoMerge', Icons.auto_fix_high,
+                        'AUTO-MERGE NAMES', LabColors.accent),
+                    const PopupMenuDivider(height: 12),
                     PopupMenuItem(
-                        value: 'merge',
-                        child: Text('MERGE ROWS',
-                            style: LabStyles.mono(context, fontSize: 10))),
-                    PopupMenuItem(
-                        value: 'reindex',
-                        child: Text('REINDEX ROWS',
-                            style: LabStyles.mono(context, fontSize: 10))),
-                    PopupMenuItem(
-                        value: 'repairTypes',
-                        child: Text('REPAIR COLUMN TYPES',
-                            style: LabStyles.mono(context, fontSize: 10))),
-                    PopupMenuItem(
-                        value: 'config',
-                        child: Text('VIEW CONFIG',
-                            style: LabStyles.mono(context, fontSize: 10))),
-                    PopupMenuItem(
-                        value: 'autoMerge',
-                        child: Text('AUTO-MERGE NAMES',
-                            style: LabStyles.mono(context, fontSize: 10))),
+                      enabled: false,
+                      height: 24,
+                      child: Text('DESTRUCTIVE',
+                          style: LabStyles.mono(context,
+                              fontSize: 8,
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.bold)),
+                    ),
+                    _batchMenuItem('merge', Icons.call_merge, 'MERGE ROWS',
+                        Colors.redAccent),
+                    _batchMenuItem('reindex', Icons.format_list_numbered,
+                        'REINDEX ROWS', Colors.redAccent),
+                    _batchMenuItem('repairTypes', Icons.build_circle,
+                        'REPAIR COLUMN TYPES', Colors.redAccent),
                   ],
                   onSelected: (v) {
                     final cfg = _tableConfigs[_tabCtrl.index];
@@ -1403,14 +1451,38 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
           TabBar(
             controller: _tabCtrl,
             isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            padding: EdgeInsets.zero,
             indicatorColor: LabColors.accent,
             labelColor: LabColors.accent,
             unselectedLabelColor: Colors.grey,
             labelStyle: LabStyles.mono(context,
                 fontSize: 8, fontWeight: FontWeight.bold),
-            tabs: _tableConfigs
-                .map((t) => Tab(icon: Icon(t.icon, size: 14), text: t.label))
-                .toList(),
+            tabs: _tableConfigs.map((t) {
+              final count = _tabRowCounts[t.key];
+              return Tab(
+                icon: Icon(t.icon, size: 14),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(t.label),
+                    if (count != null) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: LabColors.surfaceContainerHigh,
+                        ),
+                        child: Text('$count',
+                            style: LabStyles.mono(context,
+                                fontSize: 7, color: Colors.grey[400])),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            }).toList(),
             onTap: (index) => setState(() {
               _tabCtrl.index = index;
               _searchCtrl.text =
@@ -1506,6 +1578,30 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   final Map<String, int> _pageOffsets = {};
   final Map<String, int> _totalCounts = {};
   final Map<String, bool> _loadingMore = {};
+  // One horizontal ScrollController pair per table — header mirrors body.
+  final Map<String, ScrollController> _headerScrollControllers = {};
+  final Map<String, ScrollController> _bodyScrollControllers = {};
+
+  // Content-aware column widths for the currently loaded page (not the
+  // whole table) — replaces the old flat 100px-per-column layout.
+  Map<String, double> _computeColWidths(_TableCfg cfg, List<String> columns,
+      List<Map<String, dynamic>> rows) {
+    const charWidth = 6.2;
+    const minWidth = 64.0;
+    const maxWidth = 220.0;
+    const hPad = 16.0;
+    final widths = <String, double>{};
+    for (final col in columns) {
+      final label = (_columnLabels[cfg.key]?[col] ?? col).toUpperCase();
+      var maxLen = label.length;
+      for (final row in rows) {
+        final len = _formatValue(row[col], col).length;
+        if (len > maxLen) maxLen = len;
+      }
+      widths[col] = (maxLen * charWidth + hPad).clamp(minWidth, maxWidth);
+    }
+    return widths;
+  }
 
   int _getOffset(String key) => _pageOffsets[key] ?? 0;
   int _getTotal(String key) => _totalCounts[key] ?? 0;
@@ -1513,6 +1609,17 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   int _pageSizeFor(_TableCfg cfg) => _pageSizes[cfg.key] ?? _defaultPageSize;
 
   Widget _buildTableGrid(_TableCfg cfg) {
+    // Only the active tab actually queries/renders — TabBarView still needs
+    // a child per tab, but the other 7 no longer fire a fresh DB query on
+    // every rebuild (this was the dominant cause of lag: every keystroke in
+    // the search field was re-querying all 8 tables, not just the visible
+    // one). Safe because `physics: NeverScrollableScrollPhysics` means tabs
+    // are only reachable via the TabBar itself, never by swiping past an
+    // inactive one.
+    if (_tableConfigs[_tabCtrl.index].key != cfg.key) {
+      return const SizedBox.shrink();
+    }
+
     final db = ref.watch(databaseProvider);
     final offset = _getOffset(cfg.key);
     final total = _getTotal(cfg.key);
@@ -1598,9 +1705,18 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                     constraints:
                         const BoxConstraints(minWidth: 28, minHeight: 28),
                   ),
-                  Text('PG $currentPage/$totalPages',
-                      style: LabStyles.mono(context,
-                          fontSize: 8, color: LabColors.primary)),
+                  InkWell(
+                    onTap: () => _showJumpToPageDialog(cfg, totalPages),
+                    child: Padding(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      child: Text('PG $currentPage/$totalPages',
+                          style: LabStyles.mono(context,
+                              fontSize: 8,
+                              color: LabColors.primary,
+                              decoration: TextDecoration.underline)),
+                    ),
+                  ),
                   IconButton(
                     icon: const Icon(Icons.chevron_right, size: 16),
                     color: (offset + ps) < total
@@ -1627,97 +1743,201 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                     constraints:
                         const BoxConstraints(minWidth: 28, minHeight: 28),
                   ),
+                  const SizedBox(width: 6),
+                  IconButton(
+                    icon: const Icon(Icons.tune, size: 16),
+                    color: LabColors.primary,
+                    tooltip: 'PAGE SIZE / COLUMNS',
+                    onPressed: () => _showConfigDialog(cfg),
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                  ),
                 ],
               ),
             ),
-            // ── Data rows (smooth 2D panning) ──
-            Expanded(
-              child: InteractiveViewer(
-                constrained: false,
-                boundaryMargin: EdgeInsets.zero,
-                minScale: 1.0,
-                maxScale: 1.0,
+            // ── Table body: sticky header + independently-scrolling rows,
+            // both sharing one horizontal scroll position (the body drives,
+            // the header mirrors via a ScrollNotification listener) so
+            // columns stay aligned while the header never scrolls away
+            // vertically. Column widths are sized to their content (this
+            // page only) instead of a flat 100px for everything. ──
+            Builder(builder: (context) {
+              final colWidths = _computeColWidths(cfg, columns, filtered);
+              final totalWidth =
+                  colWidths.values.fold(0.0, (a, b) => a + b);
+              final headerCtrl = _headerScrollControllers.putIfAbsent(
+                  cfg.key, () => ScrollController());
+              final bodyCtrl = _bodyScrollControllers.putIfAbsent(
+                  cfg.key, () => ScrollController());
+
+              Widget rowCells(Map<String, dynamic>? row) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: columns.map((col) {
+                    final width = colWidths[col]!;
+                    if (row == null) {
+                      // header cell
+                      return Container(
+                        width: width,
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                        child: Text(
+                          (_columnLabels[cfg.key]?[col] ?? col).toUpperCase(),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: LabStyles.mono(context,
+                                  fontSize: 6.5,
+                                  color: LabColors.primary,
+                                  fontWeight: FontWeight.bold)
+                              .copyWith(height: 1.1),
+                        ),
+                      );
+                    }
+                    final display = _formatValue(row[col], col);
+                    final isPK = col == cfg.pkCol;
+                    return Container(
+                      width: width,
+                      constraints:
+                          const BoxConstraints(minHeight: 20, maxHeight: 36),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      child: isPK
+                          ? Text(display,
+                              style: LabStyles.mono(context,
+                                  fontSize: 8, color: LabColors.primary))
+                          : InkWell(
+                              onTap: () => _editCell(cfg, row, col, display),
+                              child: Text(
+                                display,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: LabStyles.mono(context, fontSize: 8),
+                              ),
+                            ),
+                    );
+                  }).toList(),
+                );
+              }
+
+              return Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Header row
+                    // Sticky header — mirrors the body's horizontal offset.
                     Container(
                       constraints:
                           const BoxConstraints(minHeight: 24, maxHeight: 40),
                       color: LabColors.primary.withValues(alpha: 0.08),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: columns
-                            .map((col) => Container(
-                                  width: 100,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 4, vertical: 3),
-                                  child: Text(
-                                    (_columnLabels[cfg.key]?[col] ?? col)
-                                        .toUpperCase(),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: LabStyles.mono(context,
-                                            fontSize: 6.5,
-                                            color: LabColors.primary,
-                                            fontWeight: FontWeight.bold)
-                                        .copyWith(height: 1.1),
-                                  ),
-                                ))
-                            .toList(),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        controller: headerCtrl,
+                        physics: const NeverScrollableScrollPhysics(),
+                        child: SizedBox(width: totalWidth, child: rowCells(null)),
                       ),
                     ),
-                    // Data rows
-                    ...filtered.map((row) {
-                      return Container(
-                        decoration: BoxDecoration(
-                          border: Border(
-                              bottom: BorderSide(
-                                  color: LabColors.cyanBorder
-                                      .withValues(alpha: 0.08),
-                                  width: 0.5)),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: columns.map((col) {
-                            final val = row[col];
-                            final display = _formatValue(val, col);
-                            final isPK = col == cfg.pkCol;
-                            return Container(
-                              width: 100,
-                              constraints: const BoxConstraints(
-                                  minHeight: 20, maxHeight: 36),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 4, vertical: 2),
-                              child: isPK
-                                  ? Text(display,
-                                      style: LabStyles.mono(context,
-                                          fontSize: 8,
-                                          color: LabColors.primary))
-                                  : InkWell(
-                                      onTap: () =>
-                                          _editCell(cfg, row, col, display),
-                                      child: Text(
-                                        display,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: LabStyles.mono(context,
-                                            fontSize: 8),
-                                      ),
+                    Expanded(
+                      child: Scrollbar(
+                        controller: bodyCtrl,
+                        thumbVisibility: true,
+                        notificationPredicate: (n) => n.depth == 0,
+                        child: NotificationListener<ScrollNotification>(
+                          onNotification: (n) {
+                            if (n.metrics.axis == Axis.horizontal &&
+                                headerCtrl.hasClients) {
+                              headerCtrl.jumpTo(n.metrics.pixels);
+                            }
+                            return false;
+                          },
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            controller: bodyCtrl,
+                            child: SizedBox(
+                              width: totalWidth,
+                              child: ListView.builder(
+                                itemCount: filtered.length,
+                                itemBuilder: (context, i) {
+                                  final row = filtered[i];
+                                  return Container(
+                                    decoration: BoxDecoration(
+                                      border: Border(
+                                          bottom: BorderSide(
+                                              color: LabColors.cyanBorder
+                                                  .withValues(alpha: 0.08),
+                                              width: 0.5)),
                                     ),
-                            );
-                          }).toList(),
+                                    child: rowCells(row),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
                         ),
-                      );
-                    }),
+                      ),
+                    ),
                   ],
                 ),
-              ),
-            ),
+              );
+            }),
           ],
         );
       },
     );
+  }
+
+  PopupMenuItem<String> _batchMenuItem(
+      String value, IconData icon, String label, Color color) {
+    return PopupMenuItem(
+      value: value,
+      height: 36,
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 10),
+          Text(label, style: LabStyles.mono(context, fontSize: 10, color: color)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showJumpToPageDialog(_TableCfg cfg, int totalPages) async {
+    final ctrl = TextEditingController(
+        text: ((_getOffset(cfg.key) / _pageSizeFor(cfg)).floor() + 1).toString());
+    final target = await showDialog<int>(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: LabColors.background,
+        title: Text('JUMP TO PAGE',
+            style: LabStyles.mono(context,
+                fontSize: 12, fontWeight: FontWeight.bold)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          style: LabStyles.mono(context, color: Colors.white),
+          decoration: InputDecoration(
+            hintText: '1 - $totalPages',
+            hintStyle: LabStyles.mono(context, color: Colors.grey),
+            enabledBorder:
+                const UnderlineInputBorder(borderSide: BorderSide(color: Colors.grey)),
+          ),
+          onSubmitted: (v) => Navigator.pop(c, int.tryParse(v)),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: Text('CANCEL', style: LabStyles.mono(context, color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(c, int.tryParse(ctrl.text)),
+            child: Text('GO', style: LabStyles.mono(context, color: LabColors.accent)),
+          ),
+        ],
+      ),
+    );
+    if (target == null) return;
+    final page = target.clamp(1, totalPages);
+    setState(() => _pageOffsets[cfg.key] = (page - 1) * _pageSizeFor(cfg));
   }
 
   Future<void> _showConfigDialog(_TableCfg cfg) async {
@@ -2013,6 +2233,21 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         ],
       ),
     );
+  }
+
+  // Independent from `_totalCounts` (which the pagination bar resets to 0
+  // whenever the tab is tapped) — this persists so the tab badge doesn't
+  // flicker back to blank every time you switch tabs.
+  final Map<String, int> _tabRowCounts = {};
+
+  Future<void> _loadTabBadgeCount(AppDatabase db, _TableCfg cfg) async {
+    try {
+      final rows =
+          await db.executor.runSelect('SELECT COUNT(*) as cnt FROM ${cfg.table}', []);
+      if (mounted) {
+        setState(() => _tabRowCounts[cfg.key] = rows.first['cnt'] as int);
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadCount(AppDatabase db, _TableCfg cfg) async {

@@ -188,6 +188,22 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
   OverlayEntry? _injectionOverlayEntry;
   bool _isInjectionFinishing = false;
 
+  // Memoized VP overview future — without this, the inline FutureBuilder in
+  // build() would create a brand-new Future (re-running the DB query +
+  // regex/sort work in _buildVpOverview) on every rebuild, not just when the
+  // underlying results actually change.
+  List<drift.TypedResult>? _vpOverviewInput;
+  Future<Widget>? _vpOverviewFuture;
+
+  Future<Widget> _getVpOverviewFuture(
+      BuildContext context, List<drift.TypedResult>? results) {
+    if (!identical(results, _vpOverviewInput) || _vpOverviewFuture == null) {
+      _vpOverviewInput = results;
+      _vpOverviewFuture = _buildVpOverview(context, ref, results);
+    }
+    return _vpOverviewFuture!;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -484,7 +500,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
         SliverToBoxAdapter(child: generalNotesSliver),
         SliverToBoxAdapter(
             child: FutureBuilder<Widget>(
-                future: _buildVpOverview(context, ref, workoutAsync.value),
+                future: _getVpOverviewFuture(context, workoutAsync.value),
                 builder: (ctx, snap) =>
                     snap.connectionState == ConnectionState.done
                         ? (snap.data ?? const SizedBox.shrink())
@@ -523,7 +539,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: LabColors.background,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.zero,
         border: Border.all(color: LabColors.primary.withValues(alpha: 0.35)),
       ),
       child: Column(
@@ -545,7 +561,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                   fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           ClipRRect(
-            borderRadius: BorderRadius.circular(999),
+            borderRadius: BorderRadius.zero,
             child: LinearProgressIndicator(
               value: _injectionProgress,
               minHeight: 10,
@@ -676,6 +692,13 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
     final sorted = vpByEx.entries.toList()
       ..sort((a, b) => b.value.totalVp.compareTo(a.value.totalVp));
 
+    // ref.read, not watch — this runs inside an async function after an
+    // await, past the point where `watch` is valid to call.
+    final settings = ref.read(themeSettingsProvider).value ?? {};
+    final sessionTotalColor = ref.read(themeControllerProvider).getColor(
+        settings, 'UI_TAG_SESSION_TOTAL',
+        defaultColor: LabColors.accent);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Container(
@@ -737,12 +760,12 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                   Text('SESIÓN TOTAL',
                       style: LabStyles.mono(context,
                           fontSize: 10,
-                          color: Colors.cyanAccent,
+                          color: sessionTotalColor,
                           fontWeight: FontWeight.bold)),
                   Text('${sessionVp.toStringAsFixed(0)} VP',
                       style: LabStyles.mono(context,
                           fontSize: 10,
-                          color: Colors.cyanAccent,
+                          color: sessionTotalColor,
                           fontWeight: FontWeight.bold)),
                 ]),
           ),
@@ -1012,7 +1035,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                         const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.white.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(2),
+                      borderRadius: BorderRadius.zero,
                     ),
                     child: Text('${groups.length} KNS',
                         style: LabStyles.mono(context,
@@ -2195,8 +2218,8 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
 
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
-    final firstSet =
-        widget.results.first.readTable(ref.read(databaseProvider).workoutSets);
+    final db = ref.read(databaseProvider);
+    final firstSet = widget.results.first.readTable(db.workoutSets);
     // Read utilities from complex_metadata (priority field fallback)
     List<String> utilities = [];
     if (firstSet.complexMetadata != null) {
@@ -2227,6 +2250,13 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
         tC.getColor(settings, "UI_TAG_BODYPOSITION", nameSeed: "BODYPOSITION");
     final uiTagPrimaryMuscle = tC.getColor(settings, "UI_TAG_PRIMARY_MUSCLE",
         nameSeed: "PRIMARY_MUSCLE");
+    final useOriginalFace = tC.getBool(
+        settings, 'APPCFG_KNS_FACE_LAYOUT_ORIGINAL',
+        defaultValue: false);
+    final setsCount = widget.results.length;
+    final prCount = widget.results
+        .where((r) => r.readTable(db.workoutSets).isPr)
+        .length;
 
     Color typeColor;
     switch (loadType) {
@@ -2243,17 +2273,18 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
         typeColor = LabColors.primary;
     }
     final isoColor = uiTagIso;
+    final moduleBorderColor = tC.getColor(settings, 'UI_TAG_MODULE_BORDER',
+        defaultColor: LabColors.cyanBorder);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(8, 0, 8, 16),
       decoration: BoxDecoration(
-        color: LabColors.surfaceDim,
-        border: Border.all(
-            color: hasUtility
-                ? utilityColor
-                : LabColors.cyanBorder
-                    .withValues(alpha: widget.expanded ? 0.5 : 0.2),
-            width: hasUtility ? 1.5 : 0.5),
+        color: LabColors.background,
+        border: Border(
+          top: BorderSide(
+              color: hasUtility ? utilityColor : moduleBorderColor,
+              width: hasUtility ? 2 : 1.5),
+        ),
         boxShadow: hasUtility
             ? [
                 BoxShadow(
@@ -2262,160 +2293,13 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
             : null,
       ),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // [UTIL] row — OUTSIDE InkWell to avoid gesture conflict
-                    GestureDetector(
-                      onTap: () => _showUtilityEditDialog(context),
-                      child: Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          children: [
-                            Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                ...utilities.take(4).map((u) {
-                                  final chipColor = tC.getColor(
-                                      settings, "PRIORITY_$u",
-                                      nameSeed: u);
-                                  return Container(
-                                    margin: const EdgeInsets.only(right: 3),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 4, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      color: chipColor.withValues(alpha: 0.2),
-                                      border: Border.all(
-                                          color: chipColor, width: 0.5),
-                                    ),
-                                    child: Text(
-                                      u.toUpperCase(),
-                                      style: LabStyles.mono(context,
-                                          color: chipColor,
-                                          fontSize: 7,
-                                          fontWeight: FontWeight.bold),
-                                    ),
-                                  );
-                                }),
-                                if (!hasUtility)
-                                  Text('[ UTIL ]',
-                                      style: LabStyles.mono(context,
-                                          color: Colors.grey[600]!,
-                                          fontSize: 8)),
-                              ],
-                            ),
-                            if (isIso)
-                              Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 4, vertical: 1),
-                                  margin: const EdgeInsets.only(right: 4),
-                                  decoration: BoxDecoration(
-                                      border: Border.all(
-                                          color: isoColor, width: 0.5)),
-                                  child: Text('ISO',
-                                      style: LabStyles.mono(context,
-                                          color: isoColor,
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.bold))),
-                            Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(
-                                    border: Border.all(
-                                        color: typeColor, width: 0.5)),
-                                child: Text(loadType,
-                                    style: LabStyles.mono(context,
-                                        color: typeColor,
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.bold))),
-                          ]),
-                    ),
-                    const SizedBox(height: 6),
-                    // Exercise name + tags — the expand/collapse area
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () =>
-                            widget.onToggleExpanded(!widget.expanded),
-                        onLongPress: () =>
-                            _showComplexModsModal(context),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Builder(builder: (c) {
-                              return Text(e.fullName,
-                                  style: LabStyles.headline(context).copyWith(
-                                      fontSize: 18, color: Colors.white));
-                            }),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 4,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                if (e.primaryMuscleGroup != null)
-                                  Text(e.primaryMuscleGroup!.toUpperCase(),
-                                      style: LabStyles.mono(context,
-                                          color: uiTagPrimaryMuscle,
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.bold)),
-                                ...e.bodyPositionTags.map((tag) => Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 4, vertical: 1),
-                                      decoration: BoxDecoration(
-                                        color: uiTagBodyposition.withValues(
-                                            alpha: 0.1),
-                                        border: Border.all(
-                                            color: uiTagBodyposition.withValues(
-                                                alpha: 0.3),
-                                            width: 0.5),
-                                      ),
-                                      child: Text(tag.toUpperCase(),
-                                          style: LabStyles.mono(context,
-                                              fontSize: 7,
-                                              color: uiTagBodyposition)),
-                                    )),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Row(mainAxisSize: MainAxisSize.min, children: [
-                if (widget.showDragHandle)
-                  ReorderableDragStartListener(
-                    index: widget.index,
-                    child: const Padding(
-                      padding: EdgeInsets.only(
-                          left: 32, right: 6, top: 2, bottom: 2),
-                      child: Icon(Icons.drag_handle,
-                          color: LabColors.primary, size: 20),
-                    ),
-                  ),
-                IconButton(
-                    icon: const Icon(Icons.history,
-                        color: LabColors.primary, size: 20),
-                    onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (c) => ExerciseHistoryScreen(
-                                exercise: widget.exercise)))),
-              ]),
-            ],
-          ),
-        ),
+        useOriginalFace
+            ? _buildFaceHeaderOriginal(context, e, loadType, isIso, hasUtility,
+                utilities, tC, settings, typeColor, isoColor,
+                uiTagBodyposition, uiTagPrimaryMuscle)
+            : _buildFaceHeaderNew(context, e, loadType, isIso, hasUtility,
+                utilities, tC, settings, typeColor, isoColor,
+                uiTagBodyposition, setsCount, prCount),
         if (widget.expanded) ...[
           const Divider(height: 1, color: LabColors.cyanBorder, thickness: 0.2),
           Padding(
@@ -2465,6 +2349,371 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     );
   }
 
+  // Current KNS card face: metadata chips + history/drag handle on the top
+  // row (with set/PR counters filling the gap), name + body-position tags
+  // below, no primary muscle. Toggleable from APP.CONFIG > VISUALS > C.WO.
+  Widget _buildFaceHeaderNew(
+      BuildContext context,
+      BaseExercise e,
+      String loadType,
+      bool isIso,
+      bool hasUtility,
+      List<String> utilities,
+      ThemeController tC,
+      Map<String, ThemeSetting> settings,
+      Color typeColor,
+      Color isoColor,
+      Color uiTagBodyposition,
+      int setsCount,
+      int prCount) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Natural-width chip row — NOT wrapped in Expanded/Flexible so
+              // it never gets squeezed into wrapping onto a second line.
+              Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    // [UTIL] chips — OUTSIDE InkWell to avoid gesture
+                    // conflict with the ISO/NAT.LOAD badges below.
+                    GestureDetector(
+                      onTap: () => _showUtilityEditDialog(context),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ...utilities.take(4).map((u) {
+                            final chipColor = tC.getColor(
+                                settings, "PRIORITY_$u",
+                                nameSeed: u);
+                            return Container(
+                              margin: const EdgeInsets.only(right: 3),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: chipColor.withValues(alpha: 0.2),
+                                border:
+                                    Border.all(color: chipColor, width: 0.5),
+                              ),
+                              child: Text(
+                                u.toUpperCase(),
+                                style: LabStyles.mono(context,
+                                    color: chipColor,
+                                    fontSize: 7,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            );
+                          }),
+                          if (!hasUtility)
+                            Text('[ UTIL ]',
+                                style: LabStyles.mono(context,
+                                    color: Colors.grey[600]!, fontSize: 8)),
+                        ],
+                      ),
+                    ),
+                    // ISO/NAT.LOAD badges — purely informational, no
+                    // gesture.
+                    if (isIso)
+                      Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                              border:
+                                  Border.all(color: isoColor, width: 0.5)),
+                          child: Text('ISO',
+                              style: LabStyles.mono(context,
+                                  color: isoColor,
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.bold))),
+                    Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                            border: Border.all(color: typeColor, width: 0.5)),
+                        child: Text(loadType,
+                            style: LabStyles.mono(context,
+                                color: typeColor,
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold))),
+                  ]),
+              const SizedBox(width: 12),
+              // Set/PR counters — bold and colored so they read as content,
+              // not filler, while taking up the leftover space in this row.
+              Expanded(
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('$setsCount',
+                          style: LabStyles.mono(context,
+                              fontSize: 14,
+                              color: LabColors.accent,
+                              fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 3),
+                      Text('SETS',
+                          style: LabStyles.mono(context,
+                              fontSize: 9, color: Colors.grey[400])),
+                      const SizedBox(width: 20),
+                      Text('$prCount',
+                          style: LabStyles.mono(context,
+                              fontSize: 14,
+                              color: prCount > 0
+                                  ? Colors.redAccent
+                                  : Colors.grey[600],
+                              fontWeight: FontWeight.bold)),
+                      const SizedBox(width: 3),
+                      Text('PR',
+                          style: LabStyles.mono(context,
+                              fontSize: 9, color: Colors.grey[400])),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  IconButton(
+                      icon: const Icon(Icons.history,
+                          color: LabColors.primary, size: 20),
+                      onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (c) => ExerciseHistoryScreen(
+                                  exercise: widget.exercise)))),
+                  if (widget.showDragHandle) ...[
+                    const SizedBox(width: 8),
+                    ReorderableDragStartListener(
+                      index: widget.index,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 2),
+                        child: Icon(Icons.drag_handle,
+                            color: LabColors.primary, size: 20),
+                      ),
+                    ),
+                  ],
+                ]),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Exercise name + tags — the expand/collapse area
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => widget.onToggleExpanded(!widget.expanded),
+              onLongPress: () => _showComplexModsModal(context),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(e.fullName,
+                      style: LabStyles.headline(context)
+                          .copyWith(fontSize: 18, color: Colors.white)),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      ...e.bodyPositionTags.map((tag) => Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: uiTagBodyposition.withValues(alpha: 0.1),
+                              border: Border.all(
+                                  color:
+                                      uiTagBodyposition.withValues(alpha: 0.3),
+                                  width: 0.5),
+                            ),
+                            child: Text(tag.toUpperCase(),
+                                style: LabStyles.mono(context,
+                                    fontSize: 7, color: uiTagBodyposition)),
+                          )),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Pre-overhaul KNS card face: single combined gesture zone over
+  // UTIL/ISO/NAT.LOAD, primary muscle shown next to body-position tags,
+  // history/drag handle beside the exercise name. Kept for users who prefer
+  // the original layout (APP.CONFIG > VISUALS > C.WO).
+  Widget _buildFaceHeaderOriginal(
+      BuildContext context,
+      BaseExercise e,
+      String loadType,
+      bool isIso,
+      bool hasUtility,
+      List<String> utilities,
+      ThemeController tC,
+      Map<String, ThemeSetting> settings,
+      Color typeColor,
+      Color isoColor,
+      Color uiTagBodyposition,
+      Color uiTagPrimaryMuscle) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // [UTIL] row — OUTSIDE InkWell to avoid gesture conflict
+                GestureDetector(
+                  onTap: () => _showUtilityEditDialog(context),
+                  child: Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ...utilities.take(4).map((u) {
+                              final chipColor = tC.getColor(
+                                  settings, "PRIORITY_$u",
+                                  nameSeed: u);
+                              return Container(
+                                margin: const EdgeInsets.only(right: 3),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: chipColor.withValues(alpha: 0.2),
+                                  border:
+                                      Border.all(color: chipColor, width: 0.5),
+                                ),
+                                child: Text(
+                                  u.toUpperCase(),
+                                  style: LabStyles.mono(context,
+                                      color: chipColor,
+                                      fontSize: 7,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              );
+                            }),
+                            if (!hasUtility)
+                              Text('[ UTIL ]',
+                                  style: LabStyles.mono(context,
+                                      color: Colors.grey[600]!, fontSize: 8)),
+                          ],
+                        ),
+                        if (isIso)
+                          Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 4, vertical: 1),
+                              margin: const EdgeInsets.only(right: 4),
+                              decoration: BoxDecoration(
+                                  border:
+                                      Border.all(color: isoColor, width: 0.5)),
+                              child: Text('ISO',
+                                  style: LabStyles.mono(context,
+                                      color: isoColor,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.bold))),
+                        Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                                border:
+                                    Border.all(color: typeColor, width: 0.5)),
+                            child: Text(loadType,
+                                style: LabStyles.mono(context,
+                                    color: typeColor,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.bold))),
+                      ]),
+                ),
+                const SizedBox(height: 6),
+                // Exercise name + tags — the expand/collapse area
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => widget.onToggleExpanded(!widget.expanded),
+                    onLongPress: () => _showComplexModsModal(context),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(e.fullName,
+                            style: LabStyles.headline(context)
+                                .copyWith(fontSize: 18, color: Colors.white)),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            if (e.primaryMuscleGroup != null)
+                              Text(e.primaryMuscleGroup!.toUpperCase(),
+                                  style: LabStyles.mono(context,
+                                      color: uiTagPrimaryMuscle,
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.bold)),
+                            ...e.bodyPositionTags.map((tag) => Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: uiTagBodyposition.withValues(
+                                        alpha: 0.1),
+                                    border: Border.all(
+                                        color: uiTagBodyposition.withValues(
+                                            alpha: 0.3),
+                                        width: 0.5),
+                                  ),
+                                  child: Text(tag.toUpperCase(),
+                                      style: LabStyles.mono(context,
+                                          fontSize: 7,
+                                          color: uiTagBodyposition)),
+                                )),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            if (widget.showDragHandle)
+              ReorderableDragStartListener(
+                index: widget.index,
+                child: const Padding(
+                  padding:
+                      EdgeInsets.only(left: 32, right: 6, top: 2, bottom: 2),
+                  child: Icon(Icons.drag_handle,
+                      color: LabColors.primary, size: 20),
+                ),
+              ),
+            IconButton(
+                icon: const Icon(Icons.history,
+                    color: LabColors.primary, size: 20),
+                onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (c) => ExerciseHistoryScreen(
+                            exercise: widget.exercise)))),
+          ]),
+        ],
+      ),
+    );
+  }
+
   void _showComplexModsModal(BuildContext context) {
     final bool isLinked = widget.results.first
             .readTable(ref.read(databaseProvider).workoutSets)
@@ -2479,7 +2728,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('COMPLEX_C.WO_MODS',
+            Text('KNS.CARD_MODS',
                 style: LabStyles.headline(context).copyWith(fontSize: 16)),
             const SizedBox(height: 24),
             GridView.count(
@@ -2588,11 +2837,11 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('ASSIGN_BATCH',
-                    style: LabStyles.headline(context).copyWith(fontSize: 16)),
+                    style: LabStyles.headline(c).copyWith(fontSize: 16)),
                 const SizedBox(height: 16),
                 TextField(
                   controller: nameC,
-                  style: LabStyles.mono(context,
+                  style: LabStyles.mono(c,
                       fontSize: 12, color: Colors.white),
                   decoration: InputDecoration(
                     hintText: 'BATCH_NAME',
@@ -2604,7 +2853,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                 if (batchList.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   Text('EXISTING_BATCHES:',
-                      style: LabStyles.mono(context,
+                      style: LabStyles.mono(c,
                           fontSize: 9, color: Colors.grey[500])),
                   const SizedBox(height: 8),
                   GridView.count(
@@ -2640,7 +2889,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 6, vertical: 6),
                                         child: Text(name.toUpperCase(),
-                                            style: LabStyles.mono(context,
+                                            style: LabStyles.mono(c,
                                                 fontSize: 10,
                                                 color: Colors.tealAccent),
                                             overflow: TextOverflow.ellipsis),
@@ -3430,6 +3679,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   double _vpValue = 0;
   double _vpMultiplier = 1.0;
   Timer? _vpTimer;
+  Future<List<drift.QueryRow>>? _somaticLogsFuture;
 
   String _formatInputValue(double value) {
     if (value.isFinite && value == value.truncateToDouble()) {
@@ -3550,7 +3800,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
       rpe: drift.Value(rpe),
       rir: drift.Value(rir),
       restTimeSeconds: drift.Value(rest),
-      technique: drift.Value(te ?? 1),
+      technique: drift.Value(te),
       trackName: drift.Value(track.isEmpty ? null : track),
       notes: drift.Value(notes.isEmpty ? null : notes),
     ));
@@ -3686,7 +3936,8 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
       double? srpe = s.rpe;
       double? sRir = s.rir;
       int sRest = s.restTimeSeconds ?? 120;
-      int ste = s.technique ?? 1;
+      int? steStore = s.technique;
+      int ste = steStore ?? 1; // neutral multiplier for the score formula only
       String sNotes = s.notes ?? "";
       String sTrack = (s.trackName ?? "").replaceFirst('[RED_PR]', '').trim();
 
@@ -3695,6 +3946,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
         sr = r;
         srpe = rpe;
         sRir = rir;
+        steStore = te;
         ste = te ?? 1;
         sNotes = _commentC.text.trim();
         sRest = widget.set.restTimeSeconds ?? 120;
@@ -3754,7 +4006,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
               rpe: drift.Value(srpe),
               rir: drift.Value(sRir),
               restTimeSeconds: drift.Value(sRest),
-              technique: drift.Value(ste),
+              technique: drift.Value(steStore),
               trackName: drift.Value(sTrack.isEmpty ? null : sTrack),
               notes: drift.Value(sNotes.isEmpty ? null : sNotes),
               isPr: drift.Value(sIsPr)));
@@ -3895,6 +4147,14 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     } else if (widget.side == "LEFT") {
       sideColor = tC.getColor(settings, "UI_UNILATERAL_LEFT", nameSeed: "LEFT");
     }
+    final setRowExpandedColor = tC.getColor(settings, 'UI_TAG_SETROW_EXPANDED',
+        defaultColor: LabColors.primary);
+    final showFailurePhase =
+        tC.getBool(settings, 'APPCFG_SHOW_FAILURE_PHASE', defaultValue: true);
+    final showKnsToggles =
+        tC.getBool(settings, 'APPCFG_SHOW_KNS_TOGGLES', defaultValue: true);
+    final summaryBorderColor = tC.getColor(settings, 'UI_TAG_SUMMARY_BORDER',
+        defaultColor: LabColors.cyanBorder);
 
     return Container(
         margin: const EdgeInsets.only(bottom: 12),
@@ -3905,7 +4165,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                     color: isRed
                         ? Colors.redAccent
                         : (_exp
-                            ? LabColors.primary.withValues(alpha: 0.4)
+                            ? setRowExpandedColor.withValues(alpha: 0.4)
                             : Colors.grey[800]!),
                     width: isRed ? 2 : 0.5),
                 color: isRed
@@ -3922,8 +4182,8 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                     : (_exp
                         ? [
                             BoxShadow(
-                                color:
-                                    LabColors.primary.withValues(alpha: 0.05),
+                                color: setRowExpandedColor.withValues(
+                                    alpha: 0.05),
                                 blurRadius: 6)
                           ]
                         : null)),
@@ -3977,16 +4237,20 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
           if (_exp) ...[
             const SizedBox(height: 12),
             Row(children: [
-              _buildSummaryBox('TONNAGE',
-                  (tL * (double.tryParse(_rC.text) ?? 0)).toStringAsFixed(1)),
+              _buildSummaryBox(
+                  'TONNAGE',
+                  (tL * (double.tryParse(_rC.text) ?? 0)).toStringAsFixed(1),
+                  summaryBorderColor),
               const SizedBox(width: 4),
               _buildSummaryBox(
                   'eORM',
                   WorkoutCalculator.calculateEpley1RM(
                           tL, double.tryParse(_rC.text) ?? 0)
-                      .toStringAsFixed(1)),
+                      .toStringAsFixed(1),
+                  summaryBorderColor),
               const SizedBox(width: 4),
-              _buildSummaryBox('VP', _vpValue.toStringAsFixed(1)),
+              _buildSummaryBox(
+                  'VP', _vpValue.toStringAsFixed(1), summaryBorderColor),
             ]),
             const SizedBox(height: 12),
             Container(
@@ -4013,10 +4277,10 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
             const SizedBox(height: 8),
             _buildNotesToggleCard(),
             const SizedBox(height: 12),
-            _buildFailurePhaseCard(),
+            if (showFailurePhase) _buildFailurePhaseCard(),
             _buildComplexSetModsButton(),
             const SizedBox(height: 12),
-            _buildParticularTogglesCard(),
+            if (showKnsToggles) _buildParticularTogglesCard(),
             const SizedBox(height: 20),
           ]
         ]));
@@ -4355,15 +4619,14 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
             ])));
   }
 
-  Widget _buildSummaryBox(String l, String v) {
+  Widget _buildSummaryBox(String l, String v, Color borderColor) {
     return Expanded(
         child: Container(
             padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
             decoration: BoxDecoration(
                 color: LabColors.surfaceDim,
                 border: Border.all(
-                    color: LabColors.cyanBorder.withValues(alpha: 0.1),
-                    width: 0.5)),
+                    color: borderColor.withValues(alpha: 0.1), width: 0.5)),
             child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -4544,8 +4807,11 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
         defaultColor: Colors.redAccent);
     final recoveryColor = tC.getColor(settings, 'UI_TAG_SOMATIC_RECOVERY',
         defaultColor: Colors.greenAccent);
+    // Memoized so unrelated rebuilds of this widget don't re-run the query;
+    // explicitly invalidated (set back to null) wherever somatic_logs is
+    // mutated below.
     return FutureBuilder<List<drift.QueryRow>>(
-        future: db
+        future: _somaticLogsFuture ??= db
             .customSelect(
                 "SELECT id, description, spectrum_value, tags FROM somatic_logs WHERE set_id = ${widget.set.id} ORDER BY created_at DESC")
             .get(),
@@ -4664,6 +4930,9 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     int selectedIntensity = 5;
     int? editingLogId;
     int? _selectedFolderId;
+    // Declared outside the StatefulBuilder so it survives setModalState
+    // rebuilds (typing in dC/tC) instead of re-querying folders every time.
+    Future<List<drift.QueryRow>>? foldersFuture;
 
     showModalBottomSheet(
         context: context,
@@ -4913,7 +5182,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                         children: [
                           Expanded(
                             child: FutureBuilder<List<drift.QueryRow>>(
-                              future: db
+                              future: foldersFuture ??= db
                                   .customSelect(
                                       'SELECT id, name FROM somatic_folders ORDER BY name')
                                   .get(),
@@ -5065,6 +5334,9 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                                           onPressed: () async {
                                             await db.customStatement(
                                                 'DELETE FROM somatic_logs WHERE id = $logId');
+                                            if (mounted) {
+                                              setState(() => _somaticLogsFuture = null);
+                                            }
                                             if (editingLogId == logId) {
                                               setModalState(() {
                                                 editingLogId = null;
@@ -5125,6 +5397,9 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                               }
                             }
 
+                            if (mounted) {
+                              setState(() => _somaticLogsFuture = null);
+                            }
                             setModalState(() {
                               editingLogId = null;
                               dC.clear();
@@ -6062,7 +6337,7 @@ class _WbInjectConfigDialogState extends State<_WbInjectConfigDialog> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: color,
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.zero,
           border: Border.all(
               color: active
                   ? LabColors.primary.withValues(alpha: 0.8)

@@ -16,6 +16,7 @@ import 'pr_logic_screen.dart';
 import 'db_inspector_screen.dart';
 import 'ovarch_plan_screen.dart';
 import 'somatic_spectrum_screen.dart' as somatic;
+import 'app_config_screen.dart';
 
 class MainHubScreen extends ConsumerWidget {
   const MainHubScreen({super.key});
@@ -43,6 +44,8 @@ class MainHubScreen extends ConsumerWidget {
           _buildDBInspectorModule(context, settings, tC),
           const SizedBox(height: 12),
           _buildSomaticLogsModule(context, settings, tC),
+          const SizedBox(height: 12),
+          _buildAppConfigModule(context, settings, tC),
           /* _buildPRLogicModule(context, settings, tC), — BACKGROUNDED */
         ],
       ),
@@ -389,6 +392,44 @@ class MainHubScreen extends ConsumerWidget {
                 ),
               ),
               Icon(Icons.settings, color: color.withValues(alpha: 0.5), size: 24),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppConfigModule(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC) {
+    final color = tC.getColor(settings, "DASHBOARD_CARD_APP.CONFIG", defaultColor: LabColors.onSurfaceVariant);
+    final bgColor = tC.getColor(settings, "DASHBOARD_CARD_APP.CONFIG_BG", defaultColor: color.withValues(alpha: 0.08));
+
+    return Material(
+      color: bgColor,
+      child: InkWell(
+        onTap: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const AppConfigScreen()));
+        },
+        child: Container(
+          height: 80,
+          decoration: BoxDecoration(
+            border: Border.all(color: color.withValues(alpha: 0.4), width: 0.5),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            children: [
+              Icon(Icons.tune, color: color, size: 32),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('APP_WIDE_SETTINGS', style: LabStyles.mono(context, fontSize: 8, color: color.withValues(alpha: 0.7))),
+                    Text('APP.CONFIG', style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: color.withValues(alpha: 0.5), size: 24),
             ],
           ),
         ),

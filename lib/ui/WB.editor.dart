@@ -3570,6 +3570,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     'WARMUP'
   ];
   String? _currentIntent;
+  Future<List<drift.QueryRow>>? _somaticLogsFuture;
 
   @override
   void initState() {
@@ -4503,8 +4504,10 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
 
   Widget _buildSomaticCard() {
     final db = ref.read(databaseProvider);
+    // Memoized so unrelated rebuilds don't re-run the query; invalidated
+    // (set back to null) wherever somatic_logs is mutated below.
     return FutureBuilder<List<drift.QueryRow>>(
-        future: db
+        future: _somaticLogsFuture ??= db
             .customSelect(
                 "SELECT id, description, spectrum_value, tags FROM somatic_logs WHERE set_id = ${widget.set.id} ORDER BY created_at DESC")
             .get(),
@@ -4626,6 +4629,9 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     int selectedIntensity = 5;
     int? editingLogId;
     int? _selectedFolderId;
+    // Declared outside the StatefulBuilder so it survives setModalState
+    // rebuilds instead of re-querying folders on every keystroke.
+    Future<List<drift.QueryRow>>? foldersFuture;
 
     showModalBottomSheet(
         context: context,
@@ -4865,7 +4871,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                         children: [
                           Expanded(
                             child: FutureBuilder<List<drift.QueryRow>>(
-                              future: db
+                              future: foldersFuture ??= db
                                   .customSelect(
                                       'SELECT id, name FROM somatic_folders ORDER BY name')
                                   .get(),
@@ -5017,6 +5023,9 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                                           onPressed: () async {
                                             await db.customStatement(
                                                 'DELETE FROM somatic_logs WHERE id = $logId');
+                                            if (mounted) {
+                                              setState(() => _somaticLogsFuture = null);
+                                            }
                                             if (editingLogId == logId) {
                                               setModalState(() {
                                                 editingLogId = null;
@@ -5076,6 +5085,9 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                               }
                             }
 
+                            if (mounted) {
+                              setState(() => _somaticLogsFuture = null);
+                            }
                             setModalState(() {
                               editingLogId = null;
                               dC.clear();

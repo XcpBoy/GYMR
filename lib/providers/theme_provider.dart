@@ -45,6 +45,20 @@ class ThemeController {
     ));
   }
 
+  Future<void> setBool(String key, bool value) => setValue(key, value ? '1' : '0');
+
+  bool getBool(Map<String, ThemeSetting> settings, String key,
+      {bool defaultValue = true}) {
+    final v = settings[key]?.value;
+    if (v == null) return defaultValue;
+    return v == '1' || v.toLowerCase() == 'true';
+  }
+
+  // Clears every customized color (rows with a colorHex set), leaving
+  // value-only rows (wallpaper paths, app-config toggles) untouched.
+  Future<void> resetAllColors() =>
+      (db.delete(db.themeSettings)..where((t) => t.colorHex.isNotNull())).go();
+
   Color getColor(Map<String, ThemeSetting> settings, String key, {Color? defaultColor, String? nameSeed, Iterable<String> aliases = const []}) {
     if (settings.containsKey(key)) {
       final hex = settings[key]!.colorHex;

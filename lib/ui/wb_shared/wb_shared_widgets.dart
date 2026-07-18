@@ -112,9 +112,13 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
 
   @override
   Widget build(BuildContext context) {
+    final settings = ref.watch(themeSettingsProvider).value ?? {};
+    final notesColor = ref.read(themeControllerProvider).getColor(
+        settings, 'UI_TAG_SESSION_NOTES',
+        defaultColor: LabColors.accent);
     return Container(
       margin: const EdgeInsets.only(top: 8, bottom: 24),
-      decoration: LabStyles.hairlineBorder(color: LabColors.primary),
+      decoration: LabStyles.hairlineBorder(color: notesColor),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,7 +128,7 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
             onTap: () => setState(() => _isExpanded = !_isExpanded),
             child: Container(
               padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
-              color: LabColors.primary.withOpacity(0.06),
+              color: notesColor.withOpacity(0.06),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -134,14 +138,14 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
                         _isExpanded
                             ? Icons.keyboard_arrow_up
                             : Icons.keyboard_arrow_down,
-                        color: LabColors.primary,
+                        color: notesColor,
                         size: 18,
                       ),
                       const SizedBox(width: 8),
                       Text(
                         widget.cardKey,
                         style: LabStyles.mono(context,
-                            color: LabColors.primary,
+                            color: notesColor,
                             fontSize: 10,
                             fontWeight: FontWeight.bold),
                       ),
@@ -153,14 +157,13 @@ class _GeneralNotesModuleState extends ConsumerState<GeneralNotesModule> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        border:
-                            Border.all(color: LabColors.primary, width: 0.5),
-                        color: LabColors.primary.withOpacity(0.08),
+                        border: Border.all(color: notesColor, width: 0.5),
+                        color: notesColor.withOpacity(0.08),
                       ),
                       child: Text(
                         '+ ADD.NOTE',
                         style: LabStyles.mono(context,
-                            color: LabColors.primary,
+                            color: notesColor,
                             fontSize: 9,
                             fontWeight: FontWeight.bold),
                       ),

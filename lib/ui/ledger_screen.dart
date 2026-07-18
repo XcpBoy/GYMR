@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:drift/drift.dart' as drift;
 import '../providers/database_provider.dart';
 import '../database/database.dart';
 import 'styles.dart';
@@ -9,6 +11,24 @@ import 'add_exercise_screen.dart';
 import 'edit_exercise_screen.dart';
 import 'exercise_history_screen.dart';
 import 'kinisi_tree_screen.dart';
+
+enum _SortMode { alpha, mostUsed, recentlyUsed }
+
+class _UsageInfo {
+  final int count;
+  final int lastUsed;
+  const _UsageInfo(this.count, this.lastUsed);
+}
+
+bool _isFavorite(BaseExercise e) {
+  if (e.complexMetadata == null) return false;
+  try {
+    final meta = jsonDecode(e.complexMetadata!) as Map<String, dynamic>;
+    return meta['favorite'] == true;
+  } catch (_) {
+    return false;
+  }
+}
 
 class LedgerScreen extends ConsumerStatefulWidget {
   const LedgerScreen({super.key});
@@ -20,6 +40,15 @@ class LedgerScreen extends ConsumerStatefulWidget {
 class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   String _filterQuery = '';
   final TextEditingController _filterController = TextEditingController();
+  _SortMode _sortMode = _SortMode.alpha;
+
+  String get _sortLabel {
+    switch (_sortMode) {
+      case _SortMode.alpha: return 'A-Z';
+      case _SortMode.mostUsed: return 'MOST USED';
+      case _SortMode.recentlyUsed: return 'RECENT';
+    }
+  }
 
   @override
   void dispose() {
@@ -27,50 +56,121 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     super.dispose();
   }
 
+  Future<void> _toggleFavorite(BaseExercise e) async {
+    final db = ref.read(databaseProvider);
+    Map<String, dynamic> meta = {};
+    if (e.complexMetadata != null) {
+      try {
+        meta = jsonDecode(e.complexMetadata!) as Map<String, dynamic>;
+      } catch (_) {}
+    }
+    meta['favorite'] = !_isFavorite(e);
+    await (db.update(db.baseExercises)..where((t) => t.id.equals(e.id)))
+        .write(BaseExercisesCompanion(complexMetadata: drift.Value(jsonEncode(meta))));
+    ref.invalidate(allExercisesProvider);
+  }
+
+  Future<Map<int, _UsageInfo>> _loadUsage(AppDatabase db) async {
+    final rows = await db.customSelect(
+        'SELECT base_exercise_id, COUNT(*) cnt, MAX(timestamp) last_ts FROM workout_sets GROUP BY base_exercise_id').get();
+    return {
+      for (final r in rows)
+        r.data['base_exercise_id'] as int:
+            _UsageInfo(r.data['cnt'] as int, (r.data['last_ts'] as int?) ?? 0)
+    };
+  }
+
+  List<BaseExercise> _sorted(List<BaseExercise> list, Map<int, _UsageInfo> usage) {
+    final sorted = List<BaseExercise>.from(list);
+    switch (_sortMode) {
+      case _SortMode.alpha:
+        sorted.sort((a, b) => a.fullName.compareTo(b.fullName));
+        break;
+      case _SortMode.mostUsed:
+        sorted.sort((a, b) =>
+            (usage[b.id]?.count ?? 0).compareTo(usage[a.id]?.count ?? 0));
+        break;
+      case _SortMode.recentlyUsed:
+        sorted.sort((a, b) =>
+            (usage[b.id]?.lastUsed ?? 0).compareTo(usage[a.id]?.lastUsed ?? 0));
+        break;
+    }
+    return sorted;
+  }
+
   @override
   Widget build(BuildContext context) {
     final exercisesAsync = ref.watch(allExercisesProvider);
+    final db = ref.read(databaseProvider);
 
     return MainScaffold(
-      title: 'KINISI INVENTORY', 
+      title: 'KINISI INVENTORY',
       screenKey: 'LEDGER',
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
             child: _buildFilters(context),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Expanded(
             child: exercisesAsync.when(
               data: (exercises) {
-                // Apply client-side filters
-                var filtered = exercises;
-                if (_filterQuery.isNotEmpty) {
-                  final q = _filterQuery.toLowerCase();
-                  filtered = exercises
-                      .where((e) => _matchesInventorySearch(e, q))
-                      .toList();
-                }
-                
-                if (filtered.isEmpty) return _buildEmptyState();
-                
-                final Map<String, Map<String, List<BaseExercise>>> grouped = {};
-                for (var e in filtered) {
-                  final field = (e.field == null || e.field!.isEmpty) ? 'NOFIELD' : e.field!.toUpperCase();
-                  final muscle = e.primaryMuscleGroup ?? 'UNKNOWN';
-                  grouped.putIfAbsent(field, () => {});
-                  grouped[field]!.putIfAbsent(muscle, () => []).add(e);
-                }
-                
-                final fields = grouped.keys.toList()..sort();
-                
-                return ListView.builder(
-                  padding: const EdgeInsets.only(left: 16, right: 16, bottom: 100),
-                  itemCount: fields.length,
-                  itemBuilder: (context, index) {
-                    final fieldName = fields[index];
-                    return _FieldGroup(name: fieldName, muscles: grouped[fieldName]!);
+                return FutureBuilder<Map<int, _UsageInfo>>(
+                  future: _loadUsage(db),
+                  builder: (context, usageSnap) {
+                    final usage = usageSnap.data ?? {};
+
+                    var filtered = exercises;
+                    if (_filterQuery.isNotEmpty) {
+                      final q = _filterQuery.toLowerCase();
+                      filtered = exercises.where((e) => _matchesInventorySearch(e, q)).toList();
+                    }
+
+                    final favorites = exercises.where(_isFavorite).toList();
+                    final unusedCount = exercises.where((e) => !usage.containsKey(e.id)).length;
+
+                    if (filtered.isEmpty) {
+                      return ListView(
+                        padding: const EdgeInsets.only(left: 16, right: 16, top: 40),
+                        children: [
+                          _buildStatsHeader(context, exercises.length, unusedCount, favorites.length),
+                          const SizedBox(height: 40),
+                          _buildEmptyState(),
+                        ],
+                      );
+                    }
+
+                    final Map<String, Map<String, List<BaseExercise>>> grouped = {};
+                    for (var e in filtered) {
+                      final field = (e.field == null || e.field!.isEmpty) ? 'NOFIELD' : e.field!.toUpperCase();
+                      final muscle = e.primaryMuscleGroup ?? 'UNKNOWN';
+                      grouped.putIfAbsent(field, () => {});
+                      grouped[field]!.putIfAbsent(muscle, () => []).add(e);
+                    }
+                    final fields = grouped.keys.toList()..sort();
+                    final searching = _filterQuery.isNotEmpty;
+
+                    return ListView(
+                      padding: const EdgeInsets.only(left: 16, right: 16, bottom: 100),
+                      children: [
+                        _buildStatsHeader(context, exercises.length, unusedCount, favorites.length),
+                        const SizedBox(height: 12),
+                        if (!searching && favorites.isNotEmpty) ...[
+                          _buildFavoritesSection(context, favorites, usage),
+                          const SizedBox(height: 16),
+                        ],
+                        for (final fieldName in fields)
+                          _FieldGroup(
+                            name: fieldName,
+                            muscles: grouped[fieldName]!,
+                            forceExpanded: searching,
+                            usage: usage,
+                            sorter: (list) => _sorted(list, usage),
+                            onToggleFavorite: _toggleFavorite,
+                          ),
+                      ],
+                    );
                   },
                 );
               },
@@ -87,6 +187,61 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
         child: const Icon(Icons.add, color: LabColors.accent, size: 32),
       ),
       bottomNavigationBar: const LabFooter(),
+    );
+  }
+
+  Widget _buildStatsHeader(BuildContext context, int total, int unused, int favCount) {
+    return Row(
+      children: [
+        _statChip(context, '$total', 'MOVEMENTS'),
+        const SizedBox(width: 16),
+        _statChip(context, '$unused', 'UNUSED'),
+        const SizedBox(width: 16),
+        _statChip(context, '$favCount', 'FAVORITES'),
+      ],
+    );
+  }
+
+  Widget _statChip(BuildContext context, String value, String label) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Text(value, style: LabStyles.mono(context, fontSize: 13, fontWeight: FontWeight.bold, color: Colors.white)),
+        const SizedBox(width: 4),
+        Text(label, style: LabStyles.mono(context, fontSize: 8, color: Colors.grey[600])),
+      ],
+    );
+  }
+
+  Widget _buildFavoritesSection(BuildContext context, List<BaseExercise> favorites,
+      Map<int, _UsageInfo> usage) {
+    final sorted = _sorted(favorites, usage);
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: LabColors.accent.withValues(alpha: 0.4), width: 2)),
+        color: LabColors.surfaceContainerLow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(children: [
+              Icon(Icons.star, size: 14, color: LabColors.accent),
+              const SizedBox(width: 8),
+              Text('FAVORITES (${favorites.length})',
+                  style: LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold, color: LabColors.accent)),
+            ]),
+          ),
+          ...sorted.map((e) => _ExerciseCard(
+                exercise: e,
+                usage: usage[e.id],
+                isFavorite: true,
+                onToggleFavorite: () => _toggleFavorite(e),
+              )),
+        ],
+      ),
     );
   }
 
@@ -112,12 +267,54 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   }
 
   Widget _buildFilters(BuildContext context) {
-    return Column(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        LabTextField(
-          controller: _filterController,
-          label: 'SEARCH_INVENTORY',
-          onChanged: (v) => setState(() => _filterQuery = v),
+        Expanded(
+          child: SizedBox(
+            height: 44,
+            child: TextField(
+              controller: _filterController,
+              style: LabStyles.mono(context, fontSize: 12, color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'SEARCH_INVENTORY...',
+                hintStyle: LabStyles.mono(context, fontSize: 10, color: Colors.grey[600]),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.zero,
+                    borderSide: BorderSide(color: Colors.grey[800]!, width: 0.5)),
+                enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.zero,
+                    borderSide: BorderSide(color: Colors.grey[800]!, width: 0.5)),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.zero,
+                    borderSide: const BorderSide(color: LabColors.primary, width: 0.5)),
+                isDense: true,
+                filled: true,
+                fillColor: LabColors.surfaceDim,
+              ),
+              onChanged: (v) => setState(() => _filterQuery = v),
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        SizedBox(
+          height: 44,
+          child: OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              backgroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              shape: const RoundedRectangleBorder(),
+              side: const BorderSide(color: Colors.white24, width: 0.5),
+            ),
+            onPressed: () => setState(
+                () => _sortMode = _SortMode.values[(_sortMode.index + 1) % _SortMode.values.length]),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.sort, size: 13, color: Colors.grey[400]),
+              const SizedBox(width: 4),
+              Text(_sortLabel, style: LabStyles.mono(context, fontSize: 8, color: Colors.white70)),
+            ]),
+          ),
         ),
       ],
     );
@@ -127,38 +324,57 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
 class _FieldGroup extends StatefulWidget {
   final String name;
   final Map<String, List<BaseExercise>> muscles;
-  const _FieldGroup({required this.name, required this.muscles});
+  final bool forceExpanded;
+  final Map<int, _UsageInfo> usage;
+  final List<BaseExercise> Function(List<BaseExercise>) sorter;
+  final Future<void> Function(BaseExercise) onToggleFavorite;
+  const _FieldGroup({
+    required this.name,
+    required this.muscles,
+    required this.forceExpanded,
+    required this.usage,
+    required this.sorter,
+    required this.onToggleFavorite,
+  });
   @override State<_FieldGroup> createState() => _FieldGroupState();
 }
 
 class _FieldGroupState extends State<_FieldGroup> {
   bool _isExpanded = false;
   @override Widget build(BuildContext context) {
+    final expanded = _isExpanded || widget.forceExpanded;
     final totalCount = widget.muscles.values.fold(0, (sum, list) => sum + list.length);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
-        color: _isExpanded ? LabColors.surfaceContainerLow : Colors.black,
-        border: Border.all(color: _isExpanded ? LabColors.primary : LabColors.cyanBorder.withValues(alpha: 0.3), width: 0.5),
+        color: expanded ? LabColors.surfaceContainerLow : Colors.black,
+        border: Border.all(color: expanded ? LabColors.primary : LabColors.cyanBorder.withValues(alpha: 0.3), width: 0.5),
       ),
       child: Column(
         children: [
           ListTile(
             onTap: () => setState(() => _isExpanded = !_isExpanded),
             dense: true, visualDensity: VisualDensity.compact,
-            leading: Icon(Icons.folder_open, color: _isExpanded ? LabColors.primary : Colors.grey, size: 18),
-            title: Text(widget.name, style: LabStyles.mono(context, fontWeight: FontWeight.bold, fontSize: 12, color: _isExpanded ? LabColors.primary : Colors.white)),
+            leading: Icon(Icons.folder_open, color: expanded ? LabColors.primary : Colors.grey, size: 18),
+            title: Text(widget.name, style: LabStyles.mono(context, fontWeight: FontWeight.bold, fontSize: 12, color: expanded ? LabColors.primary : Colors.white)),
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
               Text("$totalCount", style: LabStyles.mono(context, fontSize: 10, color: Colors.grey)),
               const SizedBox(width: 8),
-              Icon(_isExpanded ? Icons.expand_less : Icons.expand_more, size: 16, color: Colors.grey),
+              Icon(expanded ? Icons.expand_less : Icons.expand_more, size: 16, color: Colors.grey),
             ]),
           ),
-          if (_isExpanded) ...[
+          if (expanded) ...[
             const Divider(height: 1, color: LabColors.cyanBorder, thickness: 0.2),
             ...() {
               final muscleNames = widget.muscles.keys.toList()..sort();
-              return muscleNames.map((m) => _MuscleGroup(name: m, exercises: widget.muscles[m]!));
+              return muscleNames.map((m) => _MuscleGroup(
+                    name: m,
+                    exercises: widget.muscles[m]!,
+                    forceExpanded: widget.forceExpanded,
+                    usage: widget.usage,
+                    sorter: widget.sorter,
+                    onToggleFavorite: widget.onToggleFavorite,
+                  ));
             }(),
           ],
         ],
@@ -170,38 +386,67 @@ class _FieldGroupState extends State<_FieldGroup> {
 class _MuscleGroup extends StatefulWidget {
   final String name;
   final List<BaseExercise> exercises;
-  const _MuscleGroup({required this.name, required this.exercises});
+  final bool forceExpanded;
+  final Map<int, _UsageInfo> usage;
+  final List<BaseExercise> Function(List<BaseExercise>) sorter;
+  final Future<void> Function(BaseExercise) onToggleFavorite;
+  const _MuscleGroup({
+    required this.name,
+    required this.exercises,
+    required this.forceExpanded,
+    required this.usage,
+    required this.sorter,
+    required this.onToggleFavorite,
+  });
   @override State<_MuscleGroup> createState() => _MuscleGroupState();
 }
 
 class _MuscleGroupState extends State<_MuscleGroup> {
   bool _isExpanded = false;
   @override Widget build(BuildContext context) {
+    final expanded = _isExpanded || widget.forceExpanded;
+    final sorted = widget.sorter(widget.exercises);
     return Column(children: [
       InkWell(
         onTap: () => setState(() => _isExpanded = !_isExpanded),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          color: _isExpanded ? Colors.white.withValues(alpha: 0.05) : Colors.transparent,
+          color: expanded ? Colors.white.withValues(alpha: 0.05) : Colors.transparent,
           child: Row(children: [
-            Icon(Icons.layers, size: 14, color: _isExpanded ? LabColors.accent : Colors.grey),
+            Icon(Icons.layers, size: 14, color: expanded ? LabColors.accent : Colors.grey),
             const SizedBox(width: 12),
-            Text(widget.name.toUpperCase(), style: LabStyles.mono(context, fontSize: 10, color: _isExpanded ? LabColors.accent : Colors.grey[400])),
+            Text(widget.name.toUpperCase(), style: LabStyles.mono(context, fontSize: 10, color: expanded ? LabColors.accent : Colors.grey[400])),
             const Spacer(),
             Text("${widget.exercises.length}", style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
             const SizedBox(width: 8),
-            Icon(_isExpanded ? Icons.remove : Icons.add, size: 12, color: Colors.grey),
+            Icon(expanded ? Icons.remove : Icons.add, size: 12, color: Colors.grey),
           ]),
         ),
       ),
-      if (_isExpanded) Column(children: widget.exercises.map((e) => _ExerciseCard(exercise: e)).toList()),
+      if (expanded)
+        Column(
+          children: sorted.map((e) => _ExerciseCard(
+                exercise: e,
+                usage: widget.usage[e.id],
+                isFavorite: _isFavorite(e),
+                onToggleFavorite: () => widget.onToggleFavorite(e),
+              )).toList(),
+        ),
     ]);
   }
 }
 
 class _ExerciseCard extends ConsumerStatefulWidget {
   final BaseExercise exercise;
-  const _ExerciseCard({required this.exercise});
+  final _UsageInfo? usage;
+  final bool isFavorite;
+  final VoidCallback onToggleFavorite;
+  const _ExerciseCard({
+    required this.exercise,
+    required this.usage,
+    required this.isFavorite,
+    required this.onToggleFavorite,
+  });
   @override ConsumerState<_ExerciseCard> createState() => _ExerciseCardState();
 }
 
@@ -212,7 +457,7 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
   Widget build(BuildContext context) {
     final e = widget.exercise;
     final pattern = (e.patternType ?? '').toUpperCase();
-    
+
     // Technical Metadata
     final intentionText = e.intention ?? '';
     final metaMatch = RegExp(r'\[NT:(.*)\|ISO:(.*)\]').firstMatch(intentionText);
@@ -235,14 +480,34 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
                   child: InkWell(
                     onTap: () => setState(() => _isExpanded = !_isExpanded),
-                    child: Column(
+                    child: Container(
+                      // `alignment` makes a Container expand to fill the
+                      // space its parent (Expanded, here) offers, then
+                      // aligns its child within that full box — this is
+                      // what actually centers short names vertically;
+                      // relying on Row/Column's own sizing wasn't enough
+                      // because the Column always shrink-wraps to content.
+                      alignment: Alignment.centerLeft,
+                      child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(e.fullName, style: LabStyles.mono(context, fontWeight: FontWeight.bold, fontSize: 12)),
+                        Row(children: [
+                          Flexible(child: Text(e.fullName, style: LabStyles.mono(context, fontWeight: FontWeight.bold, fontSize: 12))),
+                          if (widget.usage == null) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              color: Colors.grey[850],
+                              child: Text('UNUSED', style: LabStyles.mono(context, fontSize: 6, color: Colors.grey[500])),
+                            ),
+                          ],
+                        ]),
                         if (e.bodyPositionTags.isNotEmpty) ...[
                           const SizedBox(height: 4),
                           Wrap(
@@ -261,9 +526,19 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
                         const SizedBox(height: 2),
                         Text(pattern, style: LabStyles.mono(context, fontSize: 8, color: LabColors.primary.withValues(alpha: 0.7))),
                       ],
+                      ),
                     ),
                   ),
                 ),
+                IconButton(
+                  icon: Icon(widget.isFavorite ? Icons.star : Icons.star_border,
+                      color: widget.isFavorite ? LabColors.accent : Colors.grey, size: 16),
+                  tooltip: 'FAVORITE',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: widget.onToggleFavorite,
+                ),
+                const SizedBox(width: 4),
                 IconButton(
                   icon: const Icon(Icons.hub, color: Colors.greenAccent, size: 16),
                   tooltip: 'SKILL_TREE',
@@ -300,6 +575,16 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
                   _buildRow('TISSUE', e.tissueType ?? 'N/A', 'INTENTION', intentionText.replaceFirst(RegExp(r'\[.*\]'), '').trim()),
                   const SizedBox(height: 6),
                   _buildRow('LOAD', loadType, 'TYPE', isIsometric ? 'ISOMETRIC' : 'DYNAMIC'),
+                  if (widget.usage != null) ...[
+                    const SizedBox(height: 6),
+                    _buildRow('LOGGED_SETS', '${widget.usage!.count}', 'LAST_USED',
+                        widget.usage!.lastUsed == 0
+                            ? 'N/A'
+                            : DateTime.fromMillisecondsSinceEpoch(widget.usage!.lastUsed)
+                                .toString()
+                                .split(' ')
+                                .first),
+                  ],
                 ],
               ),
             ),
@@ -438,4 +723,3 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
     ]);
   }
 }
-

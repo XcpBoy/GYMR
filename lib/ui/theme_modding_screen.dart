@@ -7,6 +7,26 @@ import '../database/database.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 
+// A single customizable color (or, for `isValueType` sections, file-path
+// value) group shown as one expandable swatch-grid card in the modding
+// screen.
+class _ThemeSection {
+  final String title;
+  final String key;
+  final List<String> items;
+  final Map<String, Color>? defaults;
+  final bool isValueType;
+  const _ThemeSection(this.title, this.key, this.items,
+      {this.defaults, this.isValueType = false});
+}
+
+// A top-level grouping of sections, rendered as one tab.
+class _ThemeCategory {
+  final String title;
+  final List<_ThemeSection> sections;
+  const _ThemeCategory(this.title, this.sections);
+}
+
 class ThemeModdingScreen extends ConsumerStatefulWidget {
   const ThemeModdingScreen({super.key});
 
@@ -14,59 +34,92 @@ class ThemeModdingScreen extends ConsumerStatefulWidget {
   ConsumerState<ThemeModdingScreen> createState() => _ThemeModdingScreenState();
 }
 
-class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen> {
+class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
+    with SingleTickerProviderStateMixin {
+  static const int _categoryCount = 4;
+  static const int _pageSize = 25;
+
   Color _pickerColor = Colors.cyan;
+  // Current page (25 items/page) per section — keeps huge sections like
+  // EXERCISE_NAMES (180+ movements) from rendering everything at once.
+  final Map<String, int> _sectionPage = {};
+  late final TabController _tabController =
+      TabController(length: _categoryCount, vsync: this);
 
-  // State for collapsible sections
+  // Single source of truth for every section key (used for expand-state).
+  static const List<String> _allSectionKeys = [
+    "wo_header",
+    "wo_filters",
+    "wo_tags",
+    "wo_priority",
+    "wo_batch",
+    "injection",
+    "unilateral",
+    "eorm",
+    "dashboard_card",
+    "footer",
+    "nexus",
+    "wallpaper",
+    "utility",
+    "superset",
+    "muscle",
+    "pattern",
+    "field",
+    "movement",
+  ];
+
+  // State for collapsible section cards within a tab.
   final Map<String, bool> _expandedSections = {
-    "wo_header": false,
-    "wo_filters": false,
-    "wo_tags": false,
-    "unilateral": false,
-    "eorm": false,
-    "muscle": false,
-    "pattern": false,
-    "movement": false,
-    "field": false,
-    "wallpaper": false,
-    "utility": false,
-    "superset": false,
-    "dashboard_card": false,
-    "footer": false,
-    "wo_priority": false,
-    "wo_batch": false,
-    "injection": false,
-    "nexus": false,
+    for (final k in _allSectionKeys) k: false,
   };
 
-  // Search controllers for each section
-  final Map<String, TextEditingController> _searchControllers = {
-    "wo_header": TextEditingController(),
-    "wo_filters": TextEditingController(),
-    "wo_tags": TextEditingController(),
-    "unilateral": TextEditingController(),
-    "eorm": TextEditingController(),
-    "muscle": TextEditingController(),
-    "pattern": TextEditingController(),
-    "movement": TextEditingController(),
-    "field": TextEditingController(),
-    "wallpaper": TextEditingController(),
-    "utility": TextEditingController(),
-    "superset": TextEditingController(),
-    "dashboard_card": TextEditingController(),
-    "footer": TextEditingController(),
-    "wo_priority": TextEditingController(),
-    "wo_batch": TextEditingController(),
-    "injection": TextEditingController(),
-    "nexus": TextEditingController(),
-  };
+  // One search box per category tab — filters across every section in that
+  // tab at once and auto-expands any section with a match, instead of
+  // requiring you to open a section before you can search inside it.
+  final List<TextEditingController> _tabSearchControllers =
+      List.generate(_categoryCount, (_) => TextEditingController());
 
   @override
   void dispose() {
-    for (var controller in _searchControllers.values) {
-      controller.dispose();
+    _tabController.dispose();
+    for (var c in _tabSearchControllers) {
+      c.dispose();
     }
     super.dispose();
+  }
+
+  // Resolves a section-key + item into the actual `theme_settings` DB key.
+  // Centralizes the prefix quirks so the swatch grid doesn't repeat them.
+  String _resolveThemeKey(String prefix, String item) {
+    final String effectivePrefix;
+    if (prefix == 'utility') {
+      // Real consumers (workout_manager.dart, WB.editor.dart,
+      // export_service.dart) read PRIORITY_<value>, not UTILITY_<value>.
+      effectivePrefix = 'PRIORITY';
+    } else if (prefix == 'wo_batch') {
+      effectivePrefix = 'UI_TAG_BATCH';
+    } else if ([
+      'wo_header',
+      'wo_filters',
+      'wo_tags',
+      'wo_priority',
+      'unilateral',
+      'eorm'
+    ].contains(prefix)) {
+      effectivePrefix = 'UI';
+    } else if ([
+      'muscle',
+      'pattern',
+      'field',
+      'movement',
+    ].contains(prefix)) {
+      // Real consumers (performance_dashboard.dart, timeline_screen.dart,
+      // timeline_calendar_screen.dart) read lowercase "<prefix>_<value>".
+      effectivePrefix = prefix;
+    } else {
+      effectivePrefix = prefix.toUpperCase();
+    }
+    return "${effectivePrefix}_$item";
   }
 
   @override
@@ -108,12 +161,22 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen> {
       "TAG_SOMATIC_RECOVERY", // Set card: [ + ] SOMATIC RECOVERY button
       "TAG_ADD_SET_NOTES", // Set card: [ + ] ADD SET NOTES toggle
       "TAG_PR_HIGHLIGHT", // Set card: PR label when a set is a personal record
+      "TAG_SESSION_TOTAL", // Performance Overview: SESIÓN TOTAL label + value
+      "TAG_MODULE_BORDER", // Exercise module: default border (no utility tag)
+      "TAG_SETROW_EXPANDED", // Set row: border/glow when expanded
+      "TAG_SUMMARY_BORDER", // Tonnage/eORM/VP summary box border
+      "TAG_SESSION_NOTES", // Session Notes header + Add Note button
     ];
     final Map<String, Color> woHeaderDefaults = {
       "TAG_SOMATIC_ANOMALY": Colors.redAccent,
       "TAG_SOMATIC_RECOVERY": Colors.greenAccent,
       "TAG_ADD_SET_NOTES": const Color(0xFF2979FF),
       "TAG_PR_HIGHLIGHT": const Color(0xFFE0242F),
+      "TAG_SESSION_TOTAL": LabColors.accent,
+      "TAG_MODULE_BORDER": LabColors.cyanBorder,
+      "TAG_SETROW_EXPANDED": LabColors.primary,
+      "TAG_SUMMARY_BORDER": LabColors.cyanBorder,
+      "TAG_SESSION_NOTES": LabColors.accent,
     };
 
     // ── WORKOUT SCREEN: TAG FILTERS (Exercise Picker) ──
@@ -209,8 +272,14 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen> {
       "DATASET_BG",
       "THEME.MDFYR",
       "THEME.MDFYR_BG",
-      "PR.LOGIC",
-      "PR.LOGIC_BG",
+      "PLANNING",
+      "PLANNING_BG",
+      "DB_INSPECTOR",
+      "DB_INSPECTOR_BG",
+      "SOMATIC_SPECTRUM",
+      "SOMATIC_SPECTRUM_BG",
+      "APP.CONFIG",
+      "APP.CONFIG_BG",
     ];
     final Map<String, Color> dashboardDefaults = {
       "CRRNT.WO": LabColors.workoutRed,
@@ -231,8 +300,15 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen> {
       "DATASET_BG": LabColors.datasetGold.withValues(alpha: 0.08),
       "THEME.MDFYR": LabColors.themeWhite,
       "THEME.MDFYR_BG": LabColors.themeWhite.withValues(alpha: 0.08),
-      "PR.LOGIC": LabColors.primary,
-      "PR.LOGIC_BG": LabColors.primary.withValues(alpha: 0.05),
+      "PLANNING": LabColors.secondary,
+      "PLANNING_BG": LabColors.secondary.withValues(alpha: 0.08),
+      "DB_INSPECTOR": LabColors.tertiary,
+      "DB_INSPECTOR_BG": LabColors.tertiary.withValues(alpha: 0.08),
+      "SOMATIC_SPECTRUM": LabColors.supersetBlockDefault,
+      "SOMATIC_SPECTRUM_BG":
+          LabColors.supersetBlockDefault.withValues(alpha: 0.08),
+      "APP.CONFIG": LabColors.onSurfaceVariant,
+      "APP.CONFIG_BG": LabColors.onSurfaceVariant.withValues(alpha: 0.08),
     };
 
     final List<String> footerItems = [
@@ -278,285 +354,198 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen> {
         .toList()
       ..sort();
 
+    final List<_ThemeCategory> categories = [
+      _ThemeCategory("WORKOUT", [
+        _ThemeSection("HEADER & OPTS", "wo_header", woHeaderUI,
+            defaults: woHeaderDefaults),
+        _ThemeSection("TAG FILTERS", "wo_filters", woFilterUI),
+        _ThemeSection("KNS TAG LABELS", "wo_tags", woTagUI),
+        _ThemeSection("UTILS", "wo_priority", woPriorityUI),
+        _ThemeSection("BATCH COLORS", "wo_batch", woBatchUI),
+        _ThemeSection("INJECTION TYPE COLORS", "injection", injectionUI,
+            defaults: injectionDefaults),
+      ]),
+      _ThemeCategory("GLOBAL", [
+        _ThemeSection("UNILATERAL_SIDE_COLORS", "unilateral", unilateralUI),
+        _ThemeSection("EORM_HIGHLIGHTS", "eorm", eormUI),
+        _ThemeSection("HOME_DASHBOARD_CARDS", "dashboard_card", dashboardItems,
+            defaults: dashboardDefaults),
+        _ThemeSection("QUICK_SWITCHER_UI", "footer", footerItems,
+            defaults: footerDefaults),
+        _ThemeSection("NEXUS_EXCHANGE_COLORS", "nexus", nexusUI,
+            defaults: nexusDefaults),
+      ]),
+      _ThemeCategory("DATA", [
+        _ThemeSection("VISUAL_ATMOSPHERE", "wallpaper", screens,
+            isValueType: true),
+        _ThemeSection("MOVEMENT_UTILITIES", "utility", utilities),
+        _ThemeSection("SUPERSET_BLOCKS", "superset", supersetItems),
+        _ThemeSection("MUSCLE_GROUPS", "muscle", muscles),
+        _ThemeSection("MOVEMENT_PATTERNS", "pattern", patterns),
+        _ThemeSection("FIELD_DISCIPLINES", "field", fields),
+      ]),
+      _ThemeCategory("LIBRARY", [
+        _ThemeSection("EXERCISE_NAMES", "movement", exerciseNames),
+      ]),
+    ];
+
     return Scaffold(
       backgroundColor: LabColors.background,
       appBar: AppBar(
         backgroundColor: LabColors.background,
-        title: Text("THEME_MODDING",
+        title: Text("THEME.MDFYR",
             style: LabStyles.mono(context, fontWeight: FontWeight.bold)),
         centerTitle: true,
         iconTheme: const IconThemeData(color: LabColors.primary),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(color: LabColors.cyanBorder, height: 0.5),
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: LabColors.primary,
+          indicatorWeight: 2,
+          labelColor: LabColors.primary,
+          unselectedLabelColor: Colors.grey[600],
+          labelStyle:
+              LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold),
+          unselectedLabelStyle: LabStyles.mono(context, fontSize: 10),
+          tabs: categories.map((c) => Tab(text: c.title)).toList(),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      body: TabBarView(
+        controller: _tabController,
         children: [
-          // ─── CATEGORY: C.WO INTERFACE ───
-          _buildCategoryDivider(
-              context, "CURRENT WORKOUT INTERFACE", "7 SECTIONS"),
-          const SizedBox(height: 12),
-          _buildSection(context, "HEADER & OPTS (${woHeaderUI.length})",
-              "wo_header", woHeaderUI, settings,
-              defaults: woHeaderDefaults),
-          const SizedBox(height: 6),
-          _buildSection(context, "TAG FILTERS (${woFilterUI.length})",
-              "wo_filters", woFilterUI, settings),
-          const SizedBox(height: 6),
-          _buildSection(context, "KNS TAG LABELS (${woTagUI.length})",
-              "wo_tags", woTagUI, settings),
-          const SizedBox(height: 6),
-          _buildSection(context, "UTILS (${woPriorityUI.length})",
-              "wo_priority", woPriorityUI, settings),
-          const SizedBox(height: 6),
-          _buildSection(context, "BATCH COLORS (${woBatchUI.length})",
-              "wo_batch", woBatchUI, settings),
-          const SizedBox(height: 6),
-          _buildSection(
-              context,
-              "INJECTION TYPE COLORS (${injectionUI.length})",
-              "injection",
-              injectionUI,
-              settings,
-              defaults: injectionDefaults),
-
-          const SizedBox(height: 24),
-          // ─── CATEGORY: GLOBAL / STRUCTURAL UI ───
-          _buildCategoryDivider(
-              context, "GLOBAL & STRUCTURAL UI", "5 SECTIONS"),
-          const SizedBox(height: 12),
-          _buildSection(
-              context,
-              "UNILATERAL_SIDE_COLORS (${unilateralUI.length})",
-              "unilateral",
-              unilateralUI,
-              settings),
-          const SizedBox(height: 6),
-          _buildSection(context, "EORM_HIGHLIGHTS (${eormUI.length})", "eorm",
-              eormUI, settings),
-          const SizedBox(height: 6),
-          _buildSection(
-              context,
-              "HOME_DASHBOARD_CARDS (${dashboardItems.length})",
-              "dashboard_card",
-              dashboardItems,
-              settings,
-              defaults: dashboardDefaults),
-          const SizedBox(height: 6),
-          _buildSection(context, "QUICK_SWITCHER_UI (${footerItems.length})",
-              "footer", footerItems, settings,
-              defaults: footerDefaults),
-          const SizedBox(height: 6),
-          _buildSection(context, "NEXUS_EXCHANGE_COLORS (${nexusUI.length})",
-              "nexus", nexusUI, settings,
-              defaults: nexusDefaults),
-
-          const SizedBox(height: 24),
-          // ─── CATEGORY: DATA & BIOMECHANICS ───
-          _buildCategoryDivider(context, "DATA & BIOMECHANICS", "5 SECTIONS"),
-          const SizedBox(height: 12),
-          _buildValueSection(context, "VISUAL_ATMOSPHERE (${screens.length})",
-              "wallpaper", screens, settings),
-          const SizedBox(height: 6),
-          _buildSection(context, "MOVEMENT_UTILITIES (${utilities.length})",
-              "utility", utilities, settings),
-          const SizedBox(height: 6),
-          _buildSection(context, "SUPERSET_BLOCKS (${supersetItems.length})",
-              "superset", supersetItems, settings),
-          const SizedBox(height: 6),
-          _buildSection(context, "MUSCLE_GROUPS (${muscles.length})", "muscle",
-              muscles, settings),
-          const SizedBox(height: 6),
-          _buildSection(context, "MOVEMENT_PATTERNS (${patterns.length})",
-              "pattern", patterns, settings),
-          const SizedBox(height: 6),
-          _buildSection(context, "FIELD_DISCIPLINES (${fields.length})",
-              "field", fields, settings),
-
-          const SizedBox(height: 24),
-          // ─── CATEGORY: MOVEMENT LIBRARY ───
-          _buildCategoryDivider(context, "MOVEMENT LIBRARY", "1 SECTION"),
-          const SizedBox(height: 12),
-          _buildSection(context, "EXERCISE_NAMES (${exerciseNames.length})",
-              "movement", exerciseNames, settings),
-
-          // Bottom padding for nav bar
-          const SizedBox(height: 80),
+          for (int i = 0; i < categories.length; i++)
+            _buildCategoryTab(context, categories[i], i, settings),
         ],
       ),
       bottomNavigationBar: const LabFooter(),
     );
   }
 
-  Widget _buildCategoryDivider(
-      BuildContext context, String title, String badge) {
-    return Container(
-      padding: const EdgeInsets.only(bottom: 4),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-              color: LabColors.primary.withValues(alpha: 0.15), width: 0.5),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(width: 3, height: 16, color: LabColors.primary),
-          const SizedBox(width: 10),
-          Text(title,
-              style: LabStyles.mono(context,
-                  fontSize: 11,
-                  color: LabColors.primary,
-                  fontWeight: FontWeight.bold)),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: LabColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(3),
-            ),
-            child: Text(badge,
-                style: LabStyles.mono(context,
-                    fontSize: 8, color: LabColors.primaryDim)),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildCategoryTab(BuildContext context, _ThemeCategory category,
+      int tabIndex, Map<String, ThemeSetting> settings) {
+    final query = _tabSearchControllers[tabIndex].text.toLowerCase();
+    final isSearching = query.isNotEmpty;
 
-  Widget _buildSection(BuildContext context, String title, String key,
-      List<String> items, Map<String, ThemeSetting> settings,
-      {Map<String, Color>? defaults}) {
-    final isExpanded = _expandedSections[key] ?? false;
-    final query = _searchControllers[key]!.text.toLowerCase();
-
-    final filteredItems =
-        items.where((i) => i.toLowerCase().contains(query)).toList();
-
-    return Column(
+    return ListView(
+      padding: const EdgeInsets.all(16),
       children: [
-        _buildCategoryHeader(context, title, key, isExpanded),
-        if (isExpanded) ...[
-          const SizedBox(height: 8),
-          _buildSearchField(context, key),
-          const SizedBox(height: 8),
-          _buildColorTable(context, filteredItems, key, settings,
-              defaults: defaults),
-        ],
+        _buildTabSearchField(context, tabIndex, category.title),
+        const SizedBox(height: 16),
+        for (final section in category.sections)
+          Builder(builder: (context) {
+            final filtered = isSearching
+                ? section.items
+                    .where((i) => i.toLowerCase().contains(query))
+                    .toList()
+                : section.items;
+            if (isSearching && filtered.isEmpty) {
+              return const SizedBox.shrink();
+            }
+            final expanded =
+                isSearching ? true : (_expandedSections[section.key] ?? false);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _buildSectionCard(
+                  context, section, filtered, expanded, isSearching, settings),
+            );
+          }),
+        const SizedBox(height: 80),
       ],
     );
   }
 
-  Widget _buildValueSection(BuildContext context, String title, String key,
-      List<String> items, Map<String, ThemeSetting> settings) {
-    final isExpanded = _expandedSections[key] ?? false;
-    final query = _searchControllers[key]!.text.toLowerCase();
-
-    final filteredItems =
-        items.where((i) => i.toLowerCase().contains(query)).toList();
-
-    return Column(
-      children: [
-        _buildCategoryHeader(context, title, key, isExpanded),
-        if (isExpanded) ...[
-          const SizedBox(height: 8),
-          _buildSearchField(context, key),
-          const SizedBox(height: 8),
-          _buildValueTable(context, filteredItems, key, settings),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildSearchField(BuildContext context, String key) {
+  Widget _buildTabSearchField(
+      BuildContext context, int tabIndex, String categoryTitle) {
     return Container(
       decoration: BoxDecoration(
         color: LabColors.surfaceContainerLowest,
         border: Border.all(
-            color: LabColors.cyanBorder.withValues(alpha: 0.25), width: 0.5),
-        borderRadius: BorderRadius.circular(2),
+            color: LabColors.cyanBorder.withValues(alpha: 0.3), width: 0.5),
       ),
       child: TextField(
-        controller: _searchControllers[key],
-        style: LabStyles.mono(context, fontSize: 10, color: Colors.white70),
+        controller: _tabSearchControllers[tabIndex],
+        style: LabStyles.mono(context, fontSize: 11, color: Colors.white70),
         decoration: InputDecoration(
-          hintText: "SEARCH / ${key.toUpperCase()}...",
+          hintText: "SEARCH $categoryTitle...",
           hintStyle:
-              LabStyles.mono(context, fontSize: 10, color: Colors.grey[700]),
+              LabStyles.mono(context, fontSize: 11, color: Colors.grey[700]),
           prefixIcon: Icon(Icons.search,
-              size: 13, color: LabColors.primary.withValues(alpha: 0.6)),
+              size: 15, color: LabColors.primary.withValues(alpha: 0.6)),
           isDense: true,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
         ),
         onChanged: (v) => setState(() {}),
       ),
     );
   }
 
-  Widget _buildCategoryHeader(
-      BuildContext context, String title, String key, bool expanded) {
-    return InkWell(
-      onTap: () => setState(() => _expandedSections[key] = !expanded),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-        decoration: BoxDecoration(
-          color:
-              expanded ? LabColors.surfaceContainerLow : LabColors.surfaceDim,
-          border: Border(
-            left: BorderSide(
-                color: expanded
-                    ? LabColors.primary
-                    : LabColors.cyanBorder.withValues(alpha: 0.3),
-                width: expanded ? 3 : 1),
-            right: BorderSide(
-                color: LabColors.cyanBorder
-                    .withValues(alpha: expanded ? 0.5 : 0.2),
-                width: 0.5),
-            top: BorderSide(
-                color: LabColors.cyanBorder
-                    .withValues(alpha: expanded ? 0.5 : 0.2),
-                width: 0.5),
-            bottom: BorderSide(
-                color: LabColors.cyanBorder
-                    .withValues(alpha: expanded ? 0.5 : 0.2),
-                width: 0.5),
-          ),
+  Widget _buildSectionCard(
+      BuildContext context,
+      _ThemeSection section,
+      List<String> filteredItems,
+      bool expanded,
+      bool forceExpanded,
+      Map<String, ThemeSetting> settings) {
+    return Container(
+      decoration: BoxDecoration(
+        color: LabColors.surfaceDim,
+        border: Border(
+          top: BorderSide(
+              color: expanded
+                  ? LabColors.primary
+                  : LabColors.cyanBorder.withValues(alpha: 0.25),
+              width: expanded ? 2 : 1),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  expanded ? Icons.chevron_right : Icons.chevron_left,
-                  size: 14,
-                  color: expanded ? LabColors.primary : Colors.grey,
-                ),
-                const SizedBox(width: 6),
-                Text(title,
-                    style: LabStyles.mono(context,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: expanded ? LabColors.primary : Colors.grey)),
-              ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: forceExpanded
+                ? null
+                : () => setState(
+                    () => _expandedSections[section.key] = !expanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('${section.title} (${filteredItems.length})',
+                      style: LabStyles.mono(context,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              expanded ? LabColors.primary : Colors.grey[400])),
+                  if (!forceExpanded)
+                    Icon(expanded ? Icons.expand_less : Icons.expand_more,
+                        size: 18,
+                        color: expanded ? LabColors.primary : Colors.grey),
+                ],
+              ),
             ),
-            Icon(expanded ? Icons.expand_less : Icons.expand_more,
-                size: 16, color: expanded ? LabColors.primary : Colors.grey),
-          ],
-        ),
+          ),
+          if (expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: section.isValueType
+                  ? _buildValueList(context, filteredItems, section.key, settings)
+                  : _buildSwatchGrid(
+                      context, filteredItems, section.key, settings,
+                      defaults: section.defaults),
+            ),
+        ],
       ),
     );
   }
 
-  Widget _buildColorTable(BuildContext context, List<String> items,
+  Widget _buildSwatchGrid(BuildContext context, List<String> items,
       String prefix, Map<String, ThemeSetting> settings,
       {Map<String, Color>? defaults}) {
     if (items.isEmpty) {
       if (prefix == 'wo_batch') {
         return Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: LabColors.surfaceContainerLowest,
             border: Border.all(
@@ -579,9 +568,9 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen> {
           ),
         );
       }
-      return Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Center(
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
           child: Text("NO_ITEMS",
               style: LabStyles.mono(context,
                   fontSize: 10, color: Colors.grey[700])),
@@ -590,90 +579,99 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen> {
     }
 
     final controller = ref.read(themeControllerProvider);
-    return Table(
-      columnWidths: const {0: FlexColumnWidth(3), 1: FlexColumnWidth(1)},
-      border: TableBorder.all(
-          color: LabColors.cyanBorder.withValues(alpha: 0.15), width: 0.5),
-      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      children: items.map((item) {
-        final String effectivePrefix;
-        if (prefix == 'utility') {
-          effectivePrefix = 'UTILITY';
-        } else if (prefix == 'wo_batch') {
-          effectivePrefix = 'UI_TAG_BATCH';
-        } else if ([
-          'wo_header',
-          'wo_filters',
-          'wo_tags',
-          'wo_priority',
-          'unilateral',
-          'eorm'
-        ].contains(prefix)) {
-          effectivePrefix = 'UI';
-        } else {
-          effectivePrefix = prefix.toUpperCase();
-        }
-        final key = "${effectivePrefix}_$item";
-        final color = controller.getColor(settings, key,
-            defaultColor: defaults?[item], nameSeed: item);
-        final hexStr =
-            '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
-        return TableRow(
-          decoration: BoxDecoration(
-            border: Border(
-                bottom: BorderSide(
-                    color: LabColors.cyanBorder.withValues(alpha: 0.08),
-                    width: 0.5)),
+    final totalPages = (items.length / _pageSize).ceil();
+    final currentPage =
+        totalPages == 0 ? 0 : (_sectionPage[prefix] ?? 0).clamp(0, totalPages - 1);
+    final pageItems = totalPages <= 1
+        ? items
+        : items.skip(currentPage * _pageSize).take(_pageSize).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 14,
+            crossAxisSpacing: 10,
+            childAspectRatio: 0.82,
           ),
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Row(
+          itemCount: pageItems.length,
+          itemBuilder: (context, index) {
+            final item = pageItems[index];
+            final key = _resolveThemeKey(prefix, item);
+            final color = controller.getColor(settings, key,
+                defaultColor: defaults?[item], nameSeed: item);
+            final hexStr =
+                '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+            final label = item.replaceAll('TAG_', '').toUpperCase();
+            return InkWell(
+              onTap: () => _showColorPicker(context, key, color),
+              child: Column(
                 children: [
                   Expanded(
-                    child: Text(item.replaceAll('TAG_', '').toUpperCase(),
-                        style: LabStyles.mono(context, fontSize: 11)),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color:
-                          LabColors.surfaceContainerHigh.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(2),
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: color,
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            width: 0.5),
+                      ),
                     ),
-                    child: Text(hexStr,
-                        style: LabStyles.mono(context,
-                            fontSize: 7, color: Colors.grey[500])),
                   ),
+                  const SizedBox(height: 4),
+                  Text(label,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: LabStyles.mono(context,
+                          fontSize: 9, color: Colors.white)),
+                  Text(hexStr,
+                      style: LabStyles.mono(context,
+                          fontSize: 7, color: Colors.grey[500])),
                 ],
               ),
-            ),
-            InkWell(
-              onTap: () => _showColorPicker(context, key, color),
-              child: Container(
-                height: 36,
-                margin: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: color,
-                  border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.15), width: 0.5),
-                  borderRadius: BorderRadius.circular(2),
-                ),
+            );
+          },
+        ),
+        if (totalPages > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                onPressed: currentPage > 0
+                    ? () => setState(() => _sectionPage[prefix] = currentPage - 1)
+                    : null,
+                icon: const Icon(Icons.chevron_left, size: 20),
+                color: LabColors.primary,
               ),
-            ),
-          ],
-        );
-      }).toList(),
+              Text('${currentPage + 1} / $totalPages',
+                  style:
+                      LabStyles.mono(context, fontSize: 10, color: Colors.grey[400])),
+              IconButton(
+                onPressed: currentPage < totalPages - 1
+                    ? () => setState(() => _sectionPage[prefix] = currentPage + 1)
+                    : null,
+                icon: const Icon(Icons.chevron_right, size: 20),
+                color: LabColors.primary,
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 
-  Widget _buildValueTable(BuildContext context, List<String> items,
+  Widget _buildValueList(BuildContext context, List<String> items,
       String prefix, Map<String, ThemeSetting> settings) {
     if (items.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Center(
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(12.0),
           child: Text("NO_ITEMS",
               style: LabStyles.mono(context,
                   fontSize: 10, color: Colors.grey[700])),
@@ -682,80 +680,64 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen> {
     }
 
     final controller = ref.read(themeControllerProvider);
-    return Table(
-      columnWidths: const {0: FlexColumnWidth(1), 1: FlexColumnWidth(2)},
-      border: TableBorder.all(
-          color: LabColors.cyanBorder.withValues(alpha: 0.15), width: 0.5),
-      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: items.map((item) {
         final key = "${prefix.toUpperCase()}_$item";
         final value = controller.getValue(settings, key) ?? "";
         final fileName =
             value.isNotEmpty ? value.split('/').last : "EMPTY_REFERENCE";
-
-        return TableRow(
-          decoration: BoxDecoration(
-            border: Border(
-                bottom: BorderSide(
-                    color: LabColors.cyanBorder.withValues(alpha: 0.08),
-                    width: 0.5)),
-          ),
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              child: Text(item.toUpperCase(),
-                  style: LabStyles.mono(context, fontSize: 11)),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(6),
-              child: InkWell(
-                onTap: () async {
-                  final result =
-                      await FilePicker.platform.pickFiles(type: FileType.image);
-                  if (result != null && result.files.single.path != null) {
-                    await controller.setValue(key, result.files.single.path!);
-                  }
-                },
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: LabColors.surfaceContainerLowest,
-                    border: Border.all(
-                        color: LabColors.cyanBorder.withValues(alpha: 0.4),
-                        width: 0.5),
-                    borderRadius: BorderRadius.circular(2),
+        return InkWell(
+          onTap: () async {
+            final result =
+                await FilePicker.platform.pickFiles(type: FileType.image);
+            if (result != null && result.files.single.path != null) {
+              await controller.setValue(key, result.files.single.path!);
+            }
+          },
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 220),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: LabColors.surfaceContainerLowest,
+                border: Border.all(
+                    color: LabColors.cyanBorder.withValues(alpha: 0.35),
+                    width: 0.5),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.image_search,
+                      size: 12, color: LabColors.primary.withValues(alpha: 0.6)),
+                  const SizedBox(width: 6),
+                  Text(item.toUpperCase(),
+                      style: LabStyles.mono(context,
+                          fontSize: 8, color: Colors.grey[400])),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(fileName,
+                        overflow: TextOverflow.ellipsis,
+                        style: LabStyles.mono(context,
+                            fontSize: 8,
+                            color: value.isNotEmpty
+                                ? Colors.white70
+                                : Colors.grey[600])),
                   ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.image_search,
-                          size: 13,
-                          color: LabColors.primary.withValues(alpha: 0.6)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          fileName,
-                          style: LabStyles.mono(context,
-                              fontSize: 8,
-                              color: value.isNotEmpty
-                                  ? Colors.white70
-                                  : Colors.grey[600]),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (value.isNotEmpty)
-                        GestureDetector(
-                          onTap: () => controller.setValue(key, ""),
-                          child: Icon(Icons.close,
-                              size: 13,
-                              color: Colors.redAccent.withValues(alpha: 0.7)),
-                        ),
-                    ],
-                  ),
-                ),
+                  if (value.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () => controller.setValue(key, ""),
+                      child: Icon(Icons.close,
+                          size: 12,
+                          color: Colors.redAccent.withValues(alpha: 0.7)),
+                    ),
+                  ],
+                ],
               ),
             ),
-          ],
+          ),
         );
       }).toList(),
     );
@@ -769,25 +751,27 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen> {
       isScrollControlled: true,
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) => DraggableScrollableSheet(
-          initialChildSize: 0.8,
-          maxChildSize: 0.9,
+          initialChildSize: 0.9,
+          maxChildSize: 0.95,
           minChildSize: 0.5,
           expand: false,
           builder: (context, scrollController) => SingleChildScrollView(
             controller: scrollController,
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text("COLOR_SELECTOR // ${key.toUpperCase()}",
-                    style: LabStyles.mono(context, color: LabColors.primary)),
-                const SizedBox(height: 24),
+                    style: LabStyles.mono(context,
+                        fontSize: 11, color: LabColors.primary)),
+                const SizedBox(height: 10),
                 GridView.count(
                   crossAxisCount: 5,
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  mainAxisSpacing: 8,
-                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 6,
+                  crossAxisSpacing: 6,
+                  childAspectRatio: 1.4,
                   children: NeonPalette.colors
                       .map((c) => InkWell(
                             onTap: () {
@@ -809,16 +793,16 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen> {
                           ))
                       .toList(),
                 ),
-                const SizedBox(height: 32),
+                const SizedBox(height: 12),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text("RGB_MANUAL_TUNING",
                         style: LabStyles.mono(context,
-                            fontSize: 10, color: Colors.grey)),
+                            fontSize: 9, color: Colors.grey)),
                     Container(
-                      width: 40,
-                      height: 20,
+                      width: 36,
+                      height: 18,
                       decoration: BoxDecoration(
                         color: _pickerColor,
                         border: Border.all(color: Colors.white, width: 0.5),
@@ -826,39 +810,50 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                _buildRGBSlider(context, "R", (_pickerColor.r * 255).toInt(),
-                    (v) {
-                  final newColor = _pickerColor.withValues(red: v / 255.0);
-                  setModalState(() => _pickerColor = newColor);
-                  ref.read(themeControllerProvider).setColor(key, newColor);
-                }),
-                _buildRGBSlider(context, "G", (_pickerColor.g * 255).toInt(),
-                    (v) {
-                  final newColor = _pickerColor.withValues(green: v / 255.0);
-                  setModalState(() => _pickerColor = newColor);
-                  ref.read(themeControllerProvider).setColor(key, newColor);
-                }),
-                _buildRGBSlider(context, "B", (_pickerColor.b * 255).toInt(),
-                    (v) {
-                  final newColor = _pickerColor.withValues(blue: v / 255.0);
-                  setModalState(() => _pickerColor = newColor);
-                  ref.read(themeControllerProvider).setColor(key, newColor);
-                }),
-                const SizedBox(height: 24),
+                const SizedBox(height: 4),
+                SizedBox(
+                  height: 30,
+                  child: _buildRGBSlider(
+                      context, "R", (_pickerColor.r * 255).toInt(), (v) {
+                    final newColor = _pickerColor.withValues(red: v / 255.0);
+                    setModalState(() => _pickerColor = newColor);
+                    ref.read(themeControllerProvider).setColor(key, newColor);
+                  }),
+                ),
+                SizedBox(
+                  height: 30,
+                  child: _buildRGBSlider(
+                      context, "G", (_pickerColor.g * 255).toInt(), (v) {
+                    final newColor = _pickerColor.withValues(green: v / 255.0);
+                    setModalState(() => _pickerColor = newColor);
+                    ref.read(themeControllerProvider).setColor(key, newColor);
+                  }),
+                ),
+                SizedBox(
+                  height: 30,
+                  child: _buildRGBSlider(
+                      context, "B", (_pickerColor.b * 255).toInt(), (v) {
+                    final newColor = _pickerColor.withValues(blue: v / 255.0);
+                    setModalState(() => _pickerColor = newColor);
+                    ref.read(themeControllerProvider).setColor(key, newColor);
+                  }),
+                ),
+                const SizedBox(height: 8),
                 Text("TRANSPARENCY_TUNING",
                     style: LabStyles.mono(context,
-                        fontSize: 10, color: Colors.grey)),
-                const SizedBox(height: 16),
-                _buildValueSlider(
-                    context, "TRNS%", ((1 - _pickerColor.a) * 100).toInt(), 100,
-                    (v) {
-                  final newColor =
-                      _pickerColor.withValues(alpha: (100 - v) / 100.0);
-                  setModalState(() => _pickerColor = newColor);
-                  ref.read(themeControllerProvider).setColor(key, newColor);
-                }),
-                const SizedBox(height: 32),
+                        fontSize: 9, color: Colors.grey)),
+                const SizedBox(height: 4),
+                SizedBox(
+                  height: 30,
+                  child: _buildValueSlider(context, "TRNS%",
+                      ((1 - _pickerColor.a) * 100).toInt(), 100, (v) {
+                    final newColor =
+                        _pickerColor.withValues(alpha: (100 - v) / 100.0);
+                    setModalState(() => _pickerColor = newColor);
+                    ref.read(themeControllerProvider).setColor(key, newColor);
+                  }),
+                ),
+                const SizedBox(height: 14),
                 LabButton(
                     label: "APPLY_CONFIGURATION",
                     onPressed: () => Navigator.pop(context)),
