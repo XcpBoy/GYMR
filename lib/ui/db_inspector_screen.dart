@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -229,6 +229,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         setState(() {});
       }
     } catch (e) {
+      debugPrint('DB.EDIT ERROR: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -323,6 +324,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
 
       buf.writeln('Status: OK');
     } catch (e) {
+      debugPrint('DB.EDIT ERROR: $e');
       buf.writeln('ERROR: $e');
     }
     return buf.toString();
@@ -615,6 +617,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         ));
       }
     } catch (e) {
+      debugPrint('DB.EDIT ERROR: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('ERROR: $e', style: LabStyles.mono(context)),
@@ -747,6 +750,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         setState(() {});
       }
     } catch (e) {
+      debugPrint('DB.EDIT ERROR: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('ERROR: $e', style: LabStyles.mono(context)),
@@ -918,6 +922,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         setState(() {});
       }
     } catch (e) {
+      debugPrint('DB.EDIT ERROR: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('ERROR: $e', style: LabStyles.mono(context)),
@@ -1186,6 +1191,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
             setState(() {});
           }
         } catch (e) {
+          debugPrint('DB.EDIT ERROR: $e');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -1273,6 +1279,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         setState(() {});
       }
     } catch (e) {
+      debugPrint('DB.EDIT ERROR: $e');
       // DB connection might be in bad state on error, try any available db
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1452,6 +1459,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         setState(() {});
       }
     } catch (e) {
+      debugPrint('DB.EDIT ERROR: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1568,6 +1576,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         );
       }
     } catch (e) {
+      debugPrint('DB.EDIT ERROR: $e');
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('MERGE ERROR: $e', style: LabStyles.mono(context)),
@@ -2689,6 +2698,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         setState(() {}); // refresh
       }
     } catch (e) {
+      debugPrint('DB.EDIT ERROR: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('ERROR: $e', style: LabStyles.mono(context)),
@@ -2817,6 +2827,7 @@ class _CategoryReplaceDialogState extends State<_CategoryReplaceDialog> {
         }
       });
     } catch (e) {
+      debugPrint('DB.EDIT ERROR: $e');
       if (!mounted) return;
       setState(() {
         _values = const [];

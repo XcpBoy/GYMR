@@ -13,7 +13,21 @@ import 'edit_exercise_screen.dart';
 import 'exercise_history_screen.dart';
 import 'kinisi_tree_screen.dart';
 
-enum _SortMode { alpha, mostUsed, recentlyUsed }
+enum _SortMode { alphaAsc, alphaDesc, mostUsed, leastUsed, mostRecent, leastRecent, unusedFirst }
+
+extension _SortModeLabel on _SortMode {
+  String get label {
+    switch (this) {
+      case _SortMode.alphaAsc: return 'A-Z';
+      case _SortMode.alphaDesc: return 'Z-A';
+      case _SortMode.mostUsed: return 'MOST USED';
+      case _SortMode.leastUsed: return 'LEAST USED';
+      case _SortMode.mostRecent: return 'MOST RECENT';
+      case _SortMode.leastRecent: return 'LEAST RECENT';
+      case _SortMode.unusedFirst: return 'NO USE FIRST';
+    }
+  }
+}
 
 class _UsageInfo {
   final int count;
@@ -38,30 +52,30 @@ class LedgerScreen extends ConsumerStatefulWidget {
   ConsumerState<LedgerScreen> createState() => _LedgerScreenState();
 }
 
-class _LedgerScreenState extends ConsumerState<LedgerScreen> {
+class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerProviderStateMixin {
   String _filterQuery = '';
   final TextEditingController _filterController = TextEditingController();
-  _SortMode _sortMode = _SortMode.alpha;
+  _SortMode _listSortMode = _SortMode.alphaAsc;
   Timer? _debounce;
   Future<Map<int, _UsageInfo>>? _usageFuture;
-
-  String get _sortLabel {
-    switch (_sortMode) {
-      case _SortMode.alpha: return 'A-Z';
-      case _SortMode.mostUsed: return 'MOST USED';
-      case _SortMode.recentlyUsed: return 'RECENT';
-    }
-  }
+  late final TabController _tabController;
 
   @override
   void initState() {
     super.initState();
     _usageFuture = _loadUsage(ref.read(databaseProvider));
+    _tabController = TabController(length: 2, vsync: this);
   }
 
   void _refreshUsage() {
     if (mounted) {
-      setState(() => _usageFuture = _loadUsage(ref.read(databaseProvider)));
+      // NB: must be a block body, not `() => _usageFuture = ...` — an
+      // assignment expression evaluates to the assigned value, so an arrow
+      // closure here returns the Future itself, which setState() rejects
+      // ("callback argument returned a Future").
+      setState(() {
+        _usageFuture = _loadUsage(ref.read(databaseProvider));
+      });
     }
   }
 
@@ -69,6 +83,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   void dispose() {
     _debounce?.cancel();
     _filterController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
@@ -96,23 +111,48 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     };
   }
 
-  List<BaseExercise> _sorted(List<BaseExercise> list, Map<int, _UsageInfo> usage) {
+  List<BaseExercise> _sortedBy(
+      List<BaseExercise> list, Map<int, _UsageInfo> usage, _SortMode mode) {
     final sorted = List<BaseExercise>.from(list);
-    switch (_sortMode) {
-      case _SortMode.alpha:
+    switch (mode) {
+      case _SortMode.alphaAsc:
         sorted.sort((a, b) => a.fullName.compareTo(b.fullName));
+        break;
+      case _SortMode.alphaDesc:
+        sorted.sort((a, b) => b.fullName.compareTo(a.fullName));
         break;
       case _SortMode.mostUsed:
         sorted.sort((a, b) =>
             (usage[b.id]?.count ?? 0).compareTo(usage[a.id]?.count ?? 0));
         break;
-      case _SortMode.recentlyUsed:
+      case _SortMode.leastUsed:
+        sorted.sort((a, b) =>
+            (usage[a.id]?.count ?? 0).compareTo(usage[b.id]?.count ?? 0));
+        break;
+      case _SortMode.mostRecent:
         sorted.sort((a, b) =>
             (usage[b.id]?.lastUsed ?? 0).compareTo(usage[a.id]?.lastUsed ?? 0));
+        break;
+      case _SortMode.leastRecent:
+        sorted.sort((a, b) =>
+            (usage[a.id]?.lastUsed ?? 0).compareTo(usage[b.id]?.lastUsed ?? 0));
+        break;
+      case _SortMode.unusedFirst:
+        sorted.sort((a, b) {
+          final usedA = usage.containsKey(a.id) ? 1 : 0;
+          final usedB = usage.containsKey(b.id) ? 1 : 0;
+          if (usedA != usedB) return usedA.compareTo(usedB);
+          return a.fullName.compareTo(b.fullName);
+        });
         break;
     }
     return sorted;
   }
+
+  // Folder-tab sort (favorites + within each muscle group) always stays
+  // alphabetical — the sort picker lives only in the LIST tab per user request.
+  List<BaseExercise> _sorted(List<BaseExercise> list, Map<int, _UsageInfo> usage) =>
+      _sortedBy(list, usage, _SortMode.alphaAsc);
 
   @override
   Widget build(BuildContext context) {
@@ -128,6 +168,18 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
             child: _buildFilters(context),
           ),
           const SizedBox(height: 8),
+          TabBar(
+            controller: _tabController,
+            indicatorColor: LabColors.accent,
+            labelColor: LabColors.accent,
+            unselectedLabelColor: Colors.grey[500],
+            labelStyle: LabStyles.mono(context, fontSize: 11, fontWeight: FontWeight.bold),
+            tabs: const [
+              Tab(text: 'FOLDERS'),
+              Tab(text: 'LIST'),
+            ],
+          ),
+          const SizedBox(height: 10),
           Expanded(
             child: exercisesAsync.when(
               data: (exercises) {
@@ -145,45 +197,11 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                     final favorites = exercises.where(_isFavorite).toList();
                     final unusedCount = exercises.where((e) => !usage.containsKey(e.id)).length;
 
-                    if (filtered.isEmpty) {
-                      return ListView(
-                        padding: const EdgeInsets.only(left: 16, right: 16, top: 40),
-                        children: [
-                          _buildStatsHeader(context, exercises.length, unusedCount, favorites.length),
-                          const SizedBox(height: 40),
-                          _buildEmptyState(),
-                        ],
-                      );
-                    }
-
-                    final Map<String, Map<String, List<BaseExercise>>> grouped = {};
-                    for (var e in filtered) {
-                      final field = (e.field == null || e.field!.isEmpty) ? 'NOFIELD' : e.field!.toUpperCase();
-                      final muscle = e.primaryMuscleGroup ?? 'UNKNOWN';
-                      grouped.putIfAbsent(field, () => {});
-                      grouped[field]!.putIfAbsent(muscle, () => []).add(e);
-                    }
-                    final fields = grouped.keys.toList()..sort();
-
-                    return ListView(
-                      padding: const EdgeInsets.only(left: 16, right: 16, bottom: 100),
+                    return TabBarView(
+                      controller: _tabController,
                       children: [
-                        _buildStatsHeader(context, exercises.length, unusedCount, favorites.length),
-                        const SizedBox(height: 12),
-                        if (favorites.isNotEmpty) ...[
-                          _buildFavoritesSection(context, favorites, usage),
-                          const SizedBox(height: 16),
-                        ],
-                        for (final fieldName in fields)
-                          _FieldGroup(
-                            key: ValueKey('field_$fieldName'),
-                            name: fieldName,
-                            muscles: grouped[fieldName]!,
-                            usage: usage,
-                            sorter: (list) => _sorted(list, usage),
-                            onToggleFavorite: _toggleFavorite,
-                            onDataChanged: _refreshUsage,
-                          ),
+                        _buildFoldersTab(context, exercises, filtered, favorites, usage, unusedCount),
+                        _buildListTab(context, exercises, filtered, usage, unusedCount, favorites.length),
                       ],
                     );
                   },
@@ -202,6 +220,133 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
         child: const Icon(Icons.add, color: LabColors.accent, size: 32),
       ),
       bottomNavigationBar: const LabFooter(),
+    );
+  }
+
+  Widget _buildFoldersTab(
+    BuildContext context,
+    List<BaseExercise> exercises,
+    List<BaseExercise> filtered,
+    List<BaseExercise> favorites,
+    Map<int, _UsageInfo> usage,
+    int unusedCount,
+  ) {
+    if (filtered.isEmpty) {
+      return ListView(
+        padding: const EdgeInsets.only(left: 16, right: 16, top: 40),
+        children: [
+          _buildStatsHeader(context, exercises.length, unusedCount, favorites.length),
+          const SizedBox(height: 40),
+          _buildEmptyState(),
+        ],
+      );
+    }
+
+    final Map<String, Map<String, List<BaseExercise>>> grouped = {};
+    for (var e in filtered) {
+      final field = (e.field == null || e.field!.isEmpty) ? 'NOFIELD' : e.field!.toUpperCase();
+      final muscle = e.primaryMuscleGroup ?? 'UNKNOWN';
+      grouped.putIfAbsent(field, () => {});
+      grouped[field]!.putIfAbsent(muscle, () => []).add(e);
+    }
+    final fields = grouped.keys.toList()..sort();
+
+    return ListView(
+      padding: const EdgeInsets.only(left: 16, right: 16, bottom: 100),
+      children: [
+        _buildStatsHeader(context, exercises.length, unusedCount, favorites.length),
+        const SizedBox(height: 12),
+        if (favorites.isNotEmpty) ...[
+          _FavoritesSection(
+            favorites: _sorted(favorites, usage),
+            usage: usage,
+            onToggleFavorite: _toggleFavorite,
+            onDataChanged: _refreshUsage,
+          ),
+          const SizedBox(height: 16),
+        ],
+        for (final fieldName in fields)
+          _FieldGroup(
+            key: ValueKey('field_$fieldName'),
+            name: fieldName,
+            muscles: grouped[fieldName]!,
+            usage: usage,
+            sorter: (list) => _sorted(list, usage),
+            onToggleFavorite: _toggleFavorite,
+            onDataChanged: _refreshUsage,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildListTab(
+    BuildContext context,
+    List<BaseExercise> exercises,
+    List<BaseExercise> filtered,
+    Map<int, _UsageInfo> usage,
+    int unusedCount,
+    int favCount,
+  ) {
+    final sortedList = _sortedBy(filtered, usage, _listSortMode);
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Row(
+            children: [
+              Expanded(child: _buildStatsHeader(context, exercises.length, unusedCount, favCount)),
+              _buildSortPicker(context),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: LabColors.cyanBorder, thickness: 0.2),
+        Expanded(
+          child: sortedList.isEmpty
+              ? _buildEmptyState()
+              : ListView.builder(
+                  padding: const EdgeInsets.only(left: 16, right: 16, top: 14, bottom: 100),
+                  itemCount: sortedList.length,
+                  itemBuilder: (context, i) {
+                    final e = sortedList[i];
+                    return _ExerciseCard(
+                      key: ValueKey('ex_list_${e.id}'),
+                      exercise: e,
+                      usage: usage[e.id],
+                      isFavorite: _isFavorite(e),
+                      onToggleFavorite: () => _toggleFavorite(e),
+                      onDataChanged: _refreshUsage,
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSortPicker(BuildContext context) {
+    return PopupMenuButton<_SortMode>(
+      color: LabColors.surfaceContainerHigh,
+      initialValue: _listSortMode,
+      onSelected: (mode) => setState(() => _listSortMode = mode),
+      itemBuilder: (context) => _SortMode.values
+          .map((m) => PopupMenuItem(
+                value: m,
+                child: Text(m.label, style: LabStyles.mono(context, fontSize: 11)),
+              ))
+          .toList(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.black,
+          border: Border.all(color: Colors.white24, width: 0.5),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.sort, size: 13, color: Colors.grey[400]),
+          const SizedBox(width: 4),
+          Text(_listSortMode.label, style: LabStyles.mono(context, fontSize: 8, color: Colors.white70)),
+        ]),
+      ),
     );
   }
 
@@ -229,39 +374,6 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
     );
   }
 
-  Widget _buildFavoritesSection(BuildContext context, List<BaseExercise> favorites,
-      Map<int, _UsageInfo> usage) {
-    final sorted = _sorted(favorites, usage);
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: LabColors.accent.withValues(alpha: 0.4), width: 2)),
-        color: LabColors.surfaceContainerLow,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(children: [
-              Icon(Icons.star, size: 14, color: LabColors.accent),
-              const SizedBox(width: 8),
-              Text('FAVORITES (${favorites.length})',
-                  style: LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold, color: LabColors.accent)),
-            ]),
-          ),
-          ...sorted.map((e) => _ExerciseCard(
-                key: ValueKey('ex_fav_${e.id}'),
-                exercise: e,
-                usage: usage[e.id],
-                isFavorite: true,
-                onToggleFavorite: () => _toggleFavorite(e),
-                onDataChanged: _refreshUsage,
-              )),
-        ],
-      ),
-    );
-  }
-
   Widget _buildEmptyState() {
     return Center(child: Text("NO_MOVEMENTS_FOUND", style: LabStyles.mono(context, color: Colors.grey)));
   }
@@ -284,61 +396,89 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   }
 
   Widget _buildFilters(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Expanded(
-          child: SizedBox(
-            height: 44,
-            child: TextField(
-              controller: _filterController,
-              style: LabStyles.mono(context, fontSize: 12, color: Colors.white),
-              decoration: InputDecoration(
-                hintText: 'SEARCH_INVENTORY...',
-                hintStyle: LabStyles.mono(context, fontSize: 10, color: Colors.grey[600]),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.zero,
-                    borderSide: BorderSide(color: Colors.grey[800]!, width: 0.5)),
-                enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.zero,
-                    borderSide: BorderSide(color: Colors.grey[800]!, width: 0.5)),
-                focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.zero,
-                    borderSide: const BorderSide(color: LabColors.primary, width: 0.5)),
-                isDense: true,
-                filled: true,
-                fillColor: LabColors.surfaceDim,
-              ),
-              onChanged: (v) {
-                _debounce?.cancel();
-                _debounce = Timer(const Duration(milliseconds: 220), () {
-                  if (mounted) setState(() => _filterQuery = v);
-                });
-              },
+    return SizedBox(
+      height: 44,
+      child: TextField(
+        controller: _filterController,
+        style: LabStyles.mono(context, fontSize: 12, color: Colors.white),
+        decoration: InputDecoration(
+          hintText: 'SEARCH_INVENTORY...',
+          hintStyle: LabStyles.mono(context, fontSize: 10, color: Colors.grey[600]),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.zero,
+              borderSide: BorderSide(color: Colors.grey[800]!, width: 0.5)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.zero,
+              borderSide: BorderSide(color: Colors.grey[800]!, width: 0.5)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.zero,
+              borderSide: const BorderSide(color: LabColors.primary, width: 0.5)),
+          isDense: true,
+          filled: true,
+          fillColor: LabColors.surfaceDim,
+        ),
+        onChanged: (v) {
+          _debounce?.cancel();
+          _debounce = Timer(const Duration(milliseconds: 220), () {
+            if (mounted) setState(() => _filterQuery = v);
+          });
+        },
+      ),
+    );
+  }
+}
+
+class _FavoritesSection extends StatefulWidget {
+  final List<BaseExercise> favorites;
+  final Map<int, _UsageInfo> usage;
+  final Future<void> Function(BaseExercise) onToggleFavorite;
+  final VoidCallback onDataChanged;
+  const _FavoritesSection({
+    required this.favorites,
+    required this.usage,
+    required this.onToggleFavorite,
+    required this.onDataChanged,
+  });
+  @override State<_FavoritesSection> createState() => _FavoritesSectionState();
+}
+
+class _FavoritesSectionState extends State<_FavoritesSection> {
+  bool _isExpanded = false;
+  @override Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: LabColors.accent.withValues(alpha: 0.4), width: 2)),
+        color: LabColors.surfaceContainerLow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _isExpanded = !_isExpanded),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(children: [
+                Icon(Icons.star, size: 14, color: LabColors.accent),
+                const SizedBox(width: 8),
+                Text('FAVORITES (${widget.favorites.length})',
+                    style: LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold, color: LabColors.accent)),
+                const Spacer(),
+                Icon(_isExpanded ? Icons.expand_less : Icons.expand_more, size: 16, color: LabColors.accent),
+              ]),
             ),
           ),
-        ),
-        const SizedBox(width: 6),
-        SizedBox(
-          height: 44,
-          child: OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              backgroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              shape: const RoundedRectangleBorder(),
-              side: const BorderSide(color: Colors.white24, width: 0.5),
-            ),
-            onPressed: () => setState(
-                () => _sortMode = _SortMode.values[(_sortMode.index + 1) % _SortMode.values.length]),
-            child: Row(mainAxisAlignment: MainAxisAlignment.center, mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.sort, size: 13, color: Colors.grey[400]),
-              const SizedBox(width: 4),
-              Text(_sortLabel, style: LabStyles.mono(context, fontSize: 8, color: Colors.white70)),
-            ]),
-          ),
-        ),
-      ],
+          if (_isExpanded)
+            ...widget.favorites.map((e) => _ExerciseCard(
+                  key: ValueKey('ex_fav_${e.id}'),
+                  exercise: e,
+                  usage: widget.usage[e.id],
+                  isFavorite: true,
+                  onToggleFavorite: () => widget.onToggleFavorite(e),
+                  onDataChanged: widget.onDataChanged,
+                )),
+        ],
+      ),
     );
   }
 }
@@ -717,20 +857,41 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
               final db = ref.read(databaseProvider);
               final exerciseId = widget.exercise.id;
               Navigator.pop(context); // close dialog immediately
+              debugPrint('[DELETE_KNS] start exerciseId=$exerciseId (${widget.exercise.fullName})');
               try {
                 // Raw SQL transaction: delete from all related tables in FK-safe order
+                debugPrint('[DELETE_KNS] PRAGMA foreign_keys = OFF');
                 await db.customStatement('PRAGMA foreign_keys = OFF');
+                debugPrint('[DELETE_KNS] DELETE FROM progression_edges ...');
                 await db.customStatement('DELETE FROM progression_edges WHERE from_variant_id IN (SELECT id FROM exercise_variants WHERE base_id = $exerciseId) OR to_variant_id IN (SELECT id FROM exercise_variants WHERE base_id = $exerciseId)');
+                debugPrint('[DELETE_KNS] DELETE FROM exercise_variants ...');
                 await db.customStatement('DELETE FROM exercise_variants WHERE base_id = $exerciseId');
+                debugPrint('[DELETE_KNS] DELETE FROM workout_sets ...');
                 await db.customStatement('DELETE FROM workout_sets WHERE base_exercise_id = $exerciseId');
+                debugPrint('[DELETE_KNS] DELETE FROM blueprint_exercises ...');
                 await db.customStatement('DELETE FROM blueprint_exercises WHERE base_exercise_id = $exerciseId');
+                debugPrint('[DELETE_KNS] DELETE FROM base_exercises ...');
                 await db.customStatement('DELETE FROM base_exercises WHERE id = $exerciseId');
+                debugPrint('[DELETE_KNS] PRAGMA foreign_keys = ON');
                 await db.customStatement('PRAGMA foreign_keys = ON');
                 widget.onDataChanged();
-                if (context.mounted) ref.invalidate(allExercisesProvider);
-              } catch (e) {
-                debugPrint("DELETE_KNS error: $e");
+                // Note: this is the dialog's context, which is already
+                // unmounted by the time we get here (popped above, before
+                // the awaits) — gating on context.mounted here always
+                // evaluated false, so the list never refreshed. Use the
+                // State's own `mounted` instead.
+                ref.invalidate(allExercisesProvider);
+                debugPrint('[DELETE_KNS] success exerciseId=$exerciseId');
+              } catch (e, st) {
+                debugPrint('[DELETE_KNS] ERROR exerciseId=$exerciseId: $e');
+                debugPrint('[DELETE_KNS] STACKTRACE:\n$st');
                 await db.customStatement('PRAGMA foreign_keys = ON');
+                if (mounted) {
+                  ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(
+                    content: Text('DELETE_ERROR: $e', style: LabStyles.mono(this.context)),
+                    backgroundColor: Colors.redAccent,
+                  ));
+                }
               }
             },
             child: Text('CONFIRM_PURGE', style: LabStyles.mono(context, color: Colors.redAccent)),
