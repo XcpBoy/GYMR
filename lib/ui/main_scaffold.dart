@@ -11,6 +11,7 @@ class MainScaffold extends ConsumerWidget {
   final List<Widget>? actions;
   final Widget? floatingActionButton;
   final Widget? bottomNavigationBar;
+  final bool automaticallyImplyLeading;
 
   const MainScaffold({
     super.key,
@@ -20,6 +21,7 @@ class MainScaffold extends ConsumerWidget {
     this.actions,
     this.floatingActionButton,
     this.bottomNavigationBar,
+    this.automaticallyImplyLeading = true,
   });
 
   @override
@@ -42,6 +44,7 @@ class MainScaffold extends ConsumerWidget {
               backgroundColor: LabColors.background,
               elevation: 0,
               centerTitle: true,
+              automaticallyImplyLeading: automaticallyImplyLeading,
               title: Text(
                 title.toUpperCase(),
                 style: LabStyles.mono(context, fontWeight: FontWeight.bold, fontSize: 16),

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -41,6 +42,8 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   String _filterQuery = '';
   final TextEditingController _filterController = TextEditingController();
   _SortMode _sortMode = _SortMode.alpha;
+  Timer? _debounce;
+  Future<Map<int, _UsageInfo>>? _usageFuture;
 
   String get _sortLabel {
     switch (_sortMode) {
@@ -51,7 +54,20 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _usageFuture = _loadUsage(ref.read(databaseProvider));
+  }
+
+  void _refreshUsage() {
+    if (mounted) {
+      setState(() => _usageFuture = _loadUsage(ref.read(databaseProvider)));
+    }
+  }
+
+  @override
   void dispose() {
+    _debounce?.cancel();
     _filterController.dispose();
     super.dispose();
   }
@@ -101,7 +117,6 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
   @override
   Widget build(BuildContext context) {
     final exercisesAsync = ref.watch(allExercisesProvider);
-    final db = ref.read(databaseProvider);
 
     return MainScaffold(
       title: 'KINISI INVENTORY',
@@ -117,7 +132,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
             child: exercisesAsync.when(
               data: (exercises) {
                 return FutureBuilder<Map<int, _UsageInfo>>(
-                  future: _loadUsage(db),
+                  future: _usageFuture,
                   builder: (context, usageSnap) {
                     final usage = usageSnap.data ?? {};
 
@@ -149,25 +164,25 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                       grouped[field]!.putIfAbsent(muscle, () => []).add(e);
                     }
                     final fields = grouped.keys.toList()..sort();
-                    final searching = _filterQuery.isNotEmpty;
 
                     return ListView(
                       padding: const EdgeInsets.only(left: 16, right: 16, bottom: 100),
                       children: [
                         _buildStatsHeader(context, exercises.length, unusedCount, favorites.length),
                         const SizedBox(height: 12),
-                        if (!searching && favorites.isNotEmpty) ...[
+                        if (favorites.isNotEmpty) ...[
                           _buildFavoritesSection(context, favorites, usage),
                           const SizedBox(height: 16),
                         ],
                         for (final fieldName in fields)
                           _FieldGroup(
+                            key: ValueKey('field_$fieldName'),
                             name: fieldName,
                             muscles: grouped[fieldName]!,
-                            forceExpanded: searching,
                             usage: usage,
                             sorter: (list) => _sorted(list, usage),
                             onToggleFavorite: _toggleFavorite,
+                            onDataChanged: _refreshUsage,
                           ),
                       ],
                     );
@@ -235,10 +250,12 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
             ]),
           ),
           ...sorted.map((e) => _ExerciseCard(
+                key: ValueKey('ex_fav_${e.id}'),
                 exercise: e,
                 usage: usage[e.id],
                 isFavorite: true,
                 onToggleFavorite: () => _toggleFavorite(e),
+                onDataChanged: _refreshUsage,
               )),
         ],
       ),
@@ -293,7 +310,12 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
                 filled: true,
                 fillColor: LabColors.surfaceDim,
               ),
-              onChanged: (v) => setState(() => _filterQuery = v),
+              onChanged: (v) {
+                _debounce?.cancel();
+                _debounce = Timer(const Duration(milliseconds: 220), () {
+                  if (mounted) setState(() => _filterQuery = v);
+                });
+              },
             ),
           ),
         ),
@@ -324,17 +346,18 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> {
 class _FieldGroup extends StatefulWidget {
   final String name;
   final Map<String, List<BaseExercise>> muscles;
-  final bool forceExpanded;
   final Map<int, _UsageInfo> usage;
   final List<BaseExercise> Function(List<BaseExercise>) sorter;
   final Future<void> Function(BaseExercise) onToggleFavorite;
+  final VoidCallback onDataChanged;
   const _FieldGroup({
+    super.key,
     required this.name,
     required this.muscles,
-    required this.forceExpanded,
     required this.usage,
     required this.sorter,
     required this.onToggleFavorite,
+    required this.onDataChanged,
   });
   @override State<_FieldGroup> createState() => _FieldGroupState();
 }
@@ -342,7 +365,7 @@ class _FieldGroup extends StatefulWidget {
 class _FieldGroupState extends State<_FieldGroup> {
   bool _isExpanded = false;
   @override Widget build(BuildContext context) {
-    final expanded = _isExpanded || widget.forceExpanded;
+    final expanded = _isExpanded;
     final totalCount = widget.muscles.values.fold(0, (sum, list) => sum + list.length);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -368,12 +391,13 @@ class _FieldGroupState extends State<_FieldGroup> {
             ...() {
               final muscleNames = widget.muscles.keys.toList()..sort();
               return muscleNames.map((m) => _MuscleGroup(
+                    key: ValueKey('muscle_${widget.name}_$m'),
                     name: m,
                     exercises: widget.muscles[m]!,
-                    forceExpanded: widget.forceExpanded,
                     usage: widget.usage,
                     sorter: widget.sorter,
                     onToggleFavorite: widget.onToggleFavorite,
+                    onDataChanged: widget.onDataChanged,
                   ));
             }(),
           ],
@@ -386,17 +410,18 @@ class _FieldGroupState extends State<_FieldGroup> {
 class _MuscleGroup extends StatefulWidget {
   final String name;
   final List<BaseExercise> exercises;
-  final bool forceExpanded;
   final Map<int, _UsageInfo> usage;
   final List<BaseExercise> Function(List<BaseExercise>) sorter;
   final Future<void> Function(BaseExercise) onToggleFavorite;
+  final VoidCallback onDataChanged;
   const _MuscleGroup({
+    super.key,
     required this.name,
     required this.exercises,
-    required this.forceExpanded,
     required this.usage,
     required this.sorter,
     required this.onToggleFavorite,
+    required this.onDataChanged,
   });
   @override State<_MuscleGroup> createState() => _MuscleGroupState();
 }
@@ -404,7 +429,7 @@ class _MuscleGroup extends StatefulWidget {
 class _MuscleGroupState extends State<_MuscleGroup> {
   bool _isExpanded = false;
   @override Widget build(BuildContext context) {
-    final expanded = _isExpanded || widget.forceExpanded;
+    final expanded = _isExpanded;
     final sorted = widget.sorter(widget.exercises);
     return Column(children: [
       InkWell(
@@ -426,10 +451,12 @@ class _MuscleGroupState extends State<_MuscleGroup> {
       if (expanded)
         Column(
           children: sorted.map((e) => _ExerciseCard(
+                key: ValueKey('ex_${e.id}'),
                 exercise: e,
                 usage: widget.usage[e.id],
                 isFavorite: _isFavorite(e),
                 onToggleFavorite: () => widget.onToggleFavorite(e),
+                onDataChanged: widget.onDataChanged,
               )).toList(),
         ),
     ]);
@@ -441,11 +468,14 @@ class _ExerciseCard extends ConsumerStatefulWidget {
   final _UsageInfo? usage;
   final bool isFavorite;
   final VoidCallback onToggleFavorite;
+  final VoidCallback onDataChanged;
   const _ExerciseCard({
+    super.key,
     required this.exercise,
     required this.usage,
     required this.isFavorite,
     required this.onToggleFavorite,
+    required this.onDataChanged,
   });
   @override ConsumerState<_ExerciseCard> createState() => _ExerciseCardState();
 }
@@ -662,6 +692,7 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
               final exerciseId = widget.exercise.id;
               try {
                 await (db.delete(db.workoutSets)..where((t) => t.baseExerciseId.equals(exerciseId))).go();
+                widget.onDataChanged();
                 if (context.mounted) Navigator.pop(context);
               } catch (_) {}
             },
@@ -695,6 +726,7 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
                 await db.customStatement('DELETE FROM blueprint_exercises WHERE base_exercise_id = $exerciseId');
                 await db.customStatement('DELETE FROM base_exercises WHERE id = $exerciseId');
                 await db.customStatement('PRAGMA foreign_keys = ON');
+                widget.onDataChanged();
                 if (context.mounted) ref.invalidate(allExercisesProvider);
               } catch (e) {
                 debugPrint("DELETE_KNS error: $e");

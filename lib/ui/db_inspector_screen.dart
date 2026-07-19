@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:drift/drift.dart' hide Column, Table;
 import 'package:intl/intl.dart';
 import '../providers/database_provider.dart';
+import '../providers/theme_provider.dart';
 import '../database/database.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
@@ -33,6 +34,9 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   String _searchQuery = '';
   final Map<String, String> _perTableSearch = {};
   bool _isProcessing = false;
+  // Global display toggle — cleans up JSON-blob columns (e.g. body_positions)
+  // into a plain comma-joined read, instead of raw ["a","b"] / {"k":"v"}.
+  bool _jsonPrettyView = false;
 
   // ── UNDO SYSTEM ──
   final List<_UndoSnapshot> _undoStack = [];
@@ -44,6 +48,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: _tableConfigs.length, vsync: this);
+    _loadPersistedColumnConfig();
     // Pre-cache columns and FK refs for all tables, and kick off a
     // lightweight COUNT(*) per table (cheap — just for the tab row-count
     // badges, not a full page fetch) so every tab shows its size upfront.
@@ -237,7 +242,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   }
 
   // ── DATE FORMATTING ──
-  String _formatValue(dynamic val, String col) {
+  String _formatValue(dynamic val, String col, {bool jsonPretty = false}) {
     if (val == null) return 'NULL';
     if (val is int &&
         (col.contains('date') || col.contains('time') || col == 'timestamp')) {
@@ -257,6 +262,34 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       }
     }
     if (val is bool) return val ? 'YES' : 'NO';
+    if (jsonPretty && val is String) {
+      final trimmed = val.trim();
+      if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+        try {
+          final decoded = jsonDecode(trimmed);
+          if (decoded is List) {
+            if (decoded.isEmpty) return '—';
+            // Common app shape: [{"v": "TUCK", "s": true}, ...] — "v" is the
+            // actual display value, other keys (like "s") are metadata for
+            // the editing UI, not something worth reading here.
+            return decoded.map((e) {
+              if (e is Map && e.containsKey('v')) return e['v'].toString();
+              if (e is Map && e.containsKey('name')) {
+                return e['name'].toString();
+              }
+              return e.toString();
+            }).join(', ');
+          }
+          if (decoded is Map) {
+            if (decoded.isEmpty) return '—';
+            if (decoded.containsKey('v')) return decoded['v'].toString();
+            return decoded.entries.map((e) => '${e.key}: ${e.value}').join(', ');
+          }
+        } catch (_) {
+          // Not actually valid JSON — fall through to raw string.
+        }
+      }
+    }
     return val.toString();
   }
 
@@ -365,94 +398,217 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
     return c2 == true;
   }
 
+  /// Text/varchar-affinity columns for a table (via PRAGMA type info) — used
+  /// to scope an "all columns" find & replace to columns that actually make
+  /// sense to substring-replace (skips ids/numeric/bool columns).
+  Future<List<String>> _textColumnsOf(String table) async {
+    final db = ref.read(databaseProvider);
+    final rows = await db.customSelect('PRAGMA table_info($table)').get();
+    return [
+      for (final r in rows)
+        if ((r.data['type'] as String? ?? '').toUpperCase().contains('TEXT') ||
+            (r.data['type'] as String? ?? '').toUpperCase().contains('CHAR'))
+          r.data['name'] as String
+    ];
+  }
+
   // ── BATCH OPERATIONS ──
   Future<void> _batchFindAndReplace(_TableCfg cfg) async {
     final findCtrl = TextEditingController();
     final replaceCtrl = TextEditingController();
-    final columnCtrl =
-        TextEditingController(text: cfg.pkCol == 'id' ? 'name' : '');
+    final visibleCols = _getColumns(cfg).where((c) => c != cfg.pkCol).toList();
+    String? selectedColumn =
+        visibleCols.contains('name') ? 'name' : visibleCols.firstOrNull;
+    bool allColumns = false;
+    bool wholeWord = false;
 
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: LabColors.surfaceContainerHigh,
-        title: Text('FIND & REPLACE — ${cfg.label}',
-            style: LabStyles.mono(context, color: LabColors.accent)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                controller: columnCtrl,
-                decoration: _inputDecoration('Column name'),
-                style: LabStyles.mono(context, fontSize: 12)),
-            const SizedBox(height: 8),
-            TextField(
-                controller: findCtrl,
-                decoration: _inputDecoration('Find text'),
-                style: LabStyles.mono(context, fontSize: 12)),
-            const SizedBox(height: 8),
-            TextField(
-                controller: replaceCtrl,
-                decoration: _inputDecoration('Replace with'),
-                style: LabStyles.mono(context, fontSize: 12)),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDState) => AlertDialog(
+          backgroundColor: LabColors.surfaceContainerHigh,
+          title: Text('FIND & REPLACE — ${cfg.label}',
+              style: LabStyles.mono(context, color: LabColors.accent)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: () => setDState(() => allColumns = !allColumns),
+                  child: Row(
+                    children: [
+                      Icon(
+                          allColumns
+                              ? Icons.check_box
+                              : Icons.check_box_outline_blank,
+                          color:
+                              allColumns ? LabColors.accent : Colors.grey[600],
+                          size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text('APPLY TO ALL TEXT COLUMNS',
+                            style: LabStyles.mono(context,
+                                fontSize: 10, color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (!allColumns) ...[
+                  DropdownButtonFormField<String>(
+                    value: selectedColumn,
+                    dropdownColor: LabColors.surfaceContainerHigh,
+                    style: LabStyles.mono(context,
+                        fontSize: 12, color: Colors.white),
+                    decoration: _inputDecoration('Column'),
+                    items: visibleCols
+                        .map((c) =>
+                            DropdownMenuItem(value: c, child: Text(c)))
+                        .toList(),
+                    onChanged: (v) => setDState(() => selectedColumn = v),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                TextField(
+                    controller: findCtrl,
+                    decoration: _inputDecoration('Find text'),
+                    style: LabStyles.mono(context, fontSize: 12)),
+                const SizedBox(height: 8),
+                TextField(
+                    controller: replaceCtrl,
+                    decoration: _inputDecoration('Replace with'),
+                    style: LabStyles.mono(context, fontSize: 12)),
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: () => setDState(() => wholeWord = !wholeWord),
+                  child: Row(
+                    children: [
+                      Icon(
+                          wholeWord
+                              ? Icons.check_box
+                              : Icons.check_box_outline_blank,
+                          color: wholeWord ? LabColors.accent : Colors.grey[600],
+                          size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                            'WHOLE WORD ONLY (unchecked: "FL" also matches inside "FLOATING")',
+                            style: LabStyles.mono(context,
+                                fontSize: 9, color: Colors.grey[400])),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text('CANCEL', style: LabStyles.mono(context))),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text('REPLACE ALL',
+                    style: LabStyles.mono(context, color: LabColors.accent))),
           ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: Text('CANCEL', style: LabStyles.mono(context))),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text('REPLACE ALL',
-                  style: LabStyles.mono(context, color: LabColors.accent))),
-        ],
       ),
     );
 
     if (confirmed != true || findCtrl.text.isEmpty) return;
+    if (!allColumns && selectedColumn == null) return;
 
-    final details =
-        'Column: ${columnCtrl.text}\nFind: "${findCtrl.text}"\nReplace: "${replaceCtrl.text}"\nTable: ${cfg.table}';
+    final targetColumns =
+        allColumns ? await _textColumnsOf(cfg.table) : [selectedColumn!];
+    if (targetColumns.isEmpty) return;
+
+    final details = allColumns
+        ? 'Columns: ALL TEXT COLUMNS (${targetColumns.join(", ")})\nFind: "${findCtrl.text}"\nReplace: "${replaceCtrl.text}"\nWhole word only: $wholeWord\nTable: ${cfg.table}'
+        : 'Column: $selectedColumn\nFind: "${findCtrl.text}"\nReplace: "${replaceCtrl.text}"\nWhole word only: $wholeWord\nTable: ${cfg.table}';
     final ok = await _confirmAction('REPLACE ALL', details);
     if (!ok) return;
 
-    // Push undo: backup all matching rows before replacement
     final db = ref.read(databaseProvider);
-    final matchingRows = await db
-        .customSelect(
-          'SELECT * FROM ${cfg.table} WHERE ${columnCtrl.text} LIKE ?',
-          variables: ['%${findCtrl.text}%'].map((e) => Variable(e)).toList(),
-        )
-        .get();
-    final snapshotRows = matchingRows.map((r) {
-      final map = <String, dynamic>{};
-      for (final k in r.data.keys) {
-        map[k] = r.data[k];
-      }
-      return map;
-    }).toList();
-
-    // For bulk replace, we save a single snapshot with all affected rows as a "bulk" undo
-    // The undo will restore each row to its pre-replace state
-    _pushUndo(_UndoSnapshot(
-      table: cfg.table,
-      pkCol: cfg.pkCol,
-      row: {'_bulk': true, 'rows': snapshotRows, 'col': columnCtrl.text}
-          as Map<String, dynamic>,
-      label:
-          'Replace "${findCtrl.text}" -> "${replaceCtrl.text}" in ${cfg.table}.${columnCtrl.text} (${snapshotRows.length} rows)',
-      isBulkReplace: true,
-      findText: findCtrl.text,
-      replaceText: replaceCtrl.text,
-      targetColumn: columnCtrl.text,
-    ));
-
+    final wordRegex = wholeWord
+        ? RegExp(r'\b' + RegExp.escape(findCtrl.text) + r'\b')
+        : null;
     setState(() => _isProcessing = true);
     try {
-      await db.customStatement(
-        'UPDATE ${cfg.table} SET ${columnCtrl.text} = REPLACE(${columnCtrl.text}, ?, ?)',
-        [findCtrl.text, replaceCtrl.text],
-      );
+      for (final column in targetColumns) {
+        // Push undo: backup all matching rows before replacement (one
+        // snapshot per column, so undo can revert each independently).
+        final matchingRows = await db
+            .customSelect(
+              'SELECT * FROM ${cfg.table} WHERE $column LIKE ?',
+              variables:
+                  ['%${findCtrl.text}%'].map((e) => Variable(e)).toList(),
+            )
+            .get();
+        if (matchingRows.isEmpty) continue;
+
+        if (wordRegex != null) {
+          // Whole-word mode: SQL REPLACE() can't do word boundaries, so
+          // compute + write the new value per row instead of one blanket
+          // UPDATE ... REPLACE() statement.
+          final changedSnapshots = <Map<String, dynamic>>[];
+          for (final r in matchingRows) {
+            final current = r.data[column];
+            if (current is! String || !wordRegex.hasMatch(current)) continue;
+            final snapshot = <String, dynamic>{};
+            for (final k in r.data.keys) {
+              snapshot[k] = r.data[k];
+            }
+            changedSnapshots.add(snapshot);
+            final newValue = current.replaceAll(wordRegex, replaceCtrl.text);
+            final pk = r.data[cfg.pkCol];
+            await db.customStatement(
+              'UPDATE ${cfg.table} SET $column = ? WHERE ${cfg.pkCol} = ?',
+              [newValue, pk],
+            );
+          }
+          if (changedSnapshots.isEmpty) continue;
+          _pushUndo(_UndoSnapshot(
+            table: cfg.table,
+            pkCol: cfg.pkCol,
+            row: {'_bulk': true, 'rows': changedSnapshots, 'col': column}
+                as Map<String, dynamic>,
+            label:
+                'Replace "${findCtrl.text}" -> "${replaceCtrl.text}" (whole word) in ${cfg.table}.$column (${changedSnapshots.length} rows)',
+            isBulkReplace: true,
+            findText: findCtrl.text,
+            replaceText: replaceCtrl.text,
+            targetColumn: column,
+          ));
+          continue;
+        }
+
+        final snapshotRows = matchingRows.map((r) {
+          final map = <String, dynamic>{};
+          for (final k in r.data.keys) {
+            map[k] = r.data[k];
+          }
+          return map;
+        }).toList();
+
+        _pushUndo(_UndoSnapshot(
+          table: cfg.table,
+          pkCol: cfg.pkCol,
+          row: {'_bulk': true, 'rows': snapshotRows, 'col': column}
+              as Map<String, dynamic>,
+          label:
+              'Replace "${findCtrl.text}" -> "${replaceCtrl.text}" in ${cfg.table}.$column (${snapshotRows.length} rows)',
+          isBulkReplace: true,
+          findText: findCtrl.text,
+          replaceText: replaceCtrl.text,
+          targetColumn: column,
+        ));
+
+        await db.customStatement(
+          'UPDATE ${cfg.table} SET $column = REPLACE($column, ?, ?)',
+          [findCtrl.text, replaceCtrl.text],
+        );
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('REPLACE COMPLETE', style: LabStyles.mono(context)),
@@ -588,6 +744,177 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                   'CATEGORY REPLACE COMPLETE: ${snapshotRows.length} rows',
                   style: LabStyles.mono(context))),
         );
+        setState(() {});
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('ERROR: $e', style: LabStyles.mono(context)),
+          backgroundColor: Colors.redAccent,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  /// Normalizes whitespace/casing on a single column's value per row — never
+  /// merges or deletes rows, unlike the removed AUTO-MERGE NAMES feature.
+  Future<void> _normalizeColumn(_TableCfg cfg) async {
+    final visibleCols = _getColumns(cfg).where((c) => c != cfg.pkCol).toList();
+    if (visibleCols.isEmpty) return;
+    String? selectedColumn =
+        visibleCols.contains('name') ? 'name' : visibleCols.firstOrNull;
+    bool uppercase = true;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDState) => AlertDialog(
+          backgroundColor: LabColors.surfaceContainerHigh,
+          title: Text('NORMALIZE COLUMN — ${cfg.label}',
+              style: LabStyles.mono(context, color: LabColors.accent)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DropdownButtonFormField<String>(
+                  value: selectedColumn,
+                  dropdownColor: LabColors.surfaceContainerHigh,
+                  style: LabStyles.mono(context,
+                      fontSize: 12, color: Colors.white),
+                  decoration: _inputDecoration('Column'),
+                  items: visibleCols
+                      .map((c) =>
+                          DropdownMenuItem(value: c, child: Text(c)))
+                      .toList(),
+                  onChanged: (v) => setDState(() => selectedColumn = v),
+                ),
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: () => setDState(() => uppercase = !uppercase),
+                  child: Row(
+                    children: [
+                      Icon(
+                          uppercase
+                              ? Icons.check_box
+                              : Icons.check_box_outline_blank,
+                          color: uppercase ? LabColors.accent : Colors.grey[600],
+                          size: 18),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text('UPPERCASE',
+                            style: LabStyles.mono(context,
+                                fontSize: 10, color: Colors.white)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                    'Trims/collapses whitespace on the selected column only. '
+                    'Never merges or deletes rows — two different exercises '
+                    'stay two rows.',
+                    style: LabStyles.mono(context,
+                        fontSize: 9, color: Colors.grey[400])),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text('CANCEL', style: LabStyles.mono(context))),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text('PREVIEW',
+                    style: LabStyles.mono(context, color: LabColors.accent))),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true || selectedColumn == null) return;
+    final column = selectedColumn!;
+
+    String normalize(String s) {
+      var out = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+      if (uppercase) out = out.toUpperCase();
+      return out;
+    }
+
+    final db = ref.read(databaseProvider);
+    final qTable = _quoteIdent(cfg.table);
+    final qColumn = _quoteIdent(column);
+    final allRows =
+        await db.customSelect('SELECT * FROM $qTable').get();
+
+    final changes = <({dynamic pk, String oldVal, String newVal, Map<String, dynamic> snapshot})>[];
+    for (final r in allRows) {
+      final current = r.data[column];
+      if (current is! String) continue;
+      final newVal = normalize(current);
+      if (newVal == current) continue;
+      final snapshot = <String, dynamic>{};
+      for (final k in r.data.keys) {
+        snapshot[k] = r.data[k];
+      }
+      changes.add((
+        pk: r.data[cfg.pkCol],
+        oldVal: current,
+        newVal: newVal,
+        snapshot: snapshot,
+      ));
+    }
+
+    if (changes.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('NO_CHANGES_NEEDED', style: LabStyles.mono(context)),
+        ));
+      }
+      return;
+    }
+
+    final previewLines = changes
+        .take(20)
+        .map((c) => '"${c.oldVal}" -> "${c.newVal}"')
+        .join('\n');
+    final details = 'Table: ${cfg.table}\n'
+        'Column: $column\n'
+        'AFFECTED ROWS: ${changes.length}\n\n'
+        '$previewLines'
+        '${changes.length > 20 ? '\n… and ${changes.length - 20} more' : ''}';
+
+    final ok = await _confirmAction('NORMALIZE COLUMN', details);
+    if (!ok) return;
+
+    final snapshotRows = changes.map((c) => c.snapshot).toList();
+    _pushUndo(_UndoSnapshot(
+      table: cfg.table,
+      pkCol: cfg.pkCol,
+      row: {'_bulk': true, 'rows': snapshotRows, 'col': column}
+          as Map<String, dynamic>,
+      label: 'Normalize ${cfg.table}.$column (${changes.length} rows)',
+      isBulkReplace: true,
+      findText: '(whitespace/case normalize)',
+      replaceText: '(whitespace/case normalize)',
+      targetColumn: column,
+    ));
+
+    setState(() => _isProcessing = true);
+    try {
+      for (final c in changes) {
+        await db.customStatement(
+          'UPDATE $qTable SET $qColumn = ? WHERE ${cfg.pkCol} = ?',
+          [c.newVal, c.pk],
+        );
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('NORMALIZE COMPLETE: ${changes.length} rows',
+              style: LabStyles.mono(context)),
+        ));
         setState(() {});
       }
     } catch (e) {
@@ -1308,8 +1635,9 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   @override
   Widget build(BuildContext context) {
     return MainScaffold(
-      title: 'DB_INSPECTOR_EDITOR',
+      title: 'DB.EDIT',
       screenKey: 'DATASET',
+      automaticallyImplyLeading: false,
       body: Column(
         children: [
           // ── Search bar ──
@@ -1414,8 +1742,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                         'FIND & REPLACE ALL', LabColors.accent),
                     _batchMenuItem('categoryReplace', Icons.swap_horiz,
                         'CATEGORY REPLACE', LabColors.accent),
-                    _batchMenuItem('autoMerge', Icons.auto_fix_high,
-                        'AUTO-MERGE NAMES', LabColors.accent),
+                    _batchMenuItem('normalize', Icons.spellcheck,
+                        'NORMALIZE COLUMN', LabColors.accent),
                     const PopupMenuDivider(height: 12),
                     PopupMenuItem(
                       enabled: false,
@@ -1437,11 +1765,11 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                     final cfg = _tableConfigs[_tabCtrl.index];
                     if (v == 'findReplace') _batchFindAndReplace(cfg);
                     if (v == 'categoryReplace') _showCategoryReplaceDialog(cfg);
+                    if (v == 'normalize') _normalizeColumn(cfg);
                     if (v == 'merge') _mergeRows(cfg);
                     if (v == 'reindex') _reindexRows(cfg);
                     if (v == 'repairTypes') _repairColumnTypes(cfg);
                     if (v == 'config') _showConfigDialog(cfg);
-                    if (v == 'autoMerge') _autoMergeNames(cfg);
                   },
                 ),
               ],
@@ -1540,9 +1868,61 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
     'somaticLogs': {'set_id', 'created_at'},
   };
   final _userHiddenColumns = <String, Set<String>>{};
+  // Custom column order per table, persisted the same way as hidden columns.
+  final _userColumnOrder = <String, List<String>>{};
   Set<String> _hiddenFor(String key) => _userHiddenColumns.containsKey(key)
       ? _userHiddenColumns[key]!
       : (_defaultHiddenColumns[key] ?? {});
+
+  List<String> _orderedColumns(String key, List<String> allCols) {
+    final custom = _userColumnOrder[key];
+    if (custom == null) return allCols;
+    final ordered = <String>[
+      for (final c in custom)
+        if (allCols.contains(c)) c
+    ];
+    for (final c in allCols) {
+      if (!ordered.contains(c)) ordered.add(c);
+    }
+    return ordered;
+  }
+
+  // ── Column config persistence (theme_settings table, same mechanism used
+  // app-wide for booleans/colors — no new table needed) ──
+  Future<void> _loadPersistedColumnConfig() async {
+    final db = ref.read(databaseProvider);
+    final rows = await (db.select(db.themeSettings)
+          ..where((t) => t.key.like('DBINSPECTOR_%')))
+        .get();
+    for (final row in rows) {
+      final value = row.value;
+      if (value == null) continue;
+      if (row.key.startsWith('DBINSPECTOR_HIDDEN_')) {
+        final tableKey = row.key.substring('DBINSPECTOR_HIDDEN_'.length);
+        try {
+          _userHiddenColumns[tableKey] =
+              Set<String>.from((jsonDecode(value) as List).cast<String>());
+        } catch (_) {}
+      } else if (row.key.startsWith('DBINSPECTOR_ORDER_')) {
+        final tableKey = row.key.substring('DBINSPECTOR_ORDER_'.length);
+        try {
+          _userColumnOrder[tableKey] =
+              (jsonDecode(value) as List).cast<String>();
+        } catch (_) {}
+      } else if (row.key == 'DBINSPECTOR_JSON_PRETTY') {
+        _jsonPrettyView = value == '1' || value.toLowerCase() == 'true';
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _persistColumnConfig(
+      String tableKey, Set<String> hidden, List<String> order) async {
+    final tC = ref.read(themeControllerProvider);
+    await tC.setValue(
+        'DBINSPECTOR_HIDDEN_$tableKey', jsonEncode(hidden.toList()));
+    await tC.setValue('DBINSPECTOR_ORDER_$tableKey', jsonEncode(order));
+  }
 
   // Display-name overrides (code name → UI label)
   static final _columnLabels = <String, Map<String, String>>{
@@ -1578,6 +1958,9 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   final Map<String, int> _pageOffsets = {};
   final Map<String, int> _totalCounts = {};
   final Map<String, bool> _loadingMore = {};
+  // Which search term `_totalCounts[key]` currently reflects — lets us
+  // detect "search changed" and re-count instead of only counting once.
+  final Map<String, String?> _countedForSearch = {};
   // One horizontal ScrollController pair per table — header mirrors body.
   final Map<String, ScrollController> _headerScrollControllers = {};
   final Map<String, ScrollController> _bodyScrollControllers = {};
@@ -1623,16 +2006,21 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
     final db = ref.watch(databaseProvider);
     final offset = _getOffset(cfg.key);
     final total = _getTotal(cfg.key);
-
-    // First load: get total count + first page
-    if (total == 0 && !(_loadingMore[cfg.key] ?? false)) {
-      _loadingMore[cfg.key] = true;
-      _loadCount(db, cfg);
-    }
-
     final searchTerm = (_perTableSearch[cfg.key] ?? '').isEmpty
         ? null
         : _perTableSearch[cfg.key];
+
+    // Re-count whenever the search term changes (not just on first load) —
+    // otherwise `total`/`totalPages` keep reflecting the unfiltered table
+    // while `_fetchPage` applies the search filter, so paging past the end
+    // of the actual filtered results looks like "no data" and snaps back.
+    if ((total == 0 || _countedForSearch[cfg.key] != searchTerm) &&
+        !(_loadingMore[cfg.key] ?? false)) {
+      _loadingMore[cfg.key] = true;
+      _countedForSearch[cfg.key] = searchTerm;
+      _loadCount(db, cfg, search: searchTerm);
+    }
+
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: _fetchPage(db, cfg, offset, search: searchTerm),
       builder: (context, snapshot) {
@@ -1680,9 +2068,6 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
               color: LabColors.surfaceDim,
               child: Row(
                 children: [
-                  Text('${filtered.length} / $total rows',
-                      style: LabStyles.mono(context,
-                          fontSize: 8, color: Colors.grey)),
                   const Spacer(),
                   IconButton(
                     icon: const Icon(Icons.first_page, size: 16),
@@ -1692,7 +2077,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                         : null,
                     padding: EdgeInsets.zero,
                     constraints:
-                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                        const BoxConstraints(minWidth: 22, minHeight: 28),
                   ),
                   IconButton(
                     icon: const Icon(Icons.chevron_left, size: 16),
@@ -1703,7 +2088,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                         : null,
                     padding: EdgeInsets.zero,
                     constraints:
-                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                        const BoxConstraints(minWidth: 22, minHeight: 28),
                   ),
                   InkWell(
                     onTap: () => _showJumpToPageDialog(cfg, totalPages),
@@ -1728,7 +2113,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                         : null,
                     padding: EdgeInsets.zero,
                     constraints:
-                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                        const BoxConstraints(minWidth: 22, minHeight: 28),
                   ),
                   IconButton(
                     icon: const Icon(Icons.last_page, size: 16),
@@ -1741,9 +2126,30 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                         : null,
                     padding: EdgeInsets.zero,
                     constraints:
-                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                        const BoxConstraints(minWidth: 22, minHeight: 28),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 2),
+                  IconButton(
+                    icon: Icon(
+                        _jsonPrettyView
+                            ? Icons.data_object
+                            : Icons.data_object_outlined,
+                        size: 16),
+                    color: _jsonPrettyView ? LabColors.accent : Colors.grey,
+                    tooltip: _jsonPrettyView
+                        ? 'JSON_PRETTY_VIEW: ON'
+                        : 'JSON_PRETTY_VIEW: OFF',
+                    onPressed: () {
+                      setState(() => _jsonPrettyView = !_jsonPrettyView);
+                      ref
+                          .read(themeControllerProvider)
+                          .setBool('DBINSPECTOR_JSON_PRETTY', _jsonPrettyView);
+                    },
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 22, minHeight: 28),
+                  ),
+                  const SizedBox(width: 2),
                   IconButton(
                     icon: const Icon(Icons.tune, size: 16),
                     color: LabColors.primary,
@@ -1751,7 +2157,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                     onPressed: () => _showConfigDialog(cfg),
                     padding: EdgeInsets.zero,
                     constraints:
-                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                        const BoxConstraints(minWidth: 22, minHeight: 28),
                   ),
                 ],
               ),
@@ -1794,14 +2200,23 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                         ),
                       );
                     }
-                    final display = _formatValue(row[col], col);
+                    final display =
+                        _formatValue(row[col], col, jsonPretty: _jsonPrettyView);
                     final isPK = col == cfg.pkCol;
+                    final isMatch = searchTerm != null &&
+                        searchTerm.isNotEmpty &&
+                        display.toLowerCase().contains(searchTerm.toLowerCase());
                     return Container(
                       width: width,
                       constraints:
                           const BoxConstraints(minHeight: 20, maxHeight: 36),
                       padding:
                           const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      decoration: isMatch
+                          ? BoxDecoration(
+                              border: Border.all(
+                                  color: LabColors.accent, width: 1.2))
+                          : null,
                       child: isPK
                           ? Text(display,
                               style: LabStyles.mono(context,
@@ -1941,9 +2356,10 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   }
 
   Future<void> _showConfigDialog(_TableCfg cfg) async {
-    final allCols = _columnsCache[cfg.table] ?? [];
-    if (allCols.isEmpty) return;
+    final rawCols = _columnsCache[cfg.table] ?? [];
+    if (rawCols.isEmpty) return;
     final hidden = _hiddenFor(cfg.key).toSet(); // mutable copy
+    final order = _orderedColumns(cfg.key, rawCols).toList(); // mutable copy
     int pageSize = _pageSizes[cfg.key] ?? _defaultPageSize;
 
     await showDialog(
@@ -2012,49 +2428,74 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                     decoration: BoxDecoration(
                         border:
                             Border.all(color: Colors.grey[700]!, width: 0.5)),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('VISIBLE COLUMNS',
-                              style: LabStyles.mono(context,
-                                  fontSize: 9,
-                                  color: Colors.grey[400],
-                                  fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 8),
-                          ...allCols.map((col) => InkWell(
-                                onTap: () => setDState(() {
-                                  if (hidden.contains(col)) {
-                                    hidden.remove(col);
-                                  } else {
-                                    hidden.add(col);
-                                  }
-                                }),
-                                child: Padding(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('VISIBLE COLUMNS  (drag ⋮⋮ to reorder)',
+                            style: LabStyles.mono(context,
+                                fontSize: 9,
+                                color: Colors.grey[400],
+                                fontWeight: FontWeight.bold)),
+                        const SizedBox(height: 8),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 320),
+                          child: ReorderableListView(
+                            shrinkWrap: true,
+                            buildDefaultDragHandles: false,
+                            onReorder: (oldIndex, newIndex) => setDState(() {
+                              if (newIndex > oldIndex) newIndex--;
+                              final col = order.removeAt(oldIndex);
+                              order.insert(newIndex, col);
+                            }),
+                            children: [
+                              for (final col in order)
+                                Padding(
+                                  key: ValueKey(col),
                                   padding:
                                       const EdgeInsets.symmetric(vertical: 3),
                                   child: Row(children: [
-                                    Icon(
-                                        hidden.contains(col)
-                                            ? Icons.check_box_outline_blank
-                                            : Icons.check_box,
-                                        color: hidden.contains(col)
-                                            ? Colors.grey[600]
-                                            : LabColors.primary,
-                                        size: 18),
-                                    const SizedBox(width: 8),
-                                    Text(col,
-                                        style: LabStyles.mono(context,
-                                            fontSize: 9,
-                                            color: hidden.contains(col)
-                                                ? Colors.grey[600]
-                                                : Colors.white)),
+                                    ReorderableDragStartListener(
+                                      index: order.indexOf(col),
+                                      child: Icon(Icons.drag_indicator,
+                                          size: 16, color: Colors.grey[600]),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: InkWell(
+                                        onTap: () => setDState(() {
+                                          if (hidden.contains(col)) {
+                                            hidden.remove(col);
+                                          } else {
+                                            hidden.add(col);
+                                          }
+                                        }),
+                                        child: Row(children: [
+                                          Icon(
+                                              hidden.contains(col)
+                                                  ? Icons
+                                                      .check_box_outline_blank
+                                                  : Icons.check_box,
+                                              color: hidden.contains(col)
+                                                  ? Colors.grey[600]
+                                                  : LabColors.primary,
+                                              size: 18),
+                                          const SizedBox(width: 8),
+                                          Text(col,
+                                              style: LabStyles.mono(context,
+                                                  fontSize: 9,
+                                                  color: hidden.contains(col)
+                                                      ? Colors.grey[600]
+                                                      : Colors.white)),
+                                        ]),
+                                      ),
+                                    ),
                                   ]),
                                 ),
-                              )),
-                        ],
-                      ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -2067,170 +2508,19 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                 child: Text('CANCEL',
                     style: LabStyles.mono(context, color: Colors.grey))),
             TextButton(
-                onPressed: () {
+                onPressed: () async {
                   setState(() {
                     _userHiddenColumns[cfg.key] = hidden;
+                    _userColumnOrder[cfg.key] = order;
                     _pageSizes[cfg.key] = pageSize;
                   });
-                  Navigator.pop(c);
+                  await _persistColumnConfig(cfg.key, hidden, order);
+                  if (c.mounted) Navigator.pop(c);
                 },
                 child: Text('APPLY',
                     style: LabStyles.mono(context, color: LabColors.primary))),
           ],
         ),
-      ),
-    );
-  }
-
-  Future<void> _autoMergeNames(_TableCfg cfg) async {
-    if (cfg.key != 'baseExercises') {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('AUTO-MERGE: Only available on KNS table')));
-      return;
-    }
-    final db = ref.read(databaseProvider);
-    final allExercises = await db.select(db.baseExercises).get();
-
-    // Group by lowercase-name — find duplicates with different casing/spelling
-    final Map<String, List<BaseExercise>> byLower = {};
-    for (final ex in allExercises) {
-      final key = ex.name.toLowerCase().trim();
-      byLower.putIfAbsent(key, () => []).add(ex);
-    }
-
-    // Find groups with >1 entries (exact case-insensitive dupes)
-    final dupes = byLower.entries.where((e) => e.value.length > 1).toList();
-
-    // Also find near-matches: normalize name (remove common typos)
-    final Map<String, List<BaseExercise>> byNormalized = {};
-    for (final ex in allExercises) {
-      // Collapse spaces, remove trailing/leading whitespace, normalize "CALISTHENICS"/"CALISTECNICS" etc.
-      String normalized = ex.name
-          .toLowerCase()
-          .trim()
-          .replaceAll(RegExp(r'calisthe?c?nics?'), 'CALISTHENICS')
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .trim();
-      byNormalized.putIfAbsent(normalized, () => []).add(ex);
-    }
-    final nearDupes =
-        byNormalized.entries.where((e) => e.value.length > 1).toList();
-
-    // Combine both lists, deduplicate
-    final suggestions = <String, List<BaseExercise>>{};
-    for (final e in dupes) {
-      suggestions[e.key] = e.value;
-    }
-    for (final e in nearDupes) {
-      suggestions[e.key] = e.value;
-    }
-
-    if (suggestions.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('AUTO-MERGE: No duplicates found')));
-      return;
-    }
-
-    if (!context.mounted) return;
-    await showDialog(
-      context: context,
-      builder: (c) => AlertDialog(
-        backgroundColor: LabColors.background,
-        title: Text('AUTO-MERGE SUGGESTIONS',
-            style: LabStyles.mono(context,
-                fontSize: 12, fontWeight: FontWeight.bold)),
-        content: SizedBox(
-          width: 320,
-          child: ListView(
-            shrinkWrap: true,
-            children: suggestions.entries.map((entry) {
-              final exs = entry.value;
-              // Pick canonical name (longest = most detailed)
-              exs.sort((a, b) => b.name.length.compareTo(a.name.length));
-              final canonical = exs.first;
-              final rest = exs.skip(1).toList();
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[700]!, width: 0.5),
-                  color: LabColors.surfaceContainerLow,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('KEEP: ${canonical.name}',
-                        style: LabStyles.mono(context,
-                            fontSize: 10,
-                            color: LabColors.primary,
-                            fontWeight: FontWeight.bold)),
-                    Text('MERGE: ${rest.map((e) => e.name).join(', ')}',
-                        style: LabStyles.mono(context,
-                            fontSize: 9, color: Colors.grey[400])),
-                    const SizedBox(height: 8),
-                    InkWell(
-                      onTap: () async {
-                        final ok = await _confirmAction('MERGE',
-                            'Merge ${rest.length} rows into "${canonical.name}"?\\n\\nThis updates all FK references and deletes the merged rows.');
-                        if (!ok || !c.mounted) return;
-                        setState(() => _isProcessing = true);
-                        try {
-                          for (final r in rest) {
-                            // Update workout_sets FK
-                            await db.customStatement(
-                              'UPDATE workout_sets SET base_exercise_id = ? WHERE base_exercise_id = ?',
-                              [canonical.id, r.id],
-                            );
-                            // Update workout_block_kns references
-                            await db.customStatement(
-                              'UPDATE workout_block_kns SET base_exercise_id = ? WHERE base_exercise_id = ?',
-                              [canonical.id, r.id],
-                            );
-                            // Update set_intent_definitions if any FK
-                            // Delete the merged row
-                            await (db.delete(db.baseExercises)
-                                  ..where((t) => t.id.equals(r.id)))
-                                .go();
-                          }
-                          Navigator.pop(c);
-                          setState(() {
-                            _isProcessing = false;
-                            _totalCounts[cfg.key] = 0; // force reload
-                          });
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text(
-                                  'MERGED ${rest.length} rows into "${canonical.name}"')));
-                        } catch (e) {
-                          setState(() => _isProcessing = false);
-                          debugPrint('[AUTO_MERGE] $e');
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.redAccent.withValues(alpha: 0.2),
-                          border:
-                              Border.all(color: Colors.redAccent, width: 0.5),
-                        ),
-                        child: Text('MERGE',
-                            style: LabStyles.mono(context,
-                                fontSize: 9, color: Colors.redAccent)),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(c),
-              child: Text('CLOSE',
-                  style: LabStyles.mono(context, color: Colors.grey))),
-        ],
       ),
     );
   }
@@ -2250,35 +2540,20 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
     } catch (_) {}
   }
 
-  Future<void> _loadCount(AppDatabase db, _TableCfg cfg) async {
-    try {
-      final rows = await db.executor
-          .runSelect('SELECT COUNT(*) as cnt FROM ' + cfg.table, []);
-      final result = rows.first;
-      if (mounted) {
-        setState(() {
-          _totalCounts[cfg.key] = result['cnt'] as int;
-          _loadingMore[cfg.key] = false;
-        });
-      }
-    } catch (_) {
-      _loadingMore[cfg.key] = false;
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> _fetchPage(
-      AppDatabase db, _TableCfg cfg, int offset,
-      {String? search}) async {
-    String sql;
-    List<dynamic>? args;
-
-    // Build WHERE clauses
+  /// Shared WHERE-clause builder for both the paged fetch and the row
+  /// count — these must always agree, or `total`/`totalPages` drift out of
+  /// sync with what a search filter actually returns (which used to make
+  /// "next page" snap back to page 1 once the filtered result set was
+  /// smaller than the *unfiltered* total the count query assumed).
+  ({String sql, List<dynamic>? args}) _buildWhereClause(
+      _TableCfg cfg, String? search) {
     final clauses = <String>[];
     final extraFilter = _extraFilters[cfg.key];
     if (extraFilter != null && extraFilter.isNotEmpty) {
       clauses.add(extraFilter);
     }
 
+    List<dynamic>? args;
     if (search != null && search.isNotEmpty) {
       final cols = _columnsCache[cfg.table];
       if (cols != null && cols.isNotEmpty) {
@@ -2292,12 +2567,41 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
 
     final whereSql =
         clauses.isNotEmpty ? ' WHERE ${clauses.join(" AND ")}' : '';
-    sql =
-        'SELECT * FROM ${cfg.table}$whereSql ORDER BY id DESC LIMIT ${_pageSizeFor(cfg)} OFFSET $offset';
+    return (sql: whereSql, args: args);
+  }
 
-    final result = (args != null && args.isNotEmpty)
+  Future<void> _loadCount(AppDatabase db, _TableCfg cfg,
+      {String? search}) async {
+    try {
+      final where = _buildWhereClause(cfg, search);
+      final sql = 'SELECT COUNT(*) as cnt FROM ${cfg.table}${where.sql}';
+      final rows = (where.args != null && where.args!.isNotEmpty)
+          ? await db.customSelect(sql,
+              variables: where.args!.map((a) => Variable(a)).toList()).get()
+          : await db.customSelect(sql).get();
+      final result = rows.first;
+      if (mounted) {
+        setState(() {
+          _totalCounts[cfg.key] = result.data['cnt'] as int;
+          _loadingMore[cfg.key] = false;
+        });
+      }
+    } catch (_) {
+      _loadingMore[cfg.key] = false;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchPage(
+      AppDatabase db, _TableCfg cfg, int offset,
+      {String? search}) async {
+    final where = _buildWhereClause(cfg, search);
+    final sql =
+        'SELECT * FROM ${cfg.table}${where.sql} ORDER BY id DESC LIMIT ${_pageSizeFor(cfg)} OFFSET $offset';
+
+    final result = (where.args != null && where.args!.isNotEmpty)
         ? await db
-            .customSelect(sql, variables: args.map((a) => Variable(a)).toList())
+            .customSelect(sql,
+                variables: where.args!.map((a) => Variable(a)).toList())
             .get()
         : await db.customSelect(sql).get();
 
@@ -2401,7 +2705,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
 
   List<String> _getColumns(_TableCfg cfg) {
     if (_columnsCache.containsKey(cfg.table)) {
-      final allCols = _columnsCache[cfg.table]!;
+      final allCols = _orderedColumns(cfg.key, _columnsCache[cfg.table]!);
       final hidden = _hiddenFor(cfg.key);
       if (hidden.isEmpty) return allCols;
       return allCols.where((col) => !hidden.contains(col)).toList();
