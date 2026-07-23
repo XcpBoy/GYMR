@@ -213,9 +213,28 @@ class _AnthropometricDataScreenState extends ConsumerState<AnthropometricDataScr
           ),
           if (!isWeightTab) ...[
             const SizedBox(height: 16),
-            LabTextField(
-              controller: _labelController, 
-              label: 'METRIC_LABEL (e.g. BICEP, CHEST)',
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: LabTextField(
+                    controller: _labelController,
+                    label: 'METRIC_LABEL (e.g. BICEP, CHEST)',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                InkWell(
+                  onTap: _showLabelPicker,
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                        border: Border.all(color: LabColors.primary, width: 0.5)),
+                    child: const Icon(Icons.list, size: 18, color: LabColors.primary),
+                  ),
+                ),
+              ],
             ),
           ],
           const SizedBox(height: 12),
@@ -292,6 +311,30 @@ class _AnthropometricDataScreenState extends ConsumerState<AnthropometricDataScr
           ],
         ),
       ],
+    );
+  }
+
+  Future<void> _showLabelPicker() async {
+    final db = ref.read(databaseProvider);
+    final rows = await db.customSelect(
+            "SELECT DISTINCT label FROM anthropometric_logs WHERE label != 'WEIGHT' ORDER BY label ASC")
+        .get();
+    final labels = rows.map((r) => r.data['label'] as String).toList();
+    if (!context.mounted) return;
+    if (labels.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('NO_PREVIOUS_METRICS_YET')));
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: LabColors.background,
+      isScrollControlled: true,
+      builder: (c) => QualitySearchPicker(
+        title: 'SELECT_METRIC_LABEL',
+        values: labels,
+        onSelected: (val) => setState(() => _labelController.text = val),
+      ),
     );
   }
 
