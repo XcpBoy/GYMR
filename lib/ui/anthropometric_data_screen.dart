@@ -24,14 +24,45 @@ class _AnthropometricDataScreenState extends ConsumerState<AnthropometricDataScr
   DateTime _selectedDate = DateTime.now();
   int _activeTab = 0; // 0: Weight, 1: Measurements
 
+  // Old rows can predate a column (e.g. created_at was added later with no
+  // backfill), leaving a stray NULL that Drift's typed `db.select(...)`
+  // decoder can't handle — it throws "Null check operator used on a null
+  // value" and kills the WHOLE query, not just that row. Read raw and
+  // null-coalesce every field instead, so one bad historical row can't take
+  // the rest of the list down with it.
+  Stream<List<AnthropometricLog>> _watchLogs(AppDatabase db,
+      {required bool weightOnly}) {
+    final whereSql = weightOnly ? "label = 'WEIGHT'" : "label != 'WEIGHT'";
+    return db.customSelect(
+      'SELECT id, date, label, value, unit, is_flexed, is_pumped, created_at '
+      'FROM anthropometric_logs WHERE $whereSql ORDER BY date DESC',
+      readsFrom: {db.anthropometricLogs},
+    ).watch().map((rows) => rows.map((row) {
+          final rawDate = row.data['date'] as int?;
+          final rawCreatedAt = row.data['created_at'] as int?;
+          return AnthropometricLog(
+            id: row.data['id'] as int,
+            date: rawDate != null
+                ? DateTime.fromMillisecondsSinceEpoch(rawDate * 1000)
+                : DateTime.now(),
+            label: (row.data['label'] as String?) ?? '',
+            value: (row.data['value'] as num?)?.toDouble() ?? 0,
+            unit: (row.data['unit'] as String?) ?? '',
+            isFlexed: (row.data['is_flexed'] as int?) == 1,
+            isPumped: (row.data['is_pumped'] as int?) == 1,
+            createdAt: rawCreatedAt != null
+                ? DateTime.fromMillisecondsSinceEpoch(rawCreatedAt * 1000)
+                : DateTime.now(),
+          );
+        }).toList());
+  }
+
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(databaseProvider);
-    
+
     // We use the same table but filter by 'WEIGHT' label for tab 0
-    final logsStream = _activeTab == 0
-        ? (db.select(db.anthropometricLogs)..where((t) => t.label.equals('WEIGHT'))..orderBy([(t) => drift.OrderingTerm.desc(t.date)])).watch()
-        : (db.select(db.anthropometricLogs)..where((t) => t.label.isNotValue('WEIGHT'))..orderBy([(t) => drift.OrderingTerm.desc(t.date)])).watch();
+    final logsStream = _watchLogs(db, weightOnly: _activeTab == 0);
 
     return MainScaffold(
       title: 'ANTHROPOMETRIC DATA',
@@ -49,7 +80,27 @@ class _AnthropometricDataScreenState extends ConsumerState<AnthropometricDataScr
                 StreamBuilder<List<AnthropometricLog>>(
                   stream: logsStream,
                   builder: (context, snapshot) {
-                    final logs = snapshot.data ?? [];
+                    if (snapshot.hasError) {
+                      debugPrint('[ANTRPMT_DT] query error: ${snapshot.error}');
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            'QUERY_ERROR:\n${snapshot.error}',
+                            textAlign: TextAlign.center,
+                            style: LabStyles.mono(context,
+                                color: Colors.redAccent, fontSize: 10),
+                          ),
+                        ),
+                      );
+                    }
+                    if (!snapshot.hasData) {
+                      return Center(
+                          child: Text('LOADING...',
+                              style: LabStyles.mono(context,
+                                  color: Colors.grey)));
+                    }
+                    final logs = snapshot.data!;
                     if (logs.isEmpty) return Center(child: Text('NO_METRICS_FOUND', style: LabStyles.mono(context, color: Colors.grey)));
                     return Column(
                       children: logs.map((log) => _buildMetricCard(context, log)).toList(),
