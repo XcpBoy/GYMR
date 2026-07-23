@@ -745,8 +745,26 @@ class AppDatabase extends _$AppDatabase {
         await _addColumnIfMissing('workout_block_sets', 'tags', 'TEXT');
         await _addColumnIfMissing('workout_block_sets', 'metadata', 'TEXT');
         await _backfillFolderFromLegacyWbStore();
+        await _normalizeAnthropometricLabels();
       },
     );
+  }
+
+  // ANTRPMT.DT stored labels exactly as typed (only trimmed, not
+  // case-normalized), so "arm" / "Arm" / "ARM" ended up as distinct values
+  // even though the UI always displays them uppercased — they looked
+  // identical but never matched for grouping/quick-pick purposes. New saves
+  // now normalize to trim+uppercase before insert; this backfill folds any
+  // existing case-variant duplicates into that same canonical form. Safe to
+  // run on every launch: once a label is already trim+uppercase, the WHERE
+  // clause stops matching it.
+  Future<void> _normalizeAnthropometricLabels() async {
+    try {
+      await customStatement(
+          "UPDATE anthropometric_logs SET label = UPPER(TRIM(label)) WHERE label != UPPER(TRIM(label))");
+    } catch (_) {
+      // Table may not exist yet on a fresh install.
+    }
   }
 
   // One-time bridge for the migration off the legacy wb_store/wb_kns_store

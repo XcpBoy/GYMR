@@ -385,7 +385,9 @@ class _AnthropometricDataScreenState extends ConsumerState<AnthropometricDataScr
 
     await db.into(db.anthropometricLogs).insert(AnthropometricLogsCompanion.insert(
       date: _selectedDate,
-      label: _activeTab == 0 ? 'WEIGHT' : _labelController.text.trim(),
+      label: _activeTab == 0
+          ? 'WEIGHT'
+          : _labelController.text.trim().toUpperCase(),
       value: value,
       unit: _selectedUnit,
       isFlexed: drift.Value(_activeTab == 0 ? false : _isFlexed),
