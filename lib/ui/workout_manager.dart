@@ -56,16 +56,24 @@ final workoutSetsProvider =
       .watch();
 });
 
+// Reads raw + null-coalesces instead of the typed db.select(...): an old
+// or freshly-added anthropometric_logs row with an unexpectedly-null
+// column (schema drift on installs migrated across many versions — see
+// the ANTRPMT.DT fix) throws "Null check operator used on a null value"
+// in Drift's typed decoder and kills the whole C.WO day page, since this
+// provider feeds JST.BW/LASTRE tonnage math in the header. Only the
+// `value` column is actually needed here, so read just that, defensively.
 final bodyWeightAtDateProvider =
     StreamProvider.family<double, DateTime>((ref, date) {
   final db = ref.watch(databaseProvider);
-  return (db.select(db.anthropometricLogs)
-        ..where((t) => t.label.equals('WEIGHT'))
-        ..where((t) => t.date.isSmallerOrEqualValue(date))
-        ..orderBy([(t) => drift.OrderingTerm.desc(t.date)])
-        ..limit(1))
-      .watchSingleOrNull()
-      .map((log) => log?.value ?? 0.0);
+  final cutoffSeconds = date.millisecondsSinceEpoch ~/ 1000;
+  return db.customSelect(
+    "SELECT value FROM anthropometric_logs WHERE label = 'WEIGHT' AND date <= ? "
+    'ORDER BY date DESC LIMIT 1',
+    variables: [drift.Variable(cutoffSeconds)],
+    readsFrom: {db.anthropometricLogs},
+  ).watchSingleOrNull().map(
+      (row) => (row?.data['value'] as num?)?.toDouble() ?? 0.0);
 });
 
 /// Session number provider — assigns sequential numbers to dates with sets.
