@@ -235,24 +235,37 @@ class ExportService {
     final sortedDates = List<DateTime>.from(dates)..sort();
     final lastDate = sortedDates.last;
 
-    final logs = await (db.select(db.anthropometricLogs)
-          ..where((t) => t.label.equals('WEIGHT'))
-          ..where((t) => t.date.isSmallerOrEqualValue(lastDate))
-          ..orderBy([(t) => OrderingTerm.asc(t.date)]))
-        .get();
+    // Raw + null-coalesced instead of the typed select: a row with an
+    // unexpectedly-null column (schema drift on older installs) throws
+    // "Null check operator used on a null value" in Drift's typed decoder
+    // and would take out the whole export. Only date/value are needed.
+    final cutoffSeconds = lastDate.millisecondsSinceEpoch ~/ 1000;
+    final rawRows = await db.customSelect(
+      "SELECT date, value FROM anthropometric_logs WHERE label = 'WEIGHT' AND date <= ? "
+      'ORDER BY date ASC',
+      variables: [Variable(cutoffSeconds)],
+      readsFrom: {db.anthropometricLogs},
+    ).get();
+    final logs = rawRows
+        .map((row) => (
+              date: DateTime.fromMillisecondsSinceEpoch(
+                  (row.data['date'] as int) * 1000),
+              value: (row.data['value'] as num?)?.toDouble() ?? 0.0,
+            ))
+        .toList();
 
     final Map<String, double> dateToWeight = {};
     for (var date in dates) {
       final dateKey = DateFormat('yyyy-MM-dd').format(date);
-      AnthropometricLog? best;
+      double? best;
       for (var log in logs) {
         if (log.date.isBefore(date) || log.date.isAtSameMomentAs(date)) {
-          best = log;
+          best = log.value;
         } else {
           break;
         }
       }
-      if (best != null) dateToWeight[dateKey] = best.value;
+      if (best != null) dateToWeight[dateKey] = best;
     }
     return dateToWeight;
   }

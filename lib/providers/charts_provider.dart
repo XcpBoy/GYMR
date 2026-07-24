@@ -254,13 +254,18 @@ final oneRmProgressionProvider = StreamProvider.family<List<OneRmPoint>, (int, D
     final Map<int, double> bwCache = {};
     for (final dateMs in dateKeys) {
       final date = DateTime.fromMillisecondsSinceEpoch(dateMs);
-      final result = await (db.select(db.anthropometricLogs)
-            ..where((t) => t.label.equals('WEIGHT'))
-            ..where((t) => t.date.isSmallerOrEqualValue(date))
-            ..orderBy([(t) => OrderingTerm.desc(t.date)])
-            ..limit(1))
-          .getSingleOrNull();
-      bwCache[dateMs] = result?.value ?? 0.0;
+      // Raw + null-coalesced instead of the typed select: a row with an
+      // unexpectedly-null column (schema drift on older installs) throws
+      // "Null check operator used on a null value" in Drift's typed
+      // decoder and would kill this whole chart. Only `value` is needed.
+      final cutoffSeconds = date.millisecondsSinceEpoch ~/ 1000;
+      final result = await db.customSelect(
+        "SELECT value FROM anthropometric_logs WHERE label = 'WEIGHT' AND date <= ? "
+        'ORDER BY date DESC LIMIT 1',
+        variables: [Variable(cutoffSeconds)],
+        readsFrom: {db.anthropometricLogs},
+      ).getSingleOrNull();
+      bwCache[dateMs] = (result?.data['value'] as num?)?.toDouble() ?? 0.0;
     }
 
     return rows.map((row) {

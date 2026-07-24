@@ -286,14 +286,19 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
     );
   }
 
+  // Raw + null-coalesced instead of the typed select throughout this file:
+  // a row with an unexpectedly-null column (schema drift on older
+  // installs, see the ANTRPMT.DT fix) throws "Null check operator used on
+  // a null value" in Drift's typed decoder and kills the whole query.
   Future<double?> _getBWAtDate(AppDatabase db, DateTime date) async {
-    final log = await (db.select(db.anthropometricLogs)
-          ..where((t) => t.label.equals('WEIGHT'))
-          ..where((t) => t.date.isSmallerOrEqualValue(date))
-          ..orderBy([(t) => OrderingTerm.desc(t.date)])
-          ..limit(1))
-        .getSingleOrNull();
-    return log?.value;
+    final cutoffSeconds = date.millisecondsSinceEpoch ~/ 1000;
+    final row = await db.customSelect(
+      "SELECT value FROM anthropometric_logs WHERE label = 'WEIGHT' AND date <= ? "
+      'ORDER BY date DESC LIMIT 1',
+      variables: [Variable(cutoffSeconds)],
+      readsFrom: {db.anthropometricLogs},
+    ).getSingleOrNull();
+    return (row?.data['value'] as num?)?.toDouble();
   }
 
   _LoadDetails _detectLoadDetails(BaseExercise ex) {
@@ -306,23 +311,34 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
   }
 
 
-  Widget _buildWeightList(AppDatabase db) {
-    final query = (db.select(db.anthropometricLogs)
-          ..where((t) => t.label.equals('WEIGHT'))
-          ..orderBy([(t) => OrderingTerm.desc(t.date)])
-          ..limit(_limit));
+  Stream<List<QueryRow>> _watchAnthropometricRaw(AppDatabase db,
+      {required bool weightOnly}) {
+    final whereSql = weightOnly ? "label = 'WEIGHT'" : "label != 'WEIGHT'";
+    return db.customSelect(
+      'SELECT date, label, value, unit FROM anthropometric_logs '
+      'WHERE $whereSql ORDER BY date DESC LIMIT ?',
+      variables: [Variable(_limit)],
+      readsFrom: {db.anthropometricLogs},
+    ).watch();
+  }
 
-    return StreamBuilder<List<AnthropometricLog>>(
-      stream: query.watch(),
+  Widget _buildWeightList(AppDatabase db) {
+    return StreamBuilder<List<QueryRow>>(
+      stream: _watchAnthropometricRaw(db, weightOnly: true),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final rows = snapshot.data!;
         return ListView.builder(
-          itemCount: snapshot.data!.length,
+          itemCount: rows.length,
           itemBuilder: (context, i) {
-            final log = snapshot.data![i];
+            final row = rows[i];
+            final value = (row.data['value'] as num?)?.toDouble() ?? 0.0;
+            final unit = (row.data['unit'] as String?) ?? '';
+            final date = DateTime.fromMillisecondsSinceEpoch(
+                (row.data['date'] as int) * 1000);
             return ListTile(
-              title: Text('${log.value} ${log.unit}', style: LabStyles.mono(context, fontSize: 12, color: LabColors.accent)),
-              subtitle: Text(DateFormat('yyyy-MM-dd').format(log.date), style: LabStyles.mono(context, fontSize: 9)),
+              title: Text('$value $unit', style: LabStyles.mono(context, fontSize: 12, color: LabColors.accent)),
+              subtitle: Text(DateFormat('yyyy-MM-dd').format(date), style: LabStyles.mono(context, fontSize: 9)),
             );
           },
         );
@@ -331,23 +347,24 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
   }
 
   Widget _buildAnthropometricList(AppDatabase db) {
-    final query = (db.select(db.anthropometricLogs)
-          ..where((t) => t.label.isNotValue('WEIGHT'))
-          ..orderBy([(t) => OrderingTerm.desc(t.date)])
-          ..limit(_limit));
-
-    return StreamBuilder<List<AnthropometricLog>>(
-      stream: query.watch(),
+    return StreamBuilder<List<QueryRow>>(
+      stream: _watchAnthropometricRaw(db, weightOnly: false),
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final rows = snapshot.data!;
         return ListView.builder(
-          itemCount: snapshot.data!.length,
+          itemCount: rows.length,
           itemBuilder: (context, i) {
-            final log = snapshot.data![i];
+            final row = rows[i];
+            final label = (row.data['label'] as String?) ?? '';
+            final value = (row.data['value'] as num?)?.toDouble() ?? 0.0;
+            final unit = (row.data['unit'] as String?) ?? '';
+            final date = DateTime.fromMillisecondsSinceEpoch(
+                (row.data['date'] as int) * 1000);
             return ListTile(
-              title: Text(log.label.toUpperCase(), style: LabStyles.mono(context, fontSize: 10)),
-              subtitle: Text(DateFormat('yyyy-MM-dd').format(log.date), style: LabStyles.mono(context, fontSize: 8)),
-              trailing: Text('${log.value} ${log.unit}', style: LabStyles.mono(context, fontSize: 10, color: LabColors.primary)),
+              title: Text(label.toUpperCase(), style: LabStyles.mono(context, fontSize: 10)),
+              subtitle: Text(DateFormat('yyyy-MM-dd').format(date), style: LabStyles.mono(context, fontSize: 8)),
+              trailing: Text('$value $unit', style: LabStyles.mono(context, fontSize: 10, color: LabColors.primary)),
             );
           },
         );
