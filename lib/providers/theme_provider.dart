@@ -4,18 +4,38 @@ import 'package:drift/drift.dart';
 import '../database/database.dart';
 import 'database_provider.dart';
 
+ThemeSetting _themeSettingFromRow(Map<String, Object?> data) {
+  return ThemeSetting(
+    key: data['key'] as String,
+    colorHex: data['color_hex'] as String?,
+    value: data['value'] as String?,
+  );
+}
+
 final themeSettingsProvider = StreamProvider<Map<String, ThemeSetting>>((ref) {
   final db = ref.watch(databaseProvider);
-  return db.select(db.themeSettings).watch().map((rows) {
-    return {for (var row in rows) row.key: row};
+  return db
+      .customSelect('SELECT key, color_hex, value FROM theme_settings',
+          readsFrom: {db.themeSettings})
+      .watch()
+      .map((rows) {
+    return {
+      for (var row in rows)
+        (row.data['key'] as String): _themeSettingFromRow(row.data)
+    };
   });
 });
 
 final wallpaperProvider = StreamProvider.family<String?, String>((ref, screenKey) {
   final db = ref.watch(databaseProvider);
-  return (db.select(db.themeSettings)..where((t) => t.key.equals('WALLPAPER_$screenKey')))
+  return db
+      .customSelect(
+        'SELECT value FROM theme_settings WHERE key = ?',
+        variables: [Variable('WALLPAPER_$screenKey')],
+        readsFrom: {db.themeSettings},
+      )
       .watchSingleOrNull()
-      .map((row) => row?.value);
+      .map((row) => row?.data['value'] as String?);
 });
 
 Color _parseHex(String? hex) {

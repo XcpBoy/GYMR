@@ -17,8 +17,8 @@ class ExerciseHistoryScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final db = ref.watch(databaseProvider);
     final historyAsync = ref.watch(exerciseFullHistoryProvider(exercise.id));
+    final bw = ref.watch(_latestBodyWeightProvider).valueOrNull ?? 0.0;
 
     return MainScaffold(
       title: 'KNS.HISTORICAL_REPORT',
@@ -32,12 +32,11 @@ class ExerciseHistoryScreen extends ConsumerWidget {
             child: historyAsync.when(
               data: (data) {
                 if (data.isEmpty) return _buildEmptyState(context);
-                
+
                 // Group by date
-                final Map<String, List<drift.TypedResult>> groupedByDate = {};
+                final Map<String, List<_HistSet>> groupedByDate = {};
                 for (var row in data) {
-                  final log = row.readTable(db.workoutLogs);
-                  final dateStr = DateFormat('yyyy-MM-dd').format(log.date);
+                  final dateStr = DateFormat('yyyy-MM-dd').format(row.logDate);
                   groupedByDate.putIfAbsent(dateStr, () => []).add(row);
                 }
 
@@ -50,7 +49,7 @@ class ExerciseHistoryScreen extends ConsumerWidget {
                     final dateStr = sortedDates[index];
                     final date = DateTime.parse(dateStr);
                     final rows = groupedByDate[dateStr]!;
-                    return _buildDateGroup(context, ref, date, rows);
+                    return _buildDateGroup(context, ref, date, rows, bw);
                   },
                 );
               },
@@ -113,17 +112,7 @@ class ExerciseHistoryScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildDateGroup(BuildContext context, WidgetRef ref, DateTime date, List<drift.TypedResult> rows) {
-    final db = ref.read(databaseProvider);
-    double bw = 0.0;
-    try {
-      final bwRow = rows.firstWhere(
-        (r) => (r.readTableOrNull(db.anthropometricLogs)?.value ?? 0) > 0,
-        orElse: () => rows.first,
-      );
-      bw = bwRow.readTableOrNull(db.anthropometricLogs)?.value ?? 0.0;
-    } catch (_) {}
-
+  Widget _buildDateGroup(BuildContext context, WidgetRef ref, DateTime date, List<_HistSet> rows, double bw) {
     final intentionText = exercise.intention ?? '';
     bool isIso = intentionText.contains('[ISO:true]') || intentionText.startsWith('[ISO]');
     final metaMatch = RegExp(r'\[NT:.*\|ISO:(.*)\]').firstMatch(intentionText);
@@ -165,8 +154,7 @@ class ExerciseHistoryScreen extends ConsumerWidget {
             ),
           ),
           _buildTableHeader(context, isIso: isIso),
-          ...rows.map((row) {
-            final set = row.readTable(db.workoutSets);
+          ...rows.map((set) {
             return _buildSetRow(context, ref, set, bw, isIso: isIso);
           }),
         ],
@@ -193,7 +181,7 @@ class ExerciseHistoryScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildSetRow(BuildContext context, WidgetRef ref, WorkoutSet set, double bw, {bool isIso = false}) {
+  Widget _buildSetRow(BuildContext context, WidgetRef ref, _HistSet set, double bw, {bool isIso = false}) {
     final hasPr = set.isPr;
     final isRed = set.trackName?.contains('[RED_PR]') ?? false;
 
@@ -220,7 +208,7 @@ class ExerciseHistoryScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildInjectButton(BuildContext context, WidgetRef ref, WorkoutSet historicalSet) {
+  Widget _buildInjectButton(BuildContext context, WidgetRef ref, _HistSet historicalSet) {
     return InkWell(
       onTap: () => _injectSet(context, ref, historicalSet),
       child: Container(
@@ -234,7 +222,7 @@ class ExerciseHistoryScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _injectSet(BuildContext context, WidgetRef ref, WorkoutSet historicalSet) async {
+  Future<void> _injectSet(BuildContext context, WidgetRef ref, _HistSet historicalSet) async {
     final db = ref.read(databaseProvider);
     final targetDate = ref.read(selectedDateProvider);
     
@@ -287,33 +275,91 @@ class ExerciseHistoryScreen extends ConsumerWidget {
   }
 }
 
-// Provider for exercise history
-final exerciseFullHistoryProvider = StreamProvider.family<List<drift.TypedResult>, int>((ref, exId) {
+// Lightweight row shape used by the history screen. Avoids Drift's typed
+// row decoding, which throws "Null check operator used on a null value"
+// against on-device DBs where a legacy row is missing a value for a
+// column that later gained a non-nullable Dart type / default.
+class _HistSet {
+  final int id;
+  final int logId;
+  final int baseExerciseId;
+  final double weight;
+  final double reps;
+  final double? rpe;
+  final double? rir;
+  final String? notes;
+  final String? trackName;
+  final int? hypeLevel;
+  final bool isPrSong;
+  final bool isPr;
+  final int? technique;
+  final String? complexMetadata;
+  final int orderIndex;
+  final DateTime logDate;
+
+  _HistSet({
+    required this.id,
+    required this.logId,
+    required this.baseExerciseId,
+    required this.weight,
+    required this.reps,
+    required this.rpe,
+    required this.rir,
+    required this.notes,
+    required this.trackName,
+    required this.hypeLevel,
+    required this.isPrSong,
+    required this.isPr,
+    required this.technique,
+    required this.complexMetadata,
+    required this.orderIndex,
+    required this.logDate,
+  });
+}
+
+final _latestBodyWeightProvider = StreamProvider<double>((ref) {
   final db = ref.watch(databaseProvider);
-  
-  return (db.select(db.workoutSets).join([
-    drift.innerJoin(db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId)),
-    drift.leftOuterJoin(db.anthropometricLogs, 
-      db.anthropometricLogs.label.equals('WEIGHT') & 
-      db.anthropometricLogs.date.isSmallerOrEqualValue(DateTime.now()) // Fallback to current BW join logic
-    ),
-  ])
-    ..where(db.workoutSets.baseExerciseId.equals(exId))
-    ..orderBy([
-      drift.OrderingTerm.desc(db.workoutLogs.date),
-      drift.OrderingTerm.asc(db.workoutSets.orderIndex),
-      drift.OrderingTerm.asc(db.workoutSets.timestamp)
-    ]))
-    .watch()
-    .map((results) {
-      // Manual grouping to ensure we only get the latest BW per session
-      final Map<int, drift.TypedResult> latestBwPerSet = {};
-      for (var row in results) {
-        final setId = row.readTable(db.workoutSets).id;
-        if (!latestBwPerSet.containsKey(setId)) {
-          latestBwPerSet[setId] = row;
-        }
-      }
-      return latestBwPerSet.values.toList();
-    });
+  return db.customSelect(
+    "SELECT value FROM anthropometric_logs WHERE label = 'WEIGHT' ORDER BY date DESC LIMIT 1",
+    readsFrom: {db.anthropometricLogs},
+  ).watchSingleOrNull().map((row) => (row?.data['value'] as num?)?.toDouble() ?? 0.0);
+});
+
+// Provider for exercise history
+final exerciseFullHistoryProvider = StreamProvider.family<List<_HistSet>, int>((ref, exId) {
+  final db = ref.watch(databaseProvider);
+
+  return db.customSelect(
+    'SELECT ws.id AS id, ws.log_id AS log_id, ws.base_exercise_id AS base_exercise_id, '
+    'ws.weight AS weight, ws.reps AS reps, ws.rpe AS rpe, ws.rir AS rir, ws.notes AS notes, '
+    'ws.track_name AS track_name, ws.hype_level AS hype_level, ws.is_pr_song AS is_pr_song, '
+    'ws.is_pr AS is_pr, ws.technique AS technique, ws.complex_metadata AS complex_metadata, '
+    'ws.order_index AS order_index, ws.timestamp AS ws_timestamp, wl.date AS log_date '
+    'FROM workout_sets ws INNER JOIN workout_logs wl ON wl.id = ws.log_id '
+    'WHERE ws.base_exercise_id = ? '
+    'ORDER BY wl.date DESC, ws.order_index ASC, ws.timestamp ASC',
+    variables: [drift.Variable(exId)],
+    readsFrom: {db.workoutSets, db.workoutLogs},
+  ).watch().map((rows) => rows.map((row) {
+        final data = row.data;
+        final logDateSeconds = (data['log_date'] as num?)?.toInt() ?? 0;
+        return _HistSet(
+          id: data['id'] as int,
+          logId: data['log_id'] as int,
+          baseExerciseId: data['base_exercise_id'] as int,
+          weight: (data['weight'] as num?)?.toDouble() ?? 0.0,
+          reps: (data['reps'] as num?)?.toDouble() ?? 0.0,
+          rpe: (data['rpe'] as num?)?.toDouble(),
+          rir: (data['rir'] as num?)?.toDouble(),
+          notes: data['notes'] as String?,
+          trackName: data['track_name'] as String?,
+          hypeLevel: (data['hype_level'] as num?)?.toInt(),
+          isPrSong: (data['is_pr_song'] as int?) == 1,
+          isPr: (data['is_pr'] as int?) == 1,
+          technique: (data['technique'] as num?)?.toInt(),
+          complexMetadata: data['complex_metadata'] as String?,
+          orderIndex: (data['order_index'] as num?)?.toInt() ?? 0,
+          logDate: DateTime.fromMillisecondsSinceEpoch(logDateSeconds * 1000),
+        );
+      }).toList());
 });
