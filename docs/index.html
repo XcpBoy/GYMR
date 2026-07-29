@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>GYMR LITE</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --surface2: #1c1c1c;
+    --border: #2a2a2a;
+    --red: #e0242f;
+    --gold: #d4a017;
+    --text: #e8e8e8;
+    --text-dim: #8a8a8a;
+    --mono: 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: var(--mono); font-size: 14px;
+    -webkit-text-size-adjust: 100%;
+  }
+  body { padding-bottom: 70px; }
+  h1, h2, h3 { font-weight: 700; letter-spacing: 0.5px; margin: 0; }
+  .header {
+    padding: 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; background: var(--bg); z-index: 10;
+  }
+  .header h1 { font-size: 16px; color: var(--red); }
+  .header .sub { font-size: 10px; color: var(--text-dim); }
+  .container { padding: 16px; max-width: 480px; margin: 0 auto; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 14px; margin-bottom: 14px;
+  }
+  .card-title {
+    font-size: 10px; color: var(--gold); text-transform: uppercase;
+    letter-spacing: 1px; margin-bottom: 10px; font-weight: 700;
+  }
+  label {
+    display: block; font-size: 10px; color: var(--text-dim);
+    text-transform: uppercase; margin-bottom: 4px; margin-top: 10px;
+  }
+  label:first-of-type { margin-top: 0; }
+  input, select, textarea {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 10px; font-family: var(--mono); font-size: 14px;
+    border-radius: 0;
+  }
+  input:focus, select:focus, textarea:focus { outline: 1px solid var(--red); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  button {
+    font-family: var(--mono); font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; border: 1px solid var(--red); background: transparent;
+    color: var(--red); padding: 12px; width: 100%; margin-top: 14px;
+    border-radius: 0; font-size: 12px;
+  }
+  button.solid { background: var(--red); color: #fff; }
+  button.gold { border-color: var(--gold); color: var(--gold); }
+  button.gold.solid { background: var(--gold); color: #000; }
+  button.small { width: auto; padding: 8px 12px; margin-top: 0; font-size: 10px; }
+  button.ghost { border-color: var(--border); color: var(--text-dim); }
+  .set-row {
+    border: 1px solid var(--border); padding: 8px 10px; margin-top: 8px;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; background: var(--surface2);
+  }
+  .set-row .meta { color: var(--text-dim); font-size: 10px; }
+  .del-btn {
+    border: 1px solid var(--border); color: var(--text-dim); background: none;
+    width: 28px; height: 28px; margin: 0; padding: 0; font-size: 14px; line-height: 1;
+  }
+  .tabbar {
+    position: fixed; bottom: 0; left: 0; right: 0; display: flex;
+    background: var(--surface); border-top: 1px solid var(--border); z-index: 20;
+  }
+  .tab {
+    flex: 1; text-align: center; padding: 12px 4px; font-size: 9px;
+    text-transform: uppercase; color: var(--text-dim); letter-spacing: 0.5px;
+  }
+  .tab.active { color: var(--red); border-top: 2px solid var(--red); }
+  .view { display: none; }
+  .view.active { display: block; }
+  .empty { color: var(--text-dim); font-size: 11px; text-align: center; padding: 20px 0; }
+  .session-block {
+    border: 1px solid var(--border); margin-bottom: 14px;
+  }
+  .session-block .sh {
+    background: var(--surface2); padding: 8px 12px; font-size: 11px;
+    display: flex; justify-content: space-between; border-bottom: 1px solid var(--border);
+  }
+  .session-block .sb { padding: 8px 12px; }
+  .badge {
+    display: inline-block; font-size: 9px; padding: 2px 6px; border: 1px solid var(--border);
+    color: var(--text-dim); margin-left: 6px;
+  }
+  .flex-between { display: flex; justify-content: space-between; align-items: center; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>GYMR LITE</h1>
+    <div class="sub">LOCAL LOG // NO_CLOUD</div>
+  </div>
+  <div class="sub" id="userTag"></div>
+</div>
+
+<div class="container">
+
+  <!-- LOG VIEW -->
+  <div class="view active" id="view-log">
+    <div class="card">
+      <div class="card-title">SESSION</div>
+      <label>Fecha</label>
+      <input type="date" id="sessDate">
+      <div class="row2">
+        <div>
+          <label>Hora de inicio</label>
+          <input type="time" id="sessHour">
+        </div>
+        <div>
+          <label>Horas de sueño</label>
+          <input type="number" step="0.1" id="sessSleep" placeholder="7.5">
+        </div>
+      </div>
+      <label>Notas de sesión</label>
+      <input type="text" id="sessNotes" placeholder="opcional">
+      <button class="solid" onclick="startSession()">INICIAR / CARGAR SESIÓN DE HOY</button>
+    </div>
+
+    <div class="card" id="setEntryCard" style="display:none;">
+      <div class="card-title">AGREGAR SET</div>
+      <label>Ejercicio</label>
+      <input type="text" id="setExercise" list="exerciseList" placeholder="ej. BENCH PRESS">
+      <datalist id="exerciseList"></datalist>
+      <div class="row3">
+        <div><label>Peso (kg)</label><input type="number" step="0.5" id="setWeight"></div>
+        <div><label>Reps</label><input type="number" step="1" id="setReps"></div>
+        <div><label>RPE</label><input type="number" step="0.5" min="0" max="10" id="setRpe"></div>
+      </div>
+      <div class="row3">
+        <div><label>RIR</label><input type="number" step="1" min="0" id="setRir"></div>
+        <div><label>Técnica</label><input type="text" id="setTech" list="techList" placeholder="opcional"></div>
+        <div><label>Notas</label><input type="text" id="setNotes"></div>
+      </div>
+      <datalist id="techList">
+        <option value="STRAIGHT">
+        <option value="DROP SET">
+        <option value="MYO REPS">
+        <option value="REST-PAUSE">
+        <option value="CLUSTER">
+      </datalist>
+      <button class="solid" onclick="addSet()">+ AGREGAR SET</button>
+    </div>
+
+    <div id="currentSessionSets"></div>
+  </div>
+
+  <!-- MEASUREMENTS VIEW -->
+  <div class="view" id="view-measure">
+    <div class="card">
+      <div class="card-title">NUEVA MEDICIÓN</div>
+      <label>Fecha</label>
+      <input type="date" id="measDate">
+      <label>Etiqueta</label>
+      <input type="text" id="measLabel" list="measList" placeholder="ej. WEIGHT, ARM, WAIST">
+      <datalist id="measList"></datalist>
+      <label>Valor</label>
+      <input type="number" step="0.1" id="measValue" placeholder="ej. 78.4">
+      <button class="gold solid" onclick="addMeasurement()">+ GUARDAR MEDICIÓN</button>
+    </div>
+    <div id="measureHistory"></div>
+  </div>
+
+  <!-- HISTORY / EXPORT VIEW -->
+  <div class="view" id="view-history">
+    <div class="card">
+      <div class="card-title">EXPORTAR DATOS</div>
+      <div class="sub" style="margin-bottom:10px; color:var(--text-dim); font-size:11px;">
+        Genera CSV listos para R / Excel / Python.
+      </div>
+      <button class="solid" onclick="exportSetsCsv()">EXPORTAR SETS (CSV)</button>
+      <button class="gold solid" onclick="exportMeasurementsCsv()">EXPORTAR MEDICIONES (CSV)</button>
+      <button class="ghost" onclick="exportBackupJson()">BACKUP COMPLETO (JSON)</button>
+      <button class="ghost" onclick="importBackupJson()">IMPORTAR BACKUP (JSON)</button>
+      <input type="file" id="importFile" accept="application/json" style="display:none" onchange="handleImportFile(event)">
+    </div>
+    <div class="card">
+      <div class="card-title flex-between">
+        <span>TODAS LAS SESIONES</span>
+        <button class="ghost small" onclick="if(confirm('¿Borrar TODO? Esto no se puede deshacer.')) wipeAll()">BORRAR TODO</button>
+      </div>
+    </div>
+    <div id="fullHistory"></div>
+  </div>
+
+</div>
+
+<div class="tabbar">
+  <div class="tab active" data-view="log" onclick="switchTab('log')">LOG SESIÓN</div>
+  <div class="tab" data-view="measure" onclick="switchTab('measure')">MEDICIONES</div>
+  <div class="tab" data-view="history" onclick="switchTab('history')">HISTORIA / EXPORT</div>
+</div>
+
+<script>
+// ---------- Storage layer (localStorage only — nothing leaves the device) ----------
+const SESS_KEY = 'gymrlite_sessions';
+const MEAS_KEY = 'gymrlite_measurements';
+
+function loadSessions() { return JSON.parse(localStorage.getItem(SESS_KEY) || '[]'); }
+function saveSessions(s) { localStorage.setItem(SESS_KEY, JSON.stringify(s)); }
+function loadMeasurements() { return JSON.parse(localStorage.getItem(MEAS_KEY) || '[]'); }
+function saveMeasurements(m) { localStorage.setItem(MEAS_KEY, JSON.stringify(m)); }
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+function nowTimeStr() { const d = new Date(); return d.toTimeString().slice(0, 5); }
+
+let currentSessionId = null;
+
+// ---------- Tabs ----------
+function switchTab(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  document.querySelector('.tab[data-view="' + name + '"]').classList.add('active');
+  if (name === 'measure') renderMeasurements();
+  if (name === 'history') renderFullHistory();
+}
+
+// ---------- Session / Set logging ----------
+function startSession() {
+  const date = document.getElementById('sessDate').value || todayStr();
+  const hour = document.getElementById('sessHour').value || nowTimeStr();
+  const sleep = document.getElementById('sessSleep').value;
+  const notes = document.getElementById('sessNotes').value;
+
+  const sessions = loadSessions();
+  let existing = sessions.find(s => s.date === date);
+  if (existing) {
+    existing.hour = hour || existing.hour;
+    existing.sleepHours = sleep !== '' ? parseFloat(sleep) : existing.sleepHours;
+    existing.notes = notes || existing.notes;
+    currentSessionId = existing.id;
+  } else {
+    const session = {
+      id: uid(), date, hour,
+      sleepHours: sleep !== '' ? parseFloat(sleep) : null,
+      notes, sets: []
+    };
+    sessions.push(session);
+    currentSessionId = session.id;
+  }
+  saveSessions(sessions);
+  document.getElementById('setEntryCard').style.display = 'block';
+  renderCurrentSessionSets();
+  refreshExerciseList();
+}
+
+function addSet() {
+  if (!currentSessionId) { alert('Primero inicia/carga la sesión de hoy.'); return; }
+  const exercise = document.getElementById('setExercise').value.trim().toUpperCase();
+  if (!exercise) { alert('Falta el nombre del ejercicio.'); return; }
+
+  const set = {
+    id: uid(),
+    exercise,
+    weight: parseFloat(document.getElementById('setWeight').value) || 0,
+    reps: parseFloat(document.getElementById('setReps').value) || 0,
+    rpe: document.getElementById('setRpe').value !== '' ? parseFloat(document.getElementById('setRpe').value) : null,
+    rir: document.getElementById('setRir').value !== '' ? parseFloat(document.getElementById('setRir').value) : null,
+    technique: document.getElementById('setTech').value.trim().toUpperCase() || null,
+    notes: document.getElementById('setNotes').value.trim() || null,
+    timestamp: new Date().toISOString(),
+  };
+
+  const sessions = loadSessions();
+  const session = sessions.find(s => s.id === currentSessionId);
+  session.sets.push(set);
+  saveSessions(sessions);
+
+  document.getElementById('setReps').value = '';
+  document.getElementById('setRpe').value = '';
+  document.getElementById('setRir').value = '';
+  document.getElementById('setTech').value = '';
+  document.getElementById('setNotes').value = '';
+
+  renderCurrentSessionSets();
+  refreshExerciseList();
+}
+
+function deleteSet(setId) {
+  const sessions = loadSessions();
+  const session = sessions.find(s => s.id === currentSessionId);
+  session.sets = session.sets.filter(x => x.id !== setId);
+  saveSessions(sessions);
+  renderCurrentSessionSets();
+}
+
+function renderCurrentSessionSets() {
+  const container = document.getElementById('currentSessionSets');
+  const sessions = loadSessions();
+  const session = sessions.find(s => s.id === currentSessionId);
+  if (!session || session.sets.length === 0) {
+    container.innerHTML = '<div class="empty">Sin sets registrados hoy todavía.</div>';
+    return;
+  }
+  container.innerHTML = session.sets.slice().reverse().map(set => `
+    <div class="set-row">
+      <div>
+        <div><strong>${set.exercise}</strong> — ${set.weight}KG × ${set.reps}
+          ${set.rpe !== null ? '<span class="badge">RPE ' + set.rpe + '</span>' : ''}
+          ${set.rir !== null ? '<span class="badge">RIR ' + set.rir + '</span>' : ''}
+          ${set.technique ? '<span class="badge">' + set.technique + '</span>' : ''}
+        </div>
+        ${set.notes ? '<div class="meta">' + set.notes + '</div>' : ''}
+      </div>
+      <button class="del-btn" onclick="deleteSet('${set.id}')">×</button>
+    </div>
+  `).join('');
+}
+
+function refreshExerciseList() {
+  const sessions = loadSessions();
+  const names = new Set();
+  sessions.forEach(s => s.sets.forEach(set => names.add(set.exercise)));
+  document.getElementById('exerciseList').innerHTML =
+    Array.from(names).sort().map(n => `<option value="${n}">`).join('');
+}
+
+// ---------- Measurements ----------
+function addMeasurement() {
+  const date = document.getElementById('measDate').value || todayStr();
+  const label = document.getElementById('measLabel').value.trim().toUpperCase();
+  const value = parseFloat(document.getElementById('measValue').value);
+  if (!label || isNaN(value)) { alert('Falta etiqueta o valor válido.'); return; }
+
+  const list = loadMeasurements();
+  list.push({ id: uid(), date, label, value });
+  saveMeasurements(list);
+
+  document.getElementById('measValue').value = '';
+  renderMeasurements();
+}
+
+function deleteMeasurement(id) {
+  let list = loadMeasurements();
+  list = list.filter(m => m.id !== id);
+  saveMeasurements(list);
+  renderMeasurements();
+}
+
+function renderMeasurements() {
+  const list = loadMeasurements().slice().sort((a, b) => b.date.localeCompare(a.date));
+  const labels = new Set(list.map(m => m.label));
+  document.getElementById('measList').innerHTML =
+    Array.from(labels).sort().map(l => `<option value="${l}">`).join('');
+
+  const container = document.getElementById('measureHistory');
+  if (list.length === 0) {
+    container.innerHTML = '<div class="empty">Sin mediciones registradas.</div>';
+    return;
+  }
+  container.innerHTML = '<div class="card"><div class="card-title">HISTORIAL</div>' +
+    list.map(m => `
+      <div class="set-row">
+        <div><strong>${m.label}</strong>: ${m.value} <span class="meta">${m.date}</span></div>
+        <button class="del-btn" onclick="deleteMeasurement('${m.id}')">×</button>
+      </div>
+    `).join('') + '</div>';
+}
+
+// ---------- Full history (history tab) ----------
+function renderFullHistory() {
+  const sessions = loadSessions().slice().sort((a, b) => b.date.localeCompare(a.date));
+  const container = document.getElementById('fullHistory');
+  if (sessions.length === 0) {
+    container.innerHTML = '<div class="empty">Sin sesiones registradas.</div>';
+    return;
+  }
+  container.innerHTML = sessions.map(s => `
+    <div class="session-block">
+      <div class="sh">
+        <span><strong>${s.date}</strong> ${s.hour ? '@ ' + s.hour : ''}</span>
+        <span class="meta">${s.sleepHours != null ? s.sleepHours + 'H SLEEP' : ''} · ${s.sets.length} SETS</span>
+      </div>
+      <div class="sb">
+        ${s.sets.length === 0 ? '<div class="empty">Sin sets.</div>' : s.sets.map(set => `
+          <div class="meta">${set.exercise} — ${set.weight}KG × ${set.reps}
+            ${set.rpe !== null ? ' · RPE ' + set.rpe : ''}${set.rir !== null ? ' · RIR ' + set.rir : ''}
+            ${set.technique ? ' · ' + set.technique : ''}
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ---------- Export ----------
+function downloadFile(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(v) {
+  if (v === null || v === undefined) return '';
+  const s = String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function exportSetsCsv() {
+  const sessions = loadSessions();
+  const rows = [['date', 'hour', 'sleep_hours', 'session_notes', 'exercise', 'weight_kg', 'reps', 'rpe', 'rir', 'technique', 'set_notes', 'timestamp']];
+  sessions.forEach(s => {
+    if (s.sets.length === 0) return;
+    s.sets.forEach(set => {
+      rows.push([s.date, s.hour, s.sleepHours, s.notes, set.exercise, set.weight, set.reps, set.rpe, set.rir, set.technique, set.notes, set.timestamp]);
+    });
+  });
+  const csv = rows.map(r => r.map(csvEscape).join(',')).join('\n');
+  downloadFile('gymr_lite_sets.csv', csv, 'text/csv');
+}
+
+function exportMeasurementsCsv() {
+  const list = loadMeasurements();
+  const rows = [['date', 'label', 'value']];
+  list.forEach(m => rows.push([m.date, m.label, m.value]));
+  const csv = rows.map(r => r.map(csvEscape).join(',')).join('\n');
+  downloadFile('gymr_lite_measurements.csv', csv, 'text/csv');
+}
+
+function exportBackupJson() {
+  const data = { sessions: loadSessions(), measurements: loadMeasurements(), exportedAt: new Date().toISOString() };
+  downloadFile('gymr_lite_backup.json', JSON.stringify(data, null, 2), 'application/json');
+}
+
+function importBackupJson() {
+  document.getElementById('importFile').click();
+}
+
+function handleImportFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!confirm('Esto reemplazará todos los datos actuales con el backup. ¿Continuar?')) return;
+      saveSessions(data.sessions || []);
+      saveMeasurements(data.measurements || []);
+      renderFullHistory(); renderMeasurements();
+      alert('Backup importado correctamente.');
+    } catch (err) {
+      alert('Archivo inválido: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+function wipeAll() {
+  saveSessions([]); saveMeasurements([]);
+  currentSessionId = null;
+  document.getElementById('setEntryCard').style.display = 'none';
+  renderCurrentSessionSets(); renderMeasurements(); renderFullHistory();
+}
+
+// ---------- Init ----------
+(function init() {
+  document.getElementById('sessDate').value = todayStr();
+  document.getElementById('measDate').value = todayStr();
+  refreshExerciseList();
+
+  // Auto-load today's session if it already exists
+  const sessions = loadSessions();
+  const today = sessions.find(s => s.date === todayStr());
+  if (today) {
+    currentSessionId = today.id;
+    document.getElementById('sessHour').value = today.hour || '';
+    document.getElementById('sessSleep').value = today.sleepHours != null ? today.sleepHours : '';
+    document.getElementById('sessNotes').value = today.notes || '';
+    document.getElementById('setEntryCard').style.display = 'block';
+    renderCurrentSessionSets();
+  }
+})();
+</script>
+</body>
+</html>
