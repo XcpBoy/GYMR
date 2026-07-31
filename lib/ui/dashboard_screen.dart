@@ -81,13 +81,18 @@ class DashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildStatsGrid(BuildContext context, Map<String, ThemeSetting> settings, ThemeController controller) {
+    // childAspectRatio is a fixed-height contract for the grid cells, but the
+    // card content's height can grow (larger system font scale, narrower
+    // devices) - a value with headroom plus ellipsis/Flexible text inside
+    // _buildModuleCard keeps that mismatch from turning into a RenderFlex
+    // pixel overflow.
     return GridView.count(
       crossAxisCount: MediaQuery.of(context).size.width > 600 ? 3 : 2,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       crossAxisSpacing: 12,
       mainAxisSpacing: 12,
-      childAspectRatio: 1.2,
+      childAspectRatio: 1.0,
       children: [
         _buildModuleCard(
           context,
@@ -173,6 +178,7 @@ class DashboardScreen extends ConsumerWidget {
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
@@ -186,11 +192,15 @@ class DashboardScreen extends ConsumerWidget {
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: LabStyles.mono(context, color: color, fontSize: 10, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
