@@ -6,9 +6,10 @@ than a generic fitness app allows, without sending anything to a server.
 Built with Flutter + Riverpod + Drift/SQLite — everything lives in an
 on-device SQLite database.
 
-**Status:** unstable — v0.1.6, DB schema 29. This is an actively-developed
-personal project, not a polished release; some flows still need manual
-testing on a real device.
+**Status:** beta, in daily use — v0.1.6, DB schema 29. This is an
+actively-developed personal project (not a polished public release), but it's
+used for real training logging day-to-day without major issues. Newer/less
+exercised flows may still have rough edges.
 
 **Platform:** Android is the primary, actively-used target. An iOS project
 scaffold exists under `ios/` (icons, Info.plist permissions) but has not yet
