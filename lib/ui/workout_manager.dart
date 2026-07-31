@@ -4603,14 +4603,22 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
             child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(l,
-                      style: LabStyles.mono(context,
-                          fontSize: 7, color: Colors.grey)),
-                  Text(v,
-                      style: LabStyles.mono(context,
-                          fontSize: 10,
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold))
+                  Flexible(
+                      child: Text(l,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: LabStyles.mono(context,
+                              fontSize: 7, color: Colors.grey))),
+                  const SizedBox(width: 4),
+                  Flexible(
+                      child: Text(v,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
+                          style: LabStyles.mono(context,
+                              fontSize: 10,
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold)))
                 ])));
   }
 

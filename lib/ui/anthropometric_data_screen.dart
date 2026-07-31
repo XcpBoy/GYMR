@@ -347,14 +347,23 @@ class _AnthropometricDataScreenState extends ConsumerState<AnthropometricDataScr
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(isWeight ? 'BODY_WEIGHT' : log.label.toUpperCase(), style: LabStyles.mono(context, fontWeight: FontWeight.bold, fontSize: 12)),
-              Text(DateFormat('dd/MM/yy').format(log.date), style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
-            ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isWeight ? 'BODY_WEIGHT' : log.label.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: LabStyles.mono(context, fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+                Text(DateFormat('dd/MM/yy').format(log.date), style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
+              ],
+            ),
           ),
+          const SizedBox(width: 8),
           Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               if (!isWeight && log.isFlexed) Container(margin: const EdgeInsets.only(right: 4), padding: const EdgeInsets.symmetric(horizontal: 4), color: Colors.redAccent.withValues(alpha: 0.2), child: Text('FLEX', style: LabStyles.mono(context, fontSize: 8, color: Colors.redAccent))),
               if (!isWeight && log.isPumped) Container(margin: const EdgeInsets.only(right: 8), padding: const EdgeInsets.symmetric(horizontal: 4), color: LabColors.accent.withValues(alpha: 0.2), child: Text('PUMP', style: LabStyles.mono(context, fontSize: 8, color: LabColors.accent))),
