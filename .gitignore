@@ -30,6 +30,16 @@ ios/.symlinks/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
 
+# Local-only reference material (kept on disk, not tracked in this repo)
+/AGENTS.md
+lib/AGENTS.md
+lib/*/AGENTS.md
+/BACKUPS/
+/MISC/
+/GYMRpndev.txt
+/VERSION.md
+/gymr-lite-web/
+
 # Secrets / sensitive config
 .env
 .env.*
