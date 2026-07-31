@@ -1,6 +1,6 @@
 # GYMR
 
-A local-first workout tracker for hybrid athletes (calisthenics, gymnastics,
+A local-first workout tracker for hybrid athletes (calisthenics, bodybuilding, gymnastics,
 streetlifting, armwrestling) who want to log training data with more rigor
 than a generic fitness app allows, without sending anything to a server.
 Built with Flutter + Riverpod + Drift/SQLite — everything lives in an
