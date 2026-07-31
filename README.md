@@ -1,12 +1,56 @@
 # GYMR
 
-A high-performance, local-first workout tracker for hybrid athletes. Flutter +
-Riverpod + Drift/SQLite, all data stored on-device. Primary target: Android
-(tested on a Redmi Note 8 Pro). iOS scaffold is present under `ios/` but has
-not yet been built/validated on a Mac.
+A local-first workout tracker for hybrid athletes (calisthenics, gymnastics,
+streetlifting, armwrestling) who want to log training data with more rigor
+than a generic fitness app allows, without sending anything to a server.
+Built with Flutter + Riverpod + Drift/SQLite — everything lives in an
+on-device SQLite database.
 
-**Status:** unstable — v0.1.6, DB schema 29. Not fully validated end-to-end
-on device; some flows may still need manual testing.
+**Status:** unstable — v0.1.6, DB schema 29. This is an actively-developed
+personal project, not a polished release; some flows still need manual
+testing on a real device.
+
+**Platform:** Android is the primary, actively-used target. An iOS project
+scaffold exists under `ios/` (icons, Info.plist permissions) but has not yet
+been built or validated on a Mac.
+
+## What it does
+
+- **CRRNT.WO** — the main live workout-logging screen. Log sets (weight,
+  reps, RPE, RIR, technique, failure phase) against a movement library,
+  track PRs (including a custom Volume Points metric, not just 1RM), tag
+  somatic feedback (anomaly/recovery), and organize sets into batches or
+  supersets.
+- **WO.BLCKS** — reusable workout templates ("Workout Blocks"): build a
+  session structure once (exercises, target reps/load, order) and inject it
+  into any day instead of rebuilding it from scratch.
+- **KINISI INVENTORY** — the exercise library: create/edit movements with
+  muscle group, movement pattern, discipline, and other classification
+  metadata used throughout the rest of the app.
+- **KNS.HISTORICAL_REPORT** — full logged history for a single exercise
+  across every past session, with one-tap re-injection of a past set into
+  today's workout.
+- **ANTHROPOMETRIC DATA** — body weight and custom body measurements
+  (arm, waist, etc.) over time, with duplicate-label normalization and a
+  quick-pick selector for repeat labels.
+- **SOMATIC_SPECTRUM** — a dedicated view for the anomaly/recovery feedback
+  logged during training, organized by folder.
+- **TIMELINE_CALENDAR / CHRONO_HISTORY** — calendar and chronological views
+  over past training sessions.
+- **FULL_DATASET_EXPLORER** — a raw browsable/paginated view over the
+  underlying logged data (sets, bodyweight, measurements).
+- **NEXUS_DATA_EXCHANGE** — export training data to PDF/CSV/Excel, or share
+  it directly from the device.
+- **THEME.MDFYR** — full UI theming: every color and wallpaper used across
+  the app is DB-backed and user-editable from this screen, not hardcoded.
+- **10 OVARCH PLAN** — a longer-horizon week/day training plan builder that
+  can inject Workout Blocks into specific plan days.
+
+## Design language
+
+"Technical Brutalism": dark theme only, sharp corners (no rounded edges,
+anywhere, ever), monospace/geometric fonts, hairline borders. See
+`lib/ui/styles.dart` (`LabColors` / `LabStyles`).
 
 ## Project layout
 
