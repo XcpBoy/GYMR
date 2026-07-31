@@ -61,7 +61,6 @@ lib/
   logic/         business logic (calculators, chart models, progression)
   database/      Drift schema, migrations, generated code
   services/      export/import and other service-layer code
-test/            automated tests (flutter test)
 tools/           standalone one-time scripts, run manually via `dart run`
                  (not part of the app build)
 ```
