@@ -44,14 +44,11 @@ been built or validated on a Mac.
   it directly from the device.
 - **THEME.MDFYR** — full UI theming: every color and wallpaper used across
   the app is DB-backed and user-editable from this screen, not hardcoded.
-- **10 OVARCH PLAN** — a longer-horizon week/day training plan builder that
-  can inject Workout Blocks into specific plan days.
 
 ## Design language
 
-"Technical Brutalism": dark theme only, sharp corners (no rounded edges,
-anywhere, ever), monospace/geometric fonts, hairline borders. See
-`lib/ui/styles.dart` (`LabColors` / `LabStyles`).
+"Technical Brutalism": dark theme only, sharp corners, monospace/geometric
+fonts, hairline borders. See `lib/ui/styles.dart` (`LabColors` / `LabStyles`).
 
 ## Project layout
 
