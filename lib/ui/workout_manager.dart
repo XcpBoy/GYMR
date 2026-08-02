@@ -692,6 +692,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
       final loadType = RegExp(r'\[NT:(\w+)\]').firstMatch(ex.intention ?? '')?.group(1) ?? 'EXT.LOAD';
       final isJst = loadType == 'JST.BW';
       final isL = loadType == 'LASTRE';
+      final isU = loadType == 'UNMOVABLE';
 
       final sets = setsByEx[id]!
         ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
@@ -699,7 +700,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
       double knsVp = 0;
       for (int i = 0; i < sets.length; i++) {
         final s = sets[i];
-        final w = isJst ? bw : (isL ? s.weight + bw : s.weight);
+        final w = isJst ? bw : ((isL || isU) ? s.weight + bw : s.weight);
         final reps = s.reps;
         final tonnage = w * reps;
         if (tonnage <= 0) continue;
@@ -3725,6 +3726,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   double _computeVp() {
     final isJst = widget.isJst;
     final isL = widget.loadType == 'LASTRE';
+    final isU = widget.loadType == 'UNMOVABLE';
     final w = isJst ? widget.bodyWeight : (double.tryParse(_lC.text) ?? 0);
     final tL = w + (isL ? widget.bodyWeight : 0);
     final reps = double.tryParse(_rC.text) ?? 0;
@@ -3736,7 +3738,10 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   @override
   void initState() {
     super.initState();
-    _lC = TextEditingController(text: _formatInputValue(widget.set.weight));
+    _lC = TextEditingController(
+        text: (widget.loadType == 'UNMOVABLE' && widget.set.weight == 0)
+            ? ''
+            : _formatInputValue(widget.set.weight));
     _rC = TextEditingController(text: _formatInputValue(widget.set.reps));
     _rpeC = TextEditingController(text: widget.set.rpe?.toString() ?? '');
     _rirC = TextEditingController(text: widget.set.rir?.toString() ?? '');
@@ -4160,6 +4165,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   Widget build(BuildContext context) {
     final isL = widget.loadType == 'LASTRE';
     final isJst = widget.isJst;
+    final isU = widget.loadType == 'UNMOVABLE';
     final isIso = widget.isIso;
     final w = isJst ? widget.bodyWeight : (double.tryParse(_lC.text) ?? 0);
     final tL = w + (isL ? widget.bodyWeight : 0);
@@ -4229,7 +4235,12 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           ? tr(lang, 'BODYWEIGHT')
                           : (isL ? tr(lang, 'ADDED') : tr(lang, 'LOAD')),
                       _lC,
-                      flex: 27, enabled: !isJst),
+                      flex: 27,
+                      enabled: !isJst,
+                      hintIcon: isU
+                          ? const Icon(Icons.link,
+                              size: 18, color: Colors.grey)
+                          : null),
                   _buildGridInput(isIso ? 'SECS' : 'REPS', _rC, flex: 30),
                   _buildPRBox(flex: 25, isRed: isRed),
                   _buildCompletedCheck(completedColor),
@@ -4643,7 +4654,10 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   }
 
   Widget _buildGridInput(String l, TextEditingController c,
-      {int flex = 1, bool enabled = true, bool noBorder = false}) {
+      {int flex = 1,
+      bool enabled = true,
+      bool noBorder = false,
+      Widget? hintIcon}) {
     return Expanded(
         flex: flex,
         child: Material(
@@ -4667,20 +4681,26 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
               Container(
                   height: 44,
                   alignment: Alignment.center,
-                  child: TextField(
-                      controller: c,
-                      enabled: enabled,
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      style: LabStyles.mono(context,
-                          fontSize: 20,
-                          color: enabled ? Colors.white : Colors.grey),
-                      decoration: const InputDecoration(
-                          border: InputBorder.none, isDense: true),
-                      textInputAction: TextInputAction.next,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      onChanged: (_) => _onChanged()))
+                  child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        if (hintIcon != null && c.text.isEmpty)
+                          IgnorePointer(child: hintIcon!),
+                        TextField(
+                            controller: c,
+                            enabled: enabled,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: LabStyles.mono(context,
+                                fontSize: 20,
+                                color: enabled ? Colors.white : Colors.grey),
+                            decoration: const InputDecoration(
+                                border: InputBorder.none, isDense: true),
+                            textInputAction: TextInputAction.next,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            onChanged: (_) => _onChanged()),
+                      ]))
             ]))));
   }
 

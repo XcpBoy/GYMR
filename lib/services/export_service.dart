@@ -504,6 +504,8 @@ class ExportService {
                   totalLoad = set.weight;
                 } else if (details.type == 'JST.BW') {
                   totalLoad = bw ?? 0;
+                } else if (details.type == 'UNMOVABLE') {
+                  totalLoad = (bw ?? 0) + set.weight;
                 }
 
                 final fullName = ex.fullName;
@@ -1022,6 +1024,8 @@ class ExportService {
           totalLoad = set.weight;
         } else if (details.type == 'JST.BW') {
           totalLoad = bw ?? 0;
+        } else if (details.type == 'UNMOVABLE') {
+          totalLoad = (bw ?? 0) + set.weight;
         }
 
         final fullName = ex.fullName;
@@ -1235,6 +1239,8 @@ class ExportService {
           totalLoad = set.weight;
         } else if (details.type == 'JST.BW') {
           totalLoad = bw ?? 0;
+        } else if (details.type == 'UNMOVABLE') {
+          totalLoad = (bw ?? 0) + set.weight;
         }
 
         final fullName = ex.fullName;
@@ -1423,6 +1429,8 @@ class ExportService {
             totalLoad = set.weight;
           } else if (details.type == 'JST.BW') {
             totalLoad = bw ?? 0;
+          } else if (details.type == 'UNMOVABLE') {
+            totalLoad = (bw ?? 0) + set.weight;
           }
 
           final fullName = ex.fullName;

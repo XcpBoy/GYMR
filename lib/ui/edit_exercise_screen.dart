@@ -512,7 +512,7 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
   }
 
   Widget _buildLoadTypeSelector() {
-    return Row(children: ['LASTRE', 'EXT.LOAD', 'JST.BW'].map((type) {
+    return Row(children: ['LASTRE', 'EXT.LOAD', 'JST.BW', 'UNMOVABLE'].map((type) {
       final sel = _loadType == type;
       return Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: InkWell(onTap: () => setState(() => _loadType = type), child: Container(padding: const EdgeInsets.symmetric(vertical: 12), alignment: Alignment.center, decoration: BoxDecoration(color: sel ? LabColors.primary : Colors.transparent, border: Border.all(color: LabColors.primary, width: 0.5)), child: Text(type, style: LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold, color: sel ? Colors.black : LabColors.primary))))));
     }).toList());

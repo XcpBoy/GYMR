@@ -2190,7 +2190,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     if (metaMatch != null) {
       loadType = metaMatch.group(1) ?? 'EXT.LOAD';
       isIso = metaMatch.group(2) == 'true';
-    } else if (['LASTRE', 'EXT.LOAD', 'JST.BW'].contains(e.field)) {
+    } else if (['LASTRE', 'EXT.LOAD', 'JST.BW', 'UNMOVABLE'].contains(e.field)) {
       loadType = e.field!;
     }
 
@@ -2223,6 +2223,8 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     final uiTagJstbw = tC.getColor(settings, "UI_TAG_JSTBW", nameSeed: "JSTBW");
     final uiTagExtload =
         tC.getColor(settings, "UI_TAG_EXTLOAD", nameSeed: "EXTLOAD");
+    final uiTagUnmovable =
+        tC.getColor(settings, "UI_TAG_UNMOVABLE", nameSeed: "UNMOVABLE");
     final uiTagIso = tC.getColor(settings, "UI_TAG_ISO", nameSeed: "ISO");
     final uiTagBodyposition =
         tC.getColor(settings, "UI_TAG_BODYPOSITION", nameSeed: "BODYPOSITION");
@@ -2239,6 +2241,9 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
         break;
       case 'EXT.LOAD':
         typeColor = uiTagExtload;
+        break;
+      case 'UNMOVABLE':
+        typeColor = uiTagUnmovable;
         break;
       default:
         typeColor = LabColors.primary;
@@ -3607,7 +3612,9 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     _rC.text = widget.set.reps.toString();
     _rpeC.text = widget.set.rpe?.toString() ?? '';
     _rirC.text = widget.set.rir?.toString() ?? '';
-    _ploadC.text = widget.set.weight.toString();
+    _ploadC.text = (_isUnmovable && widget.set.weight == 0)
+        ? ''
+        : widget.set.weight.toString();
     _setTags.clear();
     if (widget.set.notes != null && widget.set.notes!.isNotEmpty) {
       _setTags.addAll(widget.set.notes!.split(',').where((t) => t.isNotEmpty));
@@ -3622,12 +3629,21 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     }
   }
 
+  /// UNMOVABLE se resuelve de la intention `[NT:...]` o del `field` del
+  /// ejercicio (el set instance no recibe loadType como parametro).
+  bool get _isUnmovable {
+    final m = RegExp(r'\[NT:(.*)\|ISO:(.*)\]')
+        .firstMatch(widget.exercise.intention ?? '');
+    return (m?.group(1) == 'UNMOVABLE') || widget.exercise.field == 'UNMOVABLE';
+  }
+
   void _initControllers(WorkoutSet set) {
     _lC = TextEditingController(text: set.technique?.toString() ?? '');
     _rC = TextEditingController(text: set.reps.toString());
     _rpeC = TextEditingController(text: set.rpe?.toString() ?? '');
     _rirC = TextEditingController(text: set.rir?.toString() ?? '');
-    _ploadC = TextEditingController(text: set.weight.toString());
+    _ploadC = TextEditingController(
+        text: (_isUnmovable && set.weight == 0) ? '' : set.weight.toString());
     // Restore tags from notes (backward compat)
     _setTags.clear();
     if (set.notes != null && set.notes!.isNotEmpty) {
@@ -3831,6 +3847,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
         (metaMatch?.group(1) == 'LASTRE') || widget.exercise.field == 'LASTRE';
     final isJst =
         (metaMatch?.group(1) == 'JST.BW') || widget.exercise.field == 'JST.BW';
+    final isU = _isUnmovable;
     final w = isJst ? widget.bodyWeight : (double.tryParse(_lC.text) ?? 0);
     final tL = w + (isL ? widget.bodyWeight : 0);
     final isRed = (widget.set.trackName ?? '').contains('[RED_PR]');
@@ -3873,7 +3890,11 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                             flex: 15, sideColor: sideColor),
                         _buildGridInput(_isIso ? 'MIN SEC' : 'MIN REPS', _lC,
                             flex: 25),
-                        _buildGridInput('P.LOAD', _ploadC, flex: 25),
+                        _buildGridInput('P.LOAD', _ploadC, flex: 25,
+                            hintIcon: isU
+                                ? const Icon(Icons.link,
+                                    size: 18, color: Colors.grey)
+                                : null),
                         _buildGridInput(_isIso ? 'MAX SEC' : 'MAX REPS', _rC,
                             flex: 25),
                       ]))),
@@ -4361,7 +4382,10 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   }
 
   Widget _buildGridInput(String l, TextEditingController c,
-      {int flex = 1, bool enabled = true, bool noBorder = false}) {
+      {int flex = 1,
+      bool enabled = true,
+      bool noBorder = false,
+      Widget? hintIcon}) {
     return Expanded(
         flex: flex,
         child: Material(
@@ -4385,17 +4409,23 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
               Container(
                   height: 44,
                   alignment: Alignment.center,
-                  child: TextField(
-                      controller: c,
-                      enabled: enabled,
-                      keyboardType: TextInputType.number,
-                      textAlign: TextAlign.center,
-                      style: LabStyles.mono(context,
-                          fontSize: 20,
-                          color: enabled ? Colors.white : Colors.grey),
-                      decoration: const InputDecoration(
-                          border: InputBorder.none, isDense: true),
-                      onChanged: (_) => _onChanged()))
+                  child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        if (hintIcon != null && c.text.isEmpty)
+                          IgnorePointer(child: hintIcon!),
+                        TextField(
+                            controller: c,
+                            enabled: enabled,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: LabStyles.mono(context,
+                                fontSize: 20,
+                                color: enabled ? Colors.white : Colors.grey),
+                            decoration: const InputDecoration(
+                                border: InputBorder.none, isDense: true),
+                            onChanged: (_) => _onChanged()),
+                      ]))
             ]))));
   }
 

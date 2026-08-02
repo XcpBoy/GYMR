@@ -197,10 +197,12 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
         final bw = bwSnapshot.data ?? 0.0;
         final isLastre = details.type == 'LASTRE';
         final isJst = details.type == 'JST.BW';
+        final isU = details.type == 'UNMOVABLE';
         
         double totalLoad = set.weight;
         if (isLastre) totalLoad = set.weight + bw;
         if (isJst) totalLoad = bw;
+        if (isU) totalLoad = set.weight + bw;
 
         final eORM = WorkoutCalculator.calculateEpley1RM(totalLoad, set.reps);
         final fullName = ex.fullName;

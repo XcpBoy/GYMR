@@ -278,6 +278,7 @@ final oneRmProgressionProvider = StreamProvider.family<List<OneRmPoint>, (int, D
       final metaMatch = RegExp(r'\[NT:(.*)\|ISO:(.*)\]').firstMatch(intentionText);
       final isL = (metaMatch?.group(1) == 'LASTRE') || exercise.field == 'LASTRE';
       final isJst = (metaMatch?.group(1) == 'JST.BW') || exercise.field == 'JST.BW';
+      final isU = (metaMatch?.group(1) == 'UNMOVABLE') || exercise.field == 'UNMOVABLE';
 
       final dateMs = DateTime(log.date.year, log.date.month, log.date.day).millisecondsSinceEpoch;
       final bw = bwCache[dateMs] ?? 0.0;
@@ -285,7 +286,7 @@ final oneRmProgressionProvider = StreamProvider.family<List<OneRmPoint>, (int, D
       double totalLoad;
       if (isJst) {
         totalLoad = bw; // Bodyweight-only (e.g. pull-ups)
-      } else if (isL) {
+      } else if (isL || isU) {
         totalLoad = set.weight + bw; // Added weight + bodyweight (e.g. weighted pull-ups)
       } else {
         totalLoad = set.weight; // External load only (e.g. bench press)
