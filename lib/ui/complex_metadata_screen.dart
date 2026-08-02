@@ -5,6 +5,7 @@ import '../database/database.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
+import '../localization/strings.dart';
 
 class ComplexMetadataScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> initialMetadata;
@@ -91,6 +92,7 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     return MainScaffold(
       title: 'COMPLEX_METADATA_INPUT',
       body: SingleChildScrollView(
@@ -146,13 +148,13 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
             
             const SizedBox(height: 48),
             LabButton(
-              label: "Commit Metadata",
+              label: tr(lang, "Commit Metadata"),
               onPressed: () => Navigator.pop(context, _metadata),
               color: LabColors.primary,
             ),
             const SizedBox(height: 12),
             LabButton(
-              label: "Abort changes",
+              label: tr(lang, "Abort changes"),
               onPressed: () => Navigator.pop(context),
               isOutlined: true,
               color: Colors.grey,
@@ -281,6 +283,7 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
   }
 
   void _showToggleCreator() {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final TextEditingController tC = TextEditingController();
     showDialog(
       context: context,
@@ -292,7 +295,7 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
           children: [
             Row(
               children: [
-                Expanded(child: LabTextField(controller: tC, label: "Toggle Name (e.g. CHALK)")),
+                Expanded(child: LabTextField(controller: tC, label: tr(lang, "Toggle Name (e.g. CHALK)"))),
                 const SizedBox(width: 8),
                 IconButton(
                   icon: const Icon(Icons.manage_search, color: LabColors.primary),
@@ -306,13 +309,13 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: Text("CANCEL", style: LabStyles.mono(context))),
+          TextButton(onPressed: () => Navigator.pop(c), child: Text(tr(lang, "CANCEL"), style: LabStyles.mono(context))),
           TextButton(
             onPressed: () {
               _addToggle(tC.text);
               Navigator.pop(c);
             },
-            child: Text("ADD", style: LabStyles.mono(context, color: LabColors.primary)),
+            child: Text(tr(lang, "ADD"), style: LabStyles.mono(context, color: LabColors.primary)),
           ),
         ],
       ),
@@ -331,6 +334,7 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
     }
 
     if (!mounted) return;
+    final lang = ref.read(languageProvider).value ?? 'en';
 
     showModalBottomSheet(
       context: context,
@@ -339,6 +343,7 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
       builder: (c) => _InternalTogglePicker(
         values: existingToggles.toList()..sort(),
         onSelected: (name) => _addToggle(name),
+        lang: lang,
       ),
     );
   }
@@ -346,9 +351,10 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
   void _showExercisePicker(String category) async {
     final db = ref.read(databaseProvider);
     final all = await db.select(db.baseExercises).get();
-    
+
     if (!mounted) return;
-    
+    final lang = ref.read(languageProvider).value ?? 'en';
+
     showModalBottomSheet(
       context: context,
       backgroundColor: LabColors.background,
@@ -356,6 +362,7 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
       builder: (c) => _InternalExercisePicker(
         exercises: all,
         onSelected: (name) => _addRelation(category, name),
+        lang: lang,
       ),
     );
   }
@@ -433,8 +440,9 @@ class _ExpandableMetadataCardState extends State<_ExpandableMetadataCard> {
 class _InternalExercisePicker extends StatefulWidget {
   final List<BaseExercise> exercises;
   final Function(String) onSelected;
+  final String lang;
 
-  const _InternalExercisePicker({required this.exercises, required this.onSelected});
+  const _InternalExercisePicker({required this.exercises, required this.onSelected, required this.lang});
 
   @override
   State<_InternalExercisePicker> createState() => _InternalExercisePickerState();
@@ -481,7 +489,7 @@ class _InternalExercisePickerState extends State<_InternalExercisePicker> {
                   ]
                 ),
                 const SizedBox(height: 16),
-                LabTextField(controller: sC, label: 'Search exercise name...')
+                LabTextField(controller: sC, label: tr(widget.lang, 'Search exercise name...'))
               ]
             )
           ),
@@ -507,8 +515,9 @@ class _InternalExercisePickerState extends State<_InternalExercisePicker> {
 class _InternalTogglePicker extends StatefulWidget {
   final List<String> values;
   final Function(String) onSelected;
+  final String lang;
 
-  const _InternalTogglePicker({required this.values, required this.onSelected});
+  const _InternalTogglePicker({required this.values, required this.onSelected, required this.lang});
 
   @override
   State<_InternalTogglePicker> createState() => _InternalTogglePickerState();
@@ -555,7 +564,7 @@ class _InternalTogglePickerState extends State<_InternalTogglePicker> {
                   ]
                 ),
                 const SizedBox(height: 16),
-                LabTextField(controller: sC, label: 'Search toggle name...')
+                LabTextField(controller: sC, label: tr(widget.lang, 'Search toggle name...'))
               ]
             )
           ),

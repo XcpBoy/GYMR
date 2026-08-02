@@ -6,6 +6,7 @@ import '../database/database.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
+import '../localization/strings.dart';
 
 class KinisiTreeScreen extends ConsumerStatefulWidget {
   final BaseExercise exercise;
@@ -60,6 +61,7 @@ class _KinisiTreeScreenState extends ConsumerState<KinisiTreeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     if (_isLoading) {
       return const MainScaffold(title: 'KINISI_TREE', body: Center(child: CircularProgressIndicator(color: LabColors.primary)));
     }
@@ -103,21 +105,21 @@ class _KinisiTreeScreenState extends ConsumerState<KinisiTreeScreen> {
               ),
             ),
           ),
-          _buildControls(),
+          _buildControls(lang),
         ],
       ),
     );
   }
 
-  Widget _buildControls() {
+  Widget _buildControls(String lang) {
     return Positioned(
       bottom: 24, right: 24,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          _buildExpander("UP: PROGRESSIONS", () => setState(() => _levelsUp++), Colors.greenAccent),
+          _buildExpander(tr(lang, "UP: PROGRESSIONS"), () => setState(() => _levelsUp++), Colors.greenAccent),
           const SizedBox(height: 8),
-          _buildExpander("DOWN: REGRESSIONS", () => setState(() => _levelsDown++), Colors.redAccent),
+          _buildExpander(tr(lang, "DOWN: REGRESSIONS"), () => setState(() => _levelsDown++), Colors.redAccent),
           const SizedBox(height: 16),
           FloatingActionButton(
             heroTag: "recenter_btn",

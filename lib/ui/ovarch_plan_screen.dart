@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../database/database.dart';
+import '../localization/strings.dart';
 import '../providers/database_provider.dart';
 import '../services/ovarch_plan_injection_service.dart';
 import 'WB.editor.dart';
@@ -54,6 +55,7 @@ class _OvarchPlanScreenState extends ConsumerState<OvarchPlanScreen> {
   }
 
   Widget _buildEmptyPlans() {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
@@ -67,7 +69,9 @@ class _OvarchPlanScreenState extends ConsumerState<OvarchPlanScreen> {
                 style: LabStyles.headline(context, color: LabColors.onSurface)
                     .copyWith(fontSize: 16)),
             const SizedBox(height: 12),
-            Text('CREATE THE FIRST PLAN AND BUILD WEEK / DAY / WB FOLDERS.',
+            Text(
+                tr(lang,
+                    'CREATE THE FIRST PLAN AND BUILD WEEK / DAY / WB FOLDERS.'),
                 style: LabStyles.mono(context,
                     color: LabColors.onSurface.withValues(alpha: 0.6))),
             const SizedBox(height: 24),
@@ -154,6 +158,7 @@ class _OvarchPlanScreenState extends ConsumerState<OvarchPlanScreen> {
   }
 
   Future<void> _showPlanDialog({TrainingPlan? plan}) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final nameC = TextEditingController(text: plan?.name ?? '');
     final notesC = TextEditingController(text: plan?.notes ?? '');
     final result = await showDialog<bool>(
@@ -175,11 +180,11 @@ class _OvarchPlanScreenState extends ConsumerState<OvarchPlanScreen> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: Text('CANCEL',
+              child: Text(tr(lang, 'CANCEL'),
                   style: LabStyles.mono(context,
                       color: LabColors.onSurface.withValues(alpha: 0.6)))),
           LabButton(
-            label: plan == null ? 'CREATE' : 'SAVE',
+            label: plan == null ? tr(lang, 'CREATE') : tr(lang, 'SAVE'),
             color: LabColors.primary,
             onPressed: () async {
               final trimmed = nameC.text.trim();
@@ -215,6 +220,7 @@ class _OvarchPlanScreenState extends ConsumerState<OvarchPlanScreen> {
   }
 
   Future<void> _confirmDeletePlan(TrainingPlan plan) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -223,17 +229,18 @@ class _OvarchPlanScreenState extends ConsumerState<OvarchPlanScreen> {
             style: LabStyles.headline(context, color: LabColors.workoutRed)
                 .copyWith(fontSize: 16)),
         content: Text(
-            'DELETE "${plan.name.toUpperCase()}" AND ALL WEEKS / DAYS / DAYBLOCKS?',
+            tr(lang, 'DELETE "{name}" AND ALL WEEKS / DAYS / DAYBLOCKS?')
+                .replaceFirst('{name}', plan.name.toUpperCase()),
             style: LabStyles.mono(context,
                 color: LabColors.onSurface.withValues(alpha: 0.7))),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: Text('CANCEL',
+              child: Text(tr(lang, 'CANCEL'),
                   style: LabStyles.mono(context,
                       color: LabColors.onSurface.withValues(alpha: 0.6)))),
           LabButton(
-              label: 'DELETE',
+              label: tr(lang, 'DELETE'),
               color: LabColors.workoutRed,
               onPressed: () => Navigator.pop(c, true)),
         ],
@@ -363,6 +370,7 @@ class _OvarchPlanDetailScreenState
   }
 
   Future<void> _showPlanDialog() async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final nameC = TextEditingController(text: widget.plan.name);
     final notesC = TextEditingController(text: widget.plan.notes ?? '');
     final result = await showDialog<bool>(
@@ -384,11 +392,11 @@ class _OvarchPlanDetailScreenState
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: Text('CANCEL',
+              child: Text(tr(lang, 'CANCEL'),
                   style: LabStyles.mono(context,
                       color: LabColors.onSurface.withValues(alpha: 0.6)))),
           LabButton(
-              label: 'SAVE',
+              label: tr(lang, 'SAVE'),
               color: LabColors.primary,
               onPressed: () async {
                 if (nameC.text.trim().isEmpty) return;
@@ -411,6 +419,7 @@ class _OvarchPlanDetailScreenState
   }
 
   Future<void> _confirmDeletePlan() async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -419,17 +428,18 @@ class _OvarchPlanDetailScreenState
             style: LabStyles.headline(context, color: LabColors.workoutRed)
                 .copyWith(fontSize: 16)),
         content: Text(
-            'DELETE "${widget.plan.name.toUpperCase()}" AND EVERYTHING INSIDE IT?',
+            tr(lang, 'DELETE "{name}" AND EVERYTHING INSIDE IT?')
+                .replaceFirst('{name}', widget.plan.name.toUpperCase()),
             style: LabStyles.mono(context,
                 color: LabColors.onSurface.withValues(alpha: 0.7))),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: Text('CANCEL',
+              child: Text(tr(lang, 'CANCEL'),
                   style: LabStyles.mono(context,
                       color: LabColors.onSurface.withValues(alpha: 0.6)))),
           LabButton(
-              label: 'DELETE',
+              label: tr(lang, 'DELETE'),
               color: LabColors.workoutRed,
               onPressed: () => Navigator.pop(c, true)),
         ],
@@ -515,6 +525,7 @@ class _OvarchWeekDetailScreenState
   }
 
   Widget _buildDayCard(PlanDay day) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: LabStyles.hairlineBorder(color: LabColors.cyanBorder),
@@ -552,7 +563,7 @@ class _OvarchWeekDetailScreenState
                                 color: LabColors.onSurface)
                             .copyWith(fontSize: 14)),
                     const SizedBox(height: 4),
-                    Text('TAP TO MANAGE DAYBLOCKS',
+                    Text(tr(lang, 'TAP TO MANAGE DAYBLOCKS'),
                         style: LabStyles.mono(context,
                             color: LabColors.onSurface.withValues(alpha: 0.55),
                             fontSize: 8)),
@@ -583,6 +594,7 @@ class _OvarchWeekDetailScreenState
   }
 
   Future<void> _showPurposeDialog() async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final c = TextEditingController(text: widget.week.purpose ?? '');
     final result = await showDialog<bool>(
       context: context,
@@ -596,11 +608,11 @@ class _OvarchWeekDetailScreenState
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('CANCEL',
+              child: Text(tr(lang, 'CANCEL'),
                   style: LabStyles.mono(context,
                       color: LabColors.onSurface.withValues(alpha: 0.6)))),
           LabButton(
-              label: 'SAVE',
+              label: tr(lang, 'SAVE'),
               color: LabColors.primary,
               onPressed: () async {
                 final db = ref.read(databaseProvider);
@@ -620,6 +632,7 @@ class _OvarchWeekDetailScreenState
   }
 
   Future<void> _confirmDeleteWeek() async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -627,17 +640,18 @@ class _OvarchWeekDetailScreenState
         title: Text('DELETE_WEEK',
             style: LabStyles.headline(context, color: LabColors.workoutRed)
                 .copyWith(fontSize: 16)),
-        content: Text('DELETE THIS WEEK AND ALL DAYS / DAYBLOCKS INSIDE IT?',
+        content: Text(
+            tr(lang, 'DELETE THIS WEEK AND ALL DAYS / DAYBLOCKS INSIDE IT?'),
             style: LabStyles.mono(context,
                 color: LabColors.onSurface.withValues(alpha: 0.7))),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: Text('CANCEL',
+              child: Text(tr(lang, 'CANCEL'),
                   style: LabStyles.mono(context,
                       color: LabColors.onSurface.withValues(alpha: 0.6)))),
           LabButton(
-              label: 'DELETE',
+              label: tr(lang, 'DELETE'),
               color: LabColors.workoutRed,
               onPressed: () => Navigator.pop(c, true)),
         ],
@@ -668,6 +682,7 @@ class _OvarchDayDetailScreenState extends ConsumerState<OvarchDayDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(databaseProvider);
+    final lang = ref.watch(languageProvider).value ?? 'en';
 
     return MainScaffold(
       title: 'DAY_${widget.day.dayNumber}',
@@ -712,7 +727,8 @@ class _OvarchDayDetailScreenState extends ConsumerState<OvarchDayDetailScreen> {
                             color: LabColors.onSurface.withValues(alpha: 0.6))),
                     const SizedBox(height: 12),
                     Text(
-                        'ADD LIVE REFERENCES TO WORKOUT BLOCKS. WB CHANGES REFLECT HERE AUTOMATICALLY.',
+                        tr(lang,
+                            'ADD LIVE REFERENCES TO WORKOUT BLOCKS. WB CHANGES REFLECT HERE AUTOMATICALLY.'),
                         style: LabStyles.mono(context,
                             color: LabColors.onSurface.withValues(alpha: 0.45),
                             fontSize: 9)),
@@ -739,6 +755,7 @@ class _OvarchDayDetailScreenState extends ConsumerState<OvarchDayDetailScreen> {
   }
 
   Widget _buildDayBlockCard(drift.TypedResult row) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     final dayBlock = row.readTable(db.planDayBlocks);
     final block = row.readTable(db.workoutBlocks);
@@ -785,7 +802,7 @@ class _OvarchDayDetailScreenState extends ConsumerState<OvarchDayDetailScreen> {
                         Text(
                             block.intention?.isNotEmpty == true
                                 ? block.intention!.toUpperCase()
-                                : 'LIVE WB REFERENCE',
+                                : tr(lang, 'LIVE WB REFERENCE'),
                             style: LabStyles.mono(context,
                                 color:
                                     LabColors.onSurface.withValues(alpha: 0.5),
@@ -908,6 +925,7 @@ class _OvarchDayDetailScreenState extends ConsumerState<OvarchDayDetailScreen> {
   }
 
   Future<void> _showBlockNotesDialog(PlanDayBlock dayBlock) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final c = TextEditingController(text: dayBlock.notes ?? '');
     final result = await showDialog<bool>(
       context: context,
@@ -921,11 +939,11 @@ class _OvarchDayDetailScreenState extends ConsumerState<OvarchDayDetailScreen> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('CANCEL',
+              child: Text(tr(lang, 'CANCEL'),
                   style: LabStyles.mono(context,
                       color: LabColors.onSurface.withValues(alpha: 0.6)))),
           LabButton(
-              label: 'SAVE',
+              label: tr(lang, 'SAVE'),
               color: LabColors.primary,
               onPressed: () async {
                 final db = ref.read(databaseProvider);
@@ -975,6 +993,7 @@ class _OvarchDayDetailScreenState extends ConsumerState<OvarchDayDetailScreen> {
   }
 
   Future<void> _removeBlock(PlanDayBlock dayBlock) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -983,17 +1002,18 @@ class _OvarchDayDetailScreenState extends ConsumerState<OvarchDayDetailScreen> {
             style: LabStyles.headline(context, color: LabColors.workoutRed)
                 .copyWith(fontSize: 16)),
         content: Text(
-            'REMOVE THIS LIVE WB REFERENCE FROM THE DAY? THE WORKOUT BLOCK ITSELF STAYS INTACT.',
+            tr(lang,
+                'REMOVE THIS LIVE WB REFERENCE FROM THE DAY? THE WORKOUT BLOCK ITSELF STAYS INTACT.'),
             style: LabStyles.mono(context,
                 color: LabColors.onSurface.withValues(alpha: 0.7))),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: Text('CANCEL',
+              child: Text(tr(lang, 'CANCEL'),
                   style: LabStyles.mono(context,
                       color: LabColors.onSurface.withValues(alpha: 0.6)))),
           LabButton(
-              label: 'REMOVE',
+              label: tr(lang, 'REMOVE'),
               color: LabColors.workoutRed,
               onPressed: () => Navigator.pop(c, true)),
         ],
@@ -1050,6 +1070,7 @@ class _OvarchDayDetailScreenState extends ConsumerState<OvarchDayDetailScreen> {
   }
 
   Future<void> _showDayLabelDialog() async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final c = TextEditingController(text: widget.day.label ?? '');
     final result = await showDialog<bool>(
       context: context,
@@ -1062,11 +1083,11 @@ class _OvarchDayDetailScreenState extends ConsumerState<OvarchDayDetailScreen> {
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('CANCEL',
+              child: Text(tr(lang, 'CANCEL'),
                   style: LabStyles.mono(context,
                       color: LabColors.onSurface.withValues(alpha: 0.6)))),
           LabButton(
-              label: 'SAVE',
+              label: tr(lang, 'SAVE'),
               color: LabColors.primary,
               onPressed: () async {
                 final db = ref.read(databaseProvider);
@@ -1086,6 +1107,7 @@ class _OvarchDayDetailScreenState extends ConsumerState<OvarchDayDetailScreen> {
   }
 
   Future<void> _confirmDeleteDay() async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -1093,17 +1115,17 @@ class _OvarchDayDetailScreenState extends ConsumerState<OvarchDayDetailScreen> {
         title: Text('DELETE_DAY',
             style: LabStyles.headline(context, color: LabColors.workoutRed)
                 .copyWith(fontSize: 16)),
-        content: Text('DELETE THIS DAY AND ALL DAYBLOCK REFERENCES?',
+        content: Text(tr(lang, 'DELETE THIS DAY AND ALL DAYBLOCK REFERENCES?'),
             style: LabStyles.mono(context,
                 color: LabColors.onSurface.withValues(alpha: 0.7))),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: Text('CANCEL',
+              child: Text(tr(lang, 'CANCEL'),
                   style: LabStyles.mono(context,
                       color: LabColors.onSurface.withValues(alpha: 0.6)))),
           LabButton(
-              label: 'DELETE',
+              label: tr(lang, 'DELETE'),
               color: LabColors.workoutRed,
               onPressed: () => Navigator.pop(c, true)),
         ],

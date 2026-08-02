@@ -11,6 +11,7 @@ import '../database/database.dart';
 import 'styles.dart';
 import 'main_scaffold.dart';
 import 'workout_manager.dart';
+import '../localization/strings.dart';
 
 class TimelineCalendarScreen extends ConsumerStatefulWidget {
   const TimelineCalendarScreen({super.key});
@@ -54,6 +55,7 @@ class _MonthCalendarGrid extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final timelineData = ref.watch(timelineProvider(monthDate));
     final themeSettings = ref.watch(themeSettingsProvider).value ?? {};
     final themeController = ref.read(themeControllerProvider);
@@ -77,9 +79,9 @@ class _MonthCalendarGrid extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 8),
-          _buildDaysHeader(context),
+          _buildDaysHeader(context, lang),
           timelineData.when(
-            data: (weeks) => _buildGrid(context, weeks, themeSettings, themeController),
+            data: (weeks) => _buildGrid(context, weeks, themeSettings, themeController, lang),
             loading: () => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
             error: (e, s) => Text("ERR: $e"),
           ),
@@ -88,8 +90,16 @@ class _MonthCalendarGrid extends ConsumerWidget {
     );
   }
 
-  Widget _buildDaysHeader(BuildContext context) {
-    final days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+  Widget _buildDaysHeader(BuildContext context, String lang) {
+    final days = [
+      tr(lang, 'MON'),
+      tr(lang, 'TUE'),
+      tr(lang, 'WED'),
+      tr(lang, 'THU'),
+      tr(lang, 'FRI'),
+      tr(lang, 'SAT'),
+      tr(lang, 'SUN'),
+    ];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
@@ -101,7 +111,7 @@ class _MonthCalendarGrid extends ConsumerWidget {
     );
   }
 
-  Widget _buildGrid(BuildContext context, List<TimelineWeek> weeks, Map<String, ThemeSetting> settings, ThemeController controller) {
+  Widget _buildGrid(BuildContext context, List<TimelineWeek> weeks, Map<String, ThemeSetting> settings, ThemeController controller, String lang) {
     // Generate actual grid based on month calendar logic
     final firstDayOfMonth = DateTime(monthDate.year, monthDate.month, 1);
     final lastDayOfMonth = DateTime(monthDate.year, monthDate.month + 1, 0);
@@ -144,7 +154,7 @@ class _MonthCalendarGrid extends ConsumerWidget {
           if (dayDate == null) return const SizedBox();
           
           final dayData = dayMap[dayDate.day];
-          return _CalendarDayCell(date: dayDate, data: dayData, settings: settings, controller: controller);
+          return _CalendarDayCell(date: dayDate, data: dayData, settings: settings, controller: controller, lang: lang);
         },
       ),
     );
@@ -156,8 +166,9 @@ class _CalendarDayCell extends StatelessWidget {
   final TimelineDay? data;
   final Map<String, ThemeSetting> settings;
   final ThemeController controller;
+  final String lang;
 
-  const _CalendarDayCell({required this.date, this.data, required this.settings, required this.controller});
+  const _CalendarDayCell({required this.date, this.data, required this.settings, required this.controller, required this.lang});
 
   @override
   Widget build(BuildContext context) {
@@ -277,7 +288,7 @@ class _CalendarDayCell extends StatelessWidget {
           ),
           TextButton(
             onPressed: () => Navigator.pop(c),
-            child: Text("CLOSE", style: LabStyles.mono(context, color: Colors.grey)),
+            child: Text(tr(lang, "CLOSE"), style: LabStyles.mono(context, color: Colors.grey)),
           ),
         ],
       ),

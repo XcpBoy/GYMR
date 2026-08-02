@@ -17,6 +17,7 @@ import 'complex_metadata_screen.dart';
 import 'exercise_history_screen.dart';
 import 'edit_exercise_screen.dart';
 import 'wb_shared/wb_shared_widgets.dart';
+import '../localization/strings.dart';
 
 // ─── MUTABLE WB EDITOR STATE ───────────────────────────────────────
 // Self-contained: KNS, UTILS, batches — all in memory, no real DB.
@@ -1148,6 +1149,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
     final bw = ref.watch(bodyWeightAtDateProvider(widget.date)).value ?? 0.0;
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
+    final lang = ref.watch(languageProvider).value ?? 'en';
 
     return Stack(children: [
       SingleChildScrollView(
@@ -1635,7 +1637,8 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
           right: 24,
           child: FloatingActionButton(
               backgroundColor: LabColors.primary,
-              onPressed: () => _showExercisePicker(context, ref, widget.date),
+              onPressed: () =>
+                  _showExercisePicker(context, ref, widget.date, lang),
               child: const Icon(Icons.add, color: Colors.black, size: 32))),
     ]);
   }
@@ -1829,8 +1832,8 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
   }
 
   // ─── WORKOUT OPTS ─────────────────────────────────────────────
-  void _showWorkoutOptsSheet(
-      BuildContext context, WidgetRef ref, List<drift.TypedResult> results) {
+  void _showWorkoutOptsSheet(BuildContext context, WidgetRef ref,
+      List<drift.TypedResult> results, String lang) {
     showModalBottomSheet(
       context: context,
       backgroundColor: LabColors.background,
@@ -1839,11 +1842,11 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
         results: results,
         onMakeBlueprint: () {
           Navigator.pop(ctx);
-          _createBlueprintFromCurrentDay(context, ref, results);
+          _createBlueprintFromCurrentDay(context, ref, results, lang);
         },
         onDeleteAll: () {
           Navigator.pop(ctx);
-          _deleteAllSets(context, ref, results);
+          _deleteAllSets(context, ref, results, lang);
         },
       ),
     );
@@ -1877,7 +1880,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
   }
 
   void _showExercisePicker(
-      BuildContext context, WidgetRef ref, DateTime date) async {
+      BuildContext context, WidgetRef ref, DateTime date, String lang) async {
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
     final copyColor = tC.getColor(
@@ -1900,7 +1903,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                       .copyWith(fontSize: 18, letterSpacing: 2)),
               const SizedBox(height: 24),
               LabButton(
-                  label: 'Individual Movement',
+                  label: tr(lang, 'Individual Movement'),
                   color: LabColors.tertiary,
                   onPressed: () async {
                     Navigator.pop(context);
@@ -1918,14 +1921,16 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                   }),
               const SizedBox(height: 12),
               LabButton(
-                  label: 'Copy From Specific Day',
+                  label: tr(lang, 'Copy From Specific Day'),
                   color: copyColor,
-                  onPressed: () => _copyFromSpecificDay(context, ref, date)),
+                  onPressed: () =>
+                      _copyFromSpecificDay(context, ref, date, lang)),
             ])));
   }
 
   Future<void> _copyFromSpecificDay(
-      BuildContext context, WidgetRef ref, DateTime targetDate) async {
+      BuildContext context, WidgetRef ref, DateTime targetDate,
+      String lang) async {
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: targetDate.subtract(const Duration(days: 1)),
@@ -1966,8 +1971,8 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
         .get();
 
     if (sourceRows.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("NO_DATA_FOUND_FOR_SELECTED_DATE")));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(tr(lang, "NO_DATA_FOUND_FOR_SELECTED_DATE"))));
       return;
     }
 
@@ -1983,13 +1988,14 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
           .copyFromSpecificDay(groupedRows);
       ref.read(knsVersionProvider.notifier).state++;
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("SESSION_CLONED_SUCCESSFULLY")));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(tr(lang, "SESSION_CLONED_SUCCESSFULLY"))));
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("COPY_FROM_SPECIFIC_DAY_FAILED: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('${tr(lang, "COPY_FROM_SPECIFIC_DAY_FAILED")}: $e')));
       }
     }
   }
@@ -2000,8 +2006,8 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
     ref.read(knsVersionProvider.notifier).state++;
   }
 
-  void _deleteAllSets(
-      BuildContext context, WidgetRef ref, List<drift.TypedResult> results) {
+  void _deleteAllSets(BuildContext context, WidgetRef ref,
+      List<drift.TypedResult> results, String lang) {
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
@@ -2009,12 +2015,12 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
         title: Text('CRITICAL_PURGE',
             style: LabStyles.mono(context,
                 color: Colors.redAccent, fontWeight: FontWeight.bold)),
-        content: Text('DELETE ALL LOGGED SETS FOR THIS SESSION?',
+        content: Text(tr(lang, 'DELETE ALL LOGGED SETS FOR THIS SESSION?'),
             style: LabStyles.mono(context, fontSize: 12)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c),
-              child: Text('ABORT', style: LabStyles.mono(context))),
+              child: Text(tr(lang, 'ABORT'), style: LabStyles.mono(context))),
           TextButton(
             onPressed: () async {
               final db = ref.read(databaseProvider);
@@ -2024,7 +2030,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                   .go();
               if (context.mounted) Navigator.pop(c);
             },
-            child: Text('PURGE_ALL',
+            child: Text(tr(lang, 'PURGE_ALL'),
                 style: LabStyles.mono(context, color: Colors.redAccent)),
           )
         ],
@@ -2033,7 +2039,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
   }
 
   void _createBlueprintFromCurrentDay(BuildContext context, WidgetRef ref,
-      List<drift.TypedResult> results) async {
+      List<drift.TypedResult> results, String lang) async {
     final nameC = TextEditingController();
     final db = ref.read(databaseProvider);
 
@@ -2059,11 +2065,11 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
           content: LabTextField(
               controller: nameC,
               label: 'BLUEPRINT_NAME',
-              placeholder: 'NAME_YOUR_TEMPLATE...'),
+              placeholder: tr(lang, 'NAME_YOUR_TEMPLATE...')),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(c),
-                child: Text('ABORT', style: LabStyles.mono(context))),
+                child: Text(tr(lang, 'ABORT'), style: LabStyles.mono(context))),
             TextButton(
               onPressed: () async {
                 if (nameC.text.isEmpty) return;
@@ -2087,11 +2093,12 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                 }
                 if (context.mounted) {
                   Navigator.pop(c);
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text('BLUEPRINT_CREATED_SUCCESSFULLY')));
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content:
+                          Text(tr(lang, 'BLUEPRINT_CREATED_SUCCESSFULLY'))));
                 }
               },
-              child: Text('GENERATE',
+              child: Text(tr(lang, 'GENERATE'),
                   style: LabStyles.mono(context, color: LabColors.accent)),
             )
           ],
@@ -2174,6 +2181,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final e = widget.exercise;
     final intentionText = e.intention ?? '';
     final metaMatch =
@@ -2336,7 +2344,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                     // Exercise name + tags — the expand/collapse area
                     GestureDetector(
                       onTap: () => setState(() => _isExpanded = !_isExpanded),
-                      onLongPress: () => _showComplexModsModal(context),
+                      onLongPress: () => _showComplexModsModal(context, lang),
                       child: Container(
                         color: Colors.transparent,
                         child: Column(
@@ -2479,7 +2487,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                   children: [
                     Expanded(
                         child: LabButton(
-                            label: 'Add Set',
+                            label: tr(lang, 'Add Set'),
                             onPressed: () => _addNewSet(context),
                             isOutlined: true,
                             color: Colors.white)),
@@ -2493,7 +2501,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     );
   }
 
-  void _showComplexModsModal(BuildContext context) {
+  void _showComplexModsModal(BuildContext context, String lang) {
     final bool isLinked = widget.results.first
             .readTable(ref.read(databaseProvider).workoutSets)
             .supersetGroupId !=
@@ -2517,20 +2525,22 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
               crossAxisSpacing: 12,
               children: [
                 _buildModCard(context, 'SUPERSET', Icons.link,
-                    LabColors.primary, () => _handleCreateSuperset(context)),
+                    LabColors.primary,
+                    () => _handleCreateSuperset(context, lang)),
                 if (isLinked)
                   _buildModCard(context, 'BREAK_LINK', Icons.link_off,
-                      Colors.orangeAccent, () => _handleBreakSuperset(context)),
-                _buildModCard(context, 'EDIT MOVEMENT', Icons.settings,
+                      Colors.orangeAccent,
+                      () => _handleBreakSuperset(context, lang)),
+                _buildModCard(context, tr(lang, 'EDIT MOVEMENT'), Icons.settings,
                     LabColors.accent, () => _navigateToEdit(context)),
-                _buildModCard(context, 'PURGE', Icons.delete_forever,
-                    Colors.redAccent, () => _confirmPurge(context)),
-                _buildModCard(context, 'MOVE TO TOP', Icons.arrow_upward,
+                _buildModCard(context, tr(lang, 'PURGE'), Icons.delete_forever,
+                    Colors.redAccent, () => _confirmPurge(context, lang)),
+                _buildModCard(context, tr(lang, 'MOVE TO TOP'), Icons.arrow_upward,
                     Colors.white, () => _moveExerciseToExtreme(true)),
-                _buildModCard(context, 'MOVE TO BOTTOM', Icons.arrow_downward,
+                _buildModCard(context, tr(lang, 'MOVE TO BOTTOM'), Icons.arrow_downward,
                     Colors.white, () => _moveExerciseToExtreme(false)),
                 _buildModCard(context, 'ASSIGN BATCH', Icons.folder,
-                    Colors.tealAccent, () => _showBatchPopup(context)),
+                    Colors.tealAccent, () => _showBatchPopup(context, lang)),
               ],
             ),
             const SizedBox(height: 24),
@@ -2586,7 +2596,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     });
   }
 
-  Future<void> _showBatchPopup(BuildContext context) async {
+  Future<void> _showBatchPopup(BuildContext context, String lang) async {
     final db = ref.read(databaseProvider);
     // Ensure table exists (safety net for hot reloads)
     await db.customStatement('''
@@ -2677,7 +2687,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                                   ),
                                   GestureDetector(
                                     onTap: () async {
-                                      await _renameBatch(db, name, c);
+                                      await _renameBatch(db, name, c, lang);
                                     },
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
@@ -2688,7 +2698,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                                   ),
                                   GestureDetector(
                                     onTap: () async {
-                                      await _deleteBatch(db, name, c);
+                                      await _deleteBatch(db, name, c, lang);
                                     },
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
@@ -2707,7 +2717,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                 SizedBox(
                   width: double.infinity,
                   child: LabButton(
-                    label: 'ASSIGN',
+                    label: tr(lang, 'ASSIGN'),
                     color: Colors.tealAccent,
                     onPressed: () async {
                       final name = nameC.text.trim();
@@ -2783,8 +2793,8 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     if (context.mounted) ref.invalidate(allBatchNamesProvider);
   }
 
-  Future<void> _renameBatch(
-      AppDatabase db, String oldName, BuildContext dialogContext) async {
+  Future<void> _renameBatch(AppDatabase db, String oldName,
+      BuildContext dialogContext, String lang) async {
     final newNameC = TextEditingController(text: oldName);
     final result = await showDialog<String>(
       context: dialogContext,
@@ -2805,12 +2815,12 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(c2, null),
-            child: Text('CANCEL', style: TextStyle(color: Colors.grey)),
+            child: Text(tr(lang, 'CANCEL'), style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
             onPressed: () =>
                 Navigator.pop(c2, newNameC.text.trim().toUpperCase()),
-            child: Text('RENAME', style: TextStyle(color: Colors.amber)),
+            child: Text(tr(lang, 'RENAME'), style: TextStyle(color: Colors.amber)),
           ),
         ],
       ),
@@ -2844,8 +2854,8 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     if (context.mounted) ref.invalidate(allBatchNamesProvider);
   }
 
-  Future<void> _deleteBatch(
-      AppDatabase db, String batchName, BuildContext dialogContext) async {
+  Future<void> _deleteBatch(AppDatabase db, String batchName,
+      BuildContext dialogContext, String lang) async {
     final confirmed = await showDialog<bool>(
       context: dialogContext,
       builder: (c2) => AlertDialog(
@@ -2853,16 +2863,16 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
         title: Text('DELETE_BATCH',
             style: LabStyles.headline(c2).copyWith(fontSize: 14)),
         content: Text(
-            'Delete batch "${batchName.toUpperCase()}"?\nThis will remove it from all sets.',
+            '${tr(lang, 'Delete batch')} "${batchName.toUpperCase()}"?\n${tr(lang, 'This will remove it from all sets.')}',
             style: LabStyles.mono(c2, fontSize: 11, color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(c2, false),
-            child: Text('CANCEL', style: TextStyle(color: Colors.grey)),
+            child: Text(tr(lang, 'CANCEL'), style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(c2, true),
-            child: Text('DELETE', style: TextStyle(color: Colors.redAccent)),
+            child: Text(tr(lang, 'DELETE'), style: TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
@@ -2923,7 +2933,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
             builder: (c) => EditExerciseScreen(exercise: widget.exercise)));
   }
 
-  void _handleBreakSuperset(BuildContext context) async {
+  void _handleBreakSuperset(BuildContext context, String lang) async {
     final db = ref.read(databaseProvider);
     final firstSet = widget.results.first.readTable(db.workoutSets);
     final gId = firstSet.supersetGroupId;
@@ -2936,11 +2946,11 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
             supersetName: drift.Value(null)));
 
     if (context.mounted)
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("SUPERSET_DISSOLVED")));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr(lang, "SUPERSET_DISSOLVED"))));
   }
 
-  void _handleCreateSuperset(BuildContext context) async {
+  void _handleCreateSuperset(BuildContext context, String lang) async {
     final db = ref.read(databaseProvider);
     final start =
         DateTime(widget.date.year, widget.date.month, widget.date.day);
@@ -2991,7 +3001,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                   label: 'SUPERSET_NAME',
                   placeholder: 'e.g. AGONIST_STATIC'),
               const SizedBox(height: 16),
-              Text('SELECT MOVEMENTS TO LINK:',
+              Text(tr(lang, 'SELECT MOVEMENTS TO LINK:'),
                   style:
                       LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
               const SizedBox(height: 8),
@@ -3013,7 +3023,8 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                           style: LabStyles.mono(context, fontSize: 10)),
                       value: selectedIds.contains(ex.id),
                       subtitle: isLinked
-                          ? Text('ALREADY LINKED: ${firstS.supersetName}',
+                          ? Text(
+                              '${tr(lang, 'ALREADY LINKED')}: ${firstS.supersetName}',
                               style: LabStyles.mono(context,
                                   fontSize: 7, color: Colors.orangeAccent))
                           : null,
@@ -3433,7 +3444,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     }
   }
 
-  void _confirmPurge(BuildContext c) {
+  void _confirmPurge(BuildContext c, String lang) {
     showDialog(
         context: c,
         builder: (c) => AlertDialog(
@@ -3441,12 +3452,12 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                 title: Text('PURGE_MODULE',
                     style: LabStyles.mono(context,
                         color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                content: Text('DELETE ALL SETS?',
+                content: Text(tr(lang, 'DELETE ALL SETS?'),
                     style: LabStyles.mono(context, fontSize: 12)),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(c),
-                      child: Text('ABORT', style: LabStyles.mono(context))),
+                      child: Text(tr(lang, 'ABORT'), style: LabStyles.mono(context))),
                   TextButton(
                       onPressed: () {
                         final kId = ref
@@ -3469,13 +3480,14 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                         ref.read(knsVersionProvider.notifier).state++;
                         if (context.mounted) Navigator.pop(c);
                       },
-                      child: Text('PURGE',
+                      child: Text(tr(lang, 'PURGE'),
                           style:
                               LabStyles.mono(context, color: Colors.redAccent)))
                 ]));
   }
 
   Future<void> _copyPreviousWorkoutData() async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     final today =
         DateTime(widget.date.year, widget.date.month, widget.date.day);
@@ -3496,8 +3508,8 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
 
     if (previousSessionRows.isEmpty) {
       if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("NO_PREVIOUS_SESSION_FOUND")));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(tr(lang, "NO_PREVIOUS_SESSION_FOUND"))));
       return;
     }
 
@@ -3527,8 +3539,8 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     });
 
     if (mounted)
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("PREVIOUS_DATA_COPIED")));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr(lang, "PREVIOUS_DATA_COPIED"))));
   }
 }
 
@@ -3698,7 +3710,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     });
   }
 
-  void _showComplexSetModsModal(BuildContext context) {
+  void _showComplexSetModsModal(BuildContext context, String lang) {
     showModalBottomSheet(
       context: context,
       backgroundColor: LabColors.background,
@@ -3715,7 +3727,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
 
               // --- ACTION SECTION ---
               _buildModCard(context, 'PURGE_SET', Icons.delete_forever,
-                  Colors.redAccent, () => _confirmDel(context)),
+                  Colors.redAccent, () => _confirmDel(context, lang)),
               const SizedBox(height: 24),
             ],
           ),
@@ -3811,6 +3823,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final intentionText = widget.exercise.intention ?? '';
     final metaMatch =
         RegExp(r'\[NT:(.*)\|ISO:(.*)\]').firstMatch(intentionText);
@@ -4038,12 +4051,13 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   }
 
   Widget _buildModsTrigger({required int flex}) {
+    final lang = ref.read(languageProvider).value ?? 'en';
     return Expanded(
       flex: flex,
       child: Material(
         color: LabColors.surfaceContainerHigh,
         child: InkWell(
-          onTap: () => _showComplexSetModsModal(context),
+          onTap: () => _showComplexSetModsModal(context, lang),
           child: Container(
             alignment: Alignment.center,
             decoration: BoxDecoration(
@@ -4385,7 +4399,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
             ]))));
   }
 
-  void _confirmDel(BuildContext c) {
+  void _confirmDel(BuildContext c, String lang) {
     showDialog(
         context: c,
         builder: (c) => AlertDialog(
@@ -4395,14 +4409,14 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(c),
-                      child: const Text('ABORT')),
+                      child: Text(tr(lang, 'ABORT'))),
                   TextButton(
                       onPressed: () {
                         final notifier = ref.read(wbEditorProvider.notifier);
                         notifier.removeSet(widget.knsId, widget.set.id);
                         Navigator.pop(c);
                       },
-                      child: const Text('PURGE'))
+                      child: Text(tr(lang, 'PURGE')))
                 ]));
   }
 
@@ -4473,6 +4487,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   }
 
   Widget _buildSomaticCard() {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     // Memoized so unrelated rebuilds don't re-run the query; invalidated
     // (set back to null) wherever somatic_logs is mutated below.
@@ -4529,7 +4544,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                                           color: Colors.redAccent,
                                           fontWeight: FontWeight.bold),
                                       overflow: TextOverflow.ellipsis)),
-                              Text('EDIT',
+                              Text(tr(lang, 'EDIT'),
                                   style: LabStyles.mono(context,
                                       fontSize: 7,
                                       color: Colors.white70,
@@ -4577,7 +4592,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                                           color: Colors.greenAccent,
                                           fontWeight: FontWeight.bold),
                                       overflow: TextOverflow.ellipsis)),
-                              Text('EDIT',
+                              Text(tr(lang, 'EDIT'),
                                   style: LabStyles.mono(context,
                                       fontSize: 7,
                                       color: Colors.white70,
@@ -4593,6 +4608,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   }
 
   void _showDiscomfortOverlay(BuildContext context, bool isRecovery) {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     final dC = TextEditingController();
     final tC = TextEditingController();
@@ -4628,7 +4644,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           Expanded(
                             child: Text(
                               editingLogId != null
-                                  ? 'EDIT'
+                                  ? tr(lang, 'EDIT')
                                   : (isRecovery
                                       ? 'SOMATIC_RECOVERY_REGISTRATION'
                                       : 'SOMATIC_ANOMALY_REGISTRATION'),
@@ -4745,13 +4761,13 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                         children: [
                           Expanded(
                               child: LabTextField(
-                                  controller: dC, label: 'DESCRIPTION')),
+                                  controller: dC, label: tr(lang, 'DESCRIPTION'))),
                           const SizedBox(width: 8),
                           SizedBox(
                             width: 48,
                             height: 42,
                             child: QuickActionButton(
-                              label: "SEARCH",
+                              label: tr(lang, "SEARCH"),
                               icon: Icons.search,
                               color: LabColors.accent,
                               onTap: () async {
@@ -4793,7 +4809,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                             width: 48,
                             height: 42,
                             child: QuickActionButton(
-                              label: "SEARCH",
+                              label: tr(lang, "SEARCH"),
                               icon: Icons.tag,
                               color: Colors.purpleAccent,
                               onTap: () async {
@@ -4906,8 +4922,8 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                               return Center(
                                   child: Text(
                                       isRecovery
-                                          ? "NO_RECOVERY_LOGS_YET"
-                                          : "NO_ANOMALIES_REGISTERED_YET",
+                                          ? tr(lang, "NO_RECOVERY_LOGS_YET")
+                                          : tr(lang, "NO_ANOMALIES_REGISTERED_YET"),
                                       style: LabStyles.mono(context,
                                           fontSize: 8,
                                           color: Colors.grey[800]!)));
@@ -5067,7 +5083,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           }),
                       const SizedBox(height: 8),
                       LabButton(
-                          label: 'CLOSE',
+                          label: tr(lang, 'CLOSE'),
                           isOutlined: true,
                           color: Colors.grey,
                           onPressed: () => Navigator.pop(context)),
@@ -5209,17 +5225,18 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     // -- Define slices here -------------------------------------------
     // Add / remove / reorder slices freely. Each slice is modular.
     final slices = <WorkoutOptsSlice>[
       WorkoutOptsSlice(
-        label: 'MAKE BLUEPRINT\nFROM CURRENT',
+        label: tr(lang, 'MAKE BLUEPRINT\nFROM CURRENT'),
         icon: Icons.layers,
         color: _tc('UI_TAG_WO_BLUEPRINT', 'WO_BLUEPRINT'),
         onTap: widget.onMakeBlueprint,
       ),
       WorkoutOptsSlice(
-        label: 'DELETE\nALL SETS',
+        label: tr(lang, 'DELETE\nALL SETS'),
         icon: Icons.delete_forever,
         color: _tc('UI_TAG_WO_PURGE', 'WO_PURGE'),
         onTap: widget.onDeleteAll,
@@ -5339,6 +5356,7 @@ class _SetIntentPickerState extends ConsumerState<_SetIntentPicker> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final intentsAsync = ref.watch(setIntentionsProvider);
     return intentsAsync.when(
       data: (intents) {
@@ -5382,7 +5400,7 @@ class _SetIntentPickerState extends ConsumerState<_SetIntentPicker> {
               const SizedBox(height: 16),
               // Create new intent button
               LabButton(
-                label: _showCreateForm ? 'CANCEL' : '+ CREATE INTENT',
+                label: _showCreateForm ? tr(lang, 'CANCEL') : '+ CREATE INTENT',
                 color: _intentActionColor(context),
                 isOutlined: true,
                 onPressed: () =>
@@ -5418,7 +5436,7 @@ class _SetIntentPickerState extends ConsumerState<_SetIntentPicker> {
                 ),
                 const SizedBox(height: 12),
                 LabButton(
-                  label: 'SAVE',
+                  label: tr(lang, 'SAVE'),
                   color: LabColors.primary,
                   onPressed: () async {
                     final name = _nameC.text.trim().toUpperCase();
@@ -5500,7 +5518,7 @@ class _SetIntentPickerState extends ConsumerState<_SetIntentPicker> {
                                       decoration: BoxDecoration(
                                           color:
                                               chipColor.withValues(alpha: 0.2)),
-                                      child: Text('SELECTED',
+                                      child: Text(tr(lang, 'SELECTED'),
                                           style: LabStyles.mono(context,
                                               fontSize: 7,
                                               color: chipColor,
@@ -5550,7 +5568,7 @@ class _SetIntentPickerState extends ConsumerState<_SetIntentPicker> {
                                             TextButton(
                                                 onPressed: () =>
                                                     Navigator.pop(c2),
-                                                child: Text('CANCEL',
+                                                child: Text(tr(lang, 'CANCEL'),
                                                     style: TextStyle(
                                                         color: Colors.grey))),
                                             TextButton(
@@ -5580,7 +5598,7 @@ class _SetIntentPickerState extends ConsumerState<_SetIntentPicker> {
                                                   if (c2.mounted)
                                                     Navigator.pop(c2);
                                                 },
-                                                child: Text('SAVE',
+                                                child: Text(tr(lang, 'SAVE'),
                                                     style: TextStyle(
                                                         color: Colors.amber))),
                                             TextButton(
@@ -5594,7 +5612,7 @@ class _SetIntentPickerState extends ConsumerState<_SetIntentPicker> {
                                                   if (c2.mounted)
                                                     Navigator.pop(c2);
                                                 },
-                                                child: Text('DELETE',
+                                                child: Text(tr(lang, 'DELETE'),
                                                     style: TextStyle(
                                                         color:
                                                             Colors.redAccent))),

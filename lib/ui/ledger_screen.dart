@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' as drift;
 import '../providers/database_provider.dart';
 import '../database/database.dart';
+import '../localization/strings.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
@@ -157,6 +158,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
   @override
   Widget build(BuildContext context) {
     final exercisesAsync = ref.watch(allExercisesProvider);
+    final lang = ref.watch(languageProvider).value ?? 'en';
 
     return MainScaffold(
       title: 'KINISI INVENTORY',
@@ -165,7 +167,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-            child: _buildFilters(context),
+            child: _buildFilters(context, lang),
           ),
           const SizedBox(height: 8),
           TabBar(
@@ -174,9 +176,9 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
             labelColor: LabColors.accent,
             unselectedLabelColor: Colors.grey[500],
             labelStyle: LabStyles.mono(context, fontSize: 11, fontWeight: FontWeight.bold),
-            tabs: const [
-              Tab(text: 'FOLDERS'),
-              Tab(text: 'LIST'),
+            tabs: [
+              Tab(text: tr(lang, 'FOLDERS')),
+              Tab(text: tr(lang, 'LIST')),
             ],
           ),
           const SizedBox(height: 10),
@@ -200,15 +202,15 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
                     return TabBarView(
                       controller: _tabController,
                       children: [
-                        _buildFoldersTab(context, exercises, filtered, favorites, usage, unusedCount),
-                        _buildListTab(context, exercises, filtered, usage, unusedCount, favorites.length),
+                        _buildFoldersTab(context, exercises, filtered, favorites, usage, unusedCount, lang),
+                        _buildListTab(context, exercises, filtered, usage, unusedCount, favorites.length, lang),
                       ],
                     );
                   },
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator(color: LabColors.primary)),
-              error: (e, s) => Center(child: Text('ERROR: $e', style: LabStyles.mono(context, color: Colors.redAccent))),
+              error: (e, s) => Center(child: Text('${tr(lang, 'ERROR:')} $e', style: LabStyles.mono(context, color: Colors.redAccent))),
             ),
           ),
         ],
@@ -230,14 +232,15 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
     List<BaseExercise> favorites,
     Map<int, _UsageInfo> usage,
     int unusedCount,
+    String lang,
   ) {
     if (filtered.isEmpty) {
       return ListView(
         padding: const EdgeInsets.only(left: 16, right: 16, top: 40),
         children: [
-          _buildStatsHeader(context, exercises.length, unusedCount, favorites.length),
+          _buildStatsHeader(context, exercises.length, unusedCount, favorites.length, lang),
           const SizedBox(height: 40),
-          _buildEmptyState(),
+          _buildEmptyState(lang),
         ],
       );
     }
@@ -254,7 +257,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
     return ListView(
       padding: const EdgeInsets.only(left: 16, right: 16, bottom: 100),
       children: [
-        _buildStatsHeader(context, exercises.length, unusedCount, favorites.length),
+        _buildStatsHeader(context, exercises.length, unusedCount, favorites.length, lang),
         const SizedBox(height: 12),
         if (favorites.isNotEmpty) ...[
           _FavoritesSection(
@@ -262,6 +265,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
             usage: usage,
             onToggleFavorite: _toggleFavorite,
             onDataChanged: _refreshUsage,
+            lang: lang,
           ),
           const SizedBox(height: 16),
         ],
@@ -286,6 +290,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
     Map<int, _UsageInfo> usage,
     int unusedCount,
     int favCount,
+    String lang,
   ) {
     final sortedList = _sortedBy(filtered, usage, _listSortMode);
 
@@ -295,15 +300,15 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Row(
             children: [
-              Expanded(child: _buildStatsHeader(context, exercises.length, unusedCount, favCount)),
-              _buildSortPicker(context),
+              Expanded(child: _buildStatsHeader(context, exercises.length, unusedCount, favCount, lang)),
+              _buildSortPicker(context, lang),
             ],
           ),
         ),
         const Divider(height: 1, color: LabColors.cyanBorder, thickness: 0.2),
         Expanded(
           child: sortedList.isEmpty
-              ? _buildEmptyState()
+              ? _buildEmptyState(lang)
               : ListView.builder(
                   padding: const EdgeInsets.only(left: 16, right: 16, top: 14, bottom: 100),
                   itemCount: sortedList.length,
@@ -324,7 +329,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildSortPicker(BuildContext context) {
+  Widget _buildSortPicker(BuildContext context, String lang) {
     return PopupMenuButton<_SortMode>(
       color: LabColors.surfaceContainerHigh,
       initialValue: _listSortMode,
@@ -332,7 +337,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
       itemBuilder: (context) => _SortMode.values
           .map((m) => PopupMenuItem(
                 value: m,
-                child: Text(m.label, style: LabStyles.mono(context, fontSize: 11)),
+                child: Text(tr(lang, m.label), style: LabStyles.mono(context, fontSize: 11)),
               ))
           .toList(),
       child: Container(
@@ -344,20 +349,20 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.sort, size: 13, color: Colors.grey[400]),
           const SizedBox(width: 4),
-          Text(_listSortMode.label, style: LabStyles.mono(context, fontSize: 8, color: Colors.white70)),
+          Text(tr(lang, _listSortMode.label), style: LabStyles.mono(context, fontSize: 8, color: Colors.white70)),
         ]),
       ),
     );
   }
 
-  Widget _buildStatsHeader(BuildContext context, int total, int unused, int favCount) {
+  Widget _buildStatsHeader(BuildContext context, int total, int unused, int favCount, String lang) {
     return Row(
       children: [
-        _statChip(context, '$total', 'MOVEMENTS'),
+        _statChip(context, '$total', tr(lang, 'MOVEMENTS')),
         const SizedBox(width: 16),
-        _statChip(context, '$unused', 'UNUSED'),
+        _statChip(context, '$unused', tr(lang, 'UNUSED')),
         const SizedBox(width: 16),
-        _statChip(context, '$favCount', 'FAVORITES'),
+        _statChip(context, '$favCount', tr(lang, 'FAVORITES')),
       ],
     );
   }
@@ -374,7 +379,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(String lang) {
     return Center(child: Text("NO_MOVEMENTS_FOUND", style: LabStyles.mono(context, color: Colors.grey)));
   }
 
@@ -395,7 +400,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
     ].any((value) => (value ?? '').toLowerCase().contains(q));
   }
 
-  Widget _buildFilters(BuildContext context) {
+  Widget _buildFilters(BuildContext context, String lang) {
     return SizedBox(
       height: 44,
       child: TextField(
@@ -434,11 +439,15 @@ class _FavoritesSection extends StatefulWidget {
   final Map<int, _UsageInfo> usage;
   final Future<void> Function(BaseExercise) onToggleFavorite;
   final VoidCallback onDataChanged;
+  // Optional: this widget has no ref access, so the caller (which does)
+  // threads the current lang through. Defaults to 'en' for other call sites.
+  final String lang;
   const _FavoritesSection({
     required this.favorites,
     required this.usage,
     required this.onToggleFavorite,
     required this.onDataChanged,
+    this.lang = 'en',
   });
   @override State<_FavoritesSection> createState() => _FavoritesSectionState();
 }
@@ -461,7 +470,7 @@ class _FavoritesSectionState extends State<_FavoritesSection> {
               child: Row(children: [
                 Icon(Icons.star, size: 14, color: LabColors.accent),
                 const SizedBox(width: 8),
-                Text('FAVORITES (${widget.favorites.length})',
+                Text('${tr(widget.lang, 'FAVORITES')} (${widget.favorites.length})',
                     style: LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold, color: LabColors.accent)),
                 const Spacer(),
                 Icon(_isExpanded ? Icons.expand_less : Icons.expand_more, size: 16, color: LabColors.accent),
@@ -625,6 +634,7 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final e = widget.exercise;
     final pattern = (e.patternType ?? '').toUpperCase();
 
@@ -703,7 +713,7 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
                 IconButton(
                   icon: Icon(widget.isFavorite ? Icons.star : Icons.star_border,
                       color: widget.isFavorite ? LabColors.accent : Colors.grey, size: 16),
-                  tooltip: 'FAVORITE',
+                  tooltip: tr(lang, 'FAVORITE'),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   onPressed: widget.onToggleFavorite,
@@ -729,7 +739,7 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
                   tooltip: 'EXTRA_KNS_ACTIONS',
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
-                  onPressed: () => _showExtraActions(context),
+                  onPressed: () => _showExtraActions(context, lang),
                 ),
               ],
             ),
@@ -764,7 +774,7 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
     );
   }
 
-  void _showExtraActions(BuildContext context) {
+  void _showExtraActions(BuildContext context, String lang) {
     showModalBottomSheet(
       context: context,
       backgroundColor: LabColors.background,
@@ -783,12 +793,12 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
             const SizedBox(height: 8),
             _buildActionTile(context, Icons.cleaning_services, 'PURGE_HISTORY', Colors.orangeAccent, () {
               Navigator.pop(c);
-              _confirmPurgeHistory(context);
+              _confirmPurgeHistory(context, lang);
             }),
             const SizedBox(height: 8),
             _buildActionTile(context, Icons.delete_forever, 'DELETE_KNS', Colors.redAccent, () {
               Navigator.pop(c);
-              _confirmDelete(context);
+              _confirmDelete(context, lang);
             }),
             const SizedBox(height: 16),
           ],
@@ -817,7 +827,7 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
     );
   }
 
-  void _confirmPurgeHistory(BuildContext context) {
+  void _confirmPurgeHistory(BuildContext context, String lang) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -825,7 +835,7 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
         title: Text('RESET_PERFORMANCE_HISTORY', style: LabStyles.mono(context, color: Colors.amber)),
         content: Text('DELETING_ALL_SETS_LOGS_FOR_THIS_MOVEMENT_ONLY. METADATA_WILL_REMAIN.', style: LabStyles.mono(context, fontSize: 10)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('CANCEL', style: LabStyles.mono(context))),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(context))),
           TextButton(
             onPressed: () async {
               final db = ref.read(databaseProvider);
@@ -843,7 +853,7 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
     );
   }
 
-  void _confirmDelete(BuildContext context) {
+  void _confirmDelete(BuildContext context, String lang) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -851,7 +861,7 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
         title: Text('DELETE_KNS', style: LabStyles.mono(context, color: Colors.redAccent)),
         content: Text('THIS_WILL_DELETE_THE_KNS_AND_ALL_ITS_DATA._THIS_CANNOT_BE_UNDONE.', style: LabStyles.mono(context, fontSize: 10)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('CANCEL', style: LabStyles.mono(context))),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(context))),
           TextButton(
             onPressed: () async {
               final db = ref.read(databaseProvider);

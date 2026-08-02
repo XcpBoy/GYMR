@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+import '../localization/strings.dart';
 import '../providers/database_provider.dart';
 import '../services/export_service.dart';
 import '../providers/theme_provider.dart';
@@ -651,6 +652,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
   }
 
   Future<void> _importDatabaseOverride(String targetFileName) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
@@ -658,15 +660,17 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
         title: Text("CRITICAL_OVERWRITE",
             style: LabStyles.mono(context, color: Colors.redAccent)),
         content: Text(
-            "THIS WILL OVERWRITE '$targetFileName' AND REQUIRE AN IMMEDIATE APP RESTART. PROCEED?",
+            tr(lang,
+                    "THIS WILL OVERWRITE '{name}' AND REQUIRE AN IMMEDIATE APP RESTART. PROCEED?")
+                .replaceFirst('{name}', targetFileName),
             style: LabStyles.mono(context, fontSize: 10)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: Text("ABORT", style: LabStyles.mono(context))),
+              child: Text(tr(lang, "ABORT"), style: LabStyles.mono(context))),
           TextButton(
               onPressed: () => Navigator.pop(c, true),
-              child: Text("PROCEED",
+              child: Text(tr(lang, "PROCEED"),
                   style: LabStyles.mono(context, color: Colors.redAccent))),
         ],
       ),
@@ -691,12 +695,15 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
               title: Text("IMPORT_COMPLETE",
                   style: LabStyles.mono(context, color: LabColors.primary)),
               content: Text(
-                  "DATABASE '$targetFileName' HAS BEEN REPLACED SUCCESSFULLY. PLEASE RESTART THE APP MANUALLY NOW TO LOAD NEW DATA.",
+                  tr(lang,
+                          "DATABASE '{name}' HAS BEEN REPLACED SUCCESSFULLY. PLEASE RESTART THE APP MANUALLY NOW TO LOAD NEW DATA.")
+                      .replaceFirst('{name}', targetFileName),
                   style: LabStyles.mono(context, fontSize: 10)),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(c),
-                    child: Text("UNDERSTOOD", style: LabStyles.mono(context))),
+                    child: Text(tr(lang, "UNDERSTOOD"),
+                        style: LabStyles.mono(context))),
               ],
             ),
           );
@@ -816,6 +823,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
   }
 
   Widget _buildSynthesisSection(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     return Container(
       color: Colors.black,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -834,8 +842,8 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
             const SizedBox(height: 24),
             _buildSynthesisCard(
                 title: "RENDER_WORKOUT_PDF",
-                description:
-                    "Compiles training blocks into a technical diagnostic document.",
+                description: tr(lang,
+                    "Compiles training blocks into a technical diagnostic document."),
                 icon: Icons.picture_as_pdf,
                 color: LabColors.accent,
                 onShare: () => _exportWorkouts('pdf'),
@@ -844,8 +852,8 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
             const SizedBox(height: 16),
             _buildSynthesisCard(
                 title: "EXPORT_MARKDOWN_REPORT",
-                description:
-                    "Generates a structured .md file replicating the PDF table architecture.",
+                description: tr(lang,
+                    "Generates a structured .md file replicating the PDF table architecture."),
                 icon: Icons.description,
                 color: Colors.orangeAccent,
                 onShare: () => _exportWorkouts('md'),
@@ -854,8 +862,8 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
             const SizedBox(height: 16),
             _buildSynthesisCard(
                 title: "EXPORT_EXCEL_WORKBOOK",
-                description:
-                    "Generates a complete spreadsheet for deep data analysis.",
+                description: tr(lang,
+                    "Generates a complete spreadsheet for deep data analysis."),
                 icon: Icons.table_chart,
                 color: Colors.greenAccent,
                 onShare: () => _exportWorkouts('xlsx'),
@@ -968,6 +976,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       required VoidCallback onShare,
       VoidCallback? onDownload,
       String? format}) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1007,7 +1016,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
                         color: color.withValues(alpha: 0.1),
                         border: Border.all(color: color, width: 0.5)),
                     alignment: Alignment.center,
-                    child: Text('SHARE',
+                    child: Text(tr(lang, 'SHARE'),
                         style: LabStyles.mono(context,
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
@@ -1025,7 +1034,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
                           border: Border.all(
                               color: color.withValues(alpha: 0.5), width: 0.5)),
                       alignment: Alignment.center,
-                      child: Text('DOWNLOAD',
+                      child: Text(tr(lang, 'DOWNLOAD'),
                           style: LabStyles.mono(context,
                               fontSize: 9,
                               fontWeight: FontWeight.bold,
@@ -1045,6 +1054,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       required VoidCallback onShare,
       VoidCallback? onDownload,
       String? format}) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -1082,7 +1092,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
                         color: color.withValues(alpha: 0.1),
                         border: Border.all(color: color, width: 0.5)),
                     alignment: Alignment.center,
-                    child: Text('SHARE',
+                    child: Text(tr(lang, 'SHARE'),
                         style: LabStyles.mono(context,
                             fontSize: 8,
                             fontWeight: FontWeight.bold,
@@ -1100,7 +1110,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
                           border: Border.all(
                               color: color.withValues(alpha: 0.5), width: 0.5)),
                       alignment: Alignment.center,
-                      child: Text('DOWNLOAD',
+                      child: Text(tr(lang, 'DOWNLOAD'),
                           style: LabStyles.mono(context,
                               fontSize: 8,
                               fontWeight: FontWeight.bold,
@@ -1119,6 +1129,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       required Color color,
       required VoidCallback onTap,
       String? format}) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -1156,7 +1167,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
                       color: color.withValues(alpha: 0.1),
                       border: Border.all(color: color, width: 0.5)),
                   alignment: Alignment.center,
-                  child: Text('IMPORT',
+                  child: Text(tr(lang, 'IMPORT'),
                       style: LabStyles.mono(context,
                           fontSize: 8,
                           fontWeight: FontWeight.bold,

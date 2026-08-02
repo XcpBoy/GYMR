@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' as drift;
 
 import '../providers/database_provider.dart';
 import '../database/database.dart';
+import '../localization/strings.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
@@ -149,6 +150,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
   @override
   Widget build(BuildContext context) {
     final db = ref.read(databaseProvider);
+    final lang = ref.watch(languageProvider).value ?? 'en';
 
     return MainScaffold(
       title: 'SOMATIC_SPECTRUM',
@@ -164,9 +166,9 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildFoldersRow(context, db),
+                  _buildFoldersRow(context, db, lang),
                   const SizedBox(height: 16),
-                  _buildLogsSection(context, db, labels),
+                  _buildLogsSection(context, db, labels, lang),
                 ],
               ),
             );
@@ -176,7 +178,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
     );
   }
 
-  Widget _buildFoldersRow(BuildContext context, AppDatabase db) {
+  Widget _buildFoldersRow(BuildContext context, AppDatabase db, String lang) {
     return FutureBuilder<List<drift.QueryRow>>(
       future: db.customSelect('''
         SELECT f.id, f.name, f.created_at,
@@ -195,12 +197,12 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
           children: [
             Row(
               children: [
-                Text('FOLDERS (${folders.length})',
+                Text('${tr(lang, 'FOLDERS')} (${folders.length})',
                     style: LabStyles.mono(context,
                         fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold)),
                 const Spacer(),
                 GestureDetector(
-                  onTap: () => _showCreateFolderDialog(context, db),
+                  onTap: () => _showCreateFolderDialog(context, db, lang),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
@@ -211,7 +213,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
                       children: [
                         Icon(Icons.add, size: 12, color: LabColors.primary),
                         const SizedBox(width: 4),
-                        Text('CREATE',
+                        Text(tr(lang, 'CREATE'),
                             style: LabStyles.mono(context,
                                 fontSize: 8,
                                 color: LabColors.primary,
@@ -251,7 +253,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
                                   builder: (c) =>
                                       _FolderDetailScreen(folderId: id, folderName: name))),
                           onLongPress: () async {
-                            final ok = await _confirmDeleteFolder(context, name);
+                            final ok = await _confirmDeleteFolder(context, name, lang);
                             if (ok) {
                               await _deleteFolder(id);
                               setState(() {});
@@ -276,7 +278,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
                                         fontSize: 10,
                                         fontWeight: FontWeight.bold,
                                         color: Colors.white)),
-                                Text('$count LOGS',
+                                Text('$count ${tr(lang, 'LOGS')}',
                                     style: LabStyles.mono(context,
                                         fontSize: 7, color: Colors.grey[600]!)),
                                 if (count > 0) SpectrumGauge(value: avgInt, width: 100, height: 6, showLabel: false),
@@ -294,7 +296,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
   }
 
   Widget _buildLogsSection(
-      BuildContext context, AppDatabase db, Map<int, String> labels) {
+      BuildContext context, AppDatabase db, Map<int, String> labels, String lang) {
     return FutureBuilder<List<drift.QueryRow>>(
       future: db.customSelect('''
         SELECT sl.id, sl.description, sl.spectrum_value, sl.tags, sl.created_at,
@@ -311,12 +313,12 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildSpectrumOverview(context, allLogs),
+            _buildSpectrumOverview(context, allLogs, lang),
             const SizedBox(height: 16),
-            _buildToolbar(context),
+            _buildToolbar(context, lang),
             if (_selectMode && _selectedLogIds.isNotEmpty) ...[
               const SizedBox(height: 8),
-              _buildSelectionBar(context, db),
+              _buildSelectionBar(context, db, lang),
             ],
             const SizedBox(height: 8),
             _buildFilteredSortedList(context, allLogs, labels),
@@ -326,7 +328,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
     );
   }
 
-  Widget _buildSpectrumOverview(BuildContext context, List<drift.QueryRow> logs) {
+  Widget _buildSpectrumOverview(BuildContext context, List<drift.QueryRow> logs, String lang) {
     final counts = <int, int>{for (var v = -10; v <= 10; v++) v: 0};
     var anomalyCount = 0;
     var recoveryCount = 0;
@@ -371,11 +373,11 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
           const SizedBox(height: 10),
           Row(
             children: [
-              _statChip(context, 'TOTAL', '${logs.length}', Colors.white),
+              _statChip(context, tr(lang, 'TOTAL'), '${logs.length}', Colors.white),
               const SizedBox(width: 20),
-              _statChip(context, 'ANOMALY', '$anomalyCount', Colors.redAccent),
+              _statChip(context, tr(lang, 'ANOMALY'), '$anomalyCount', Colors.redAccent),
               const SizedBox(width: 20),
-              _statChip(context, 'RECOVERY', '$recoveryCount', Colors.blueAccent),
+              _statChip(context, tr(lang, 'RECOVERY'), '$recoveryCount', Colors.blueAccent),
             ],
           ),
         ],
@@ -395,7 +397,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
     );
   }
 
-  Widget _buildToolbar(BuildContext context) {
+  Widget _buildToolbar(BuildContext context, String lang) {
     return Row(
       children: [
         Expanded(
@@ -405,7 +407,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
               controller: _logSearchC,
               style: LabStyles.mono(context, fontSize: 10, color: Colors.white),
               decoration: InputDecoration(
-                hintText: 'SEARCH...',
+                hintText: tr(lang, 'SEARCH...'),
                 hintStyle: TextStyle(color: Colors.grey[600], fontSize: 9),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 border: OutlineInputBorder(borderSide: BorderSide(color: Colors.grey[800]!, width: 0.5)),
@@ -460,7 +462,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
     );
   }
 
-  Widget _buildSelectionBar(BuildContext context, AppDatabase db) {
+  Widget _buildSelectionBar(BuildContext context, AppDatabase db, String lang) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -469,16 +471,16 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
           border: Border.all(color: LabColors.primary.withValues(alpha: 0.3), width: 0.5)),
       child: Row(
         children: [
-          Text('${_selectedLogIds.length} SELECTED',
+          Text('${_selectedLogIds.length} ${tr(lang, 'SELECTED')}',
               style: LabStyles.mono(context,
                   fontSize: 9, color: LabColors.primary, fontWeight: FontWeight.bold)),
           const Spacer(),
           GestureDetector(
-            onTap: () => _showAssignToFolderSheet(context, db),
+            onTap: () => _showAssignToFolderSheet(context, db, lang),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('ADD TO FOLDER',
+                Text(tr(lang, 'ADD TO FOLDER'),
                     style: LabStyles.mono(context,
                         fontSize: 9, color: LabColors.primary, fontWeight: FontWeight.bold)),
                 const SizedBox(width: 2),
@@ -492,7 +494,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
               _selectMode = false;
               _selectedLogIds.clear();
             }),
-            child: Text('CANCEL',
+            child: Text(tr(lang, 'CANCEL'),
                 style: LabStyles.mono(context, fontSize: 9, color: Colors.grey[500])),
           ),
         ],
@@ -618,7 +620,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
     );
   }
 
-  Future<void> _showAssignToFolderSheet(BuildContext context, AppDatabase db) async {
+  Future<void> _showAssignToFolderSheet(BuildContext context, AppDatabase db, String lang) async {
     final folders = await db
         .customSelect('SELECT id, name FROM somatic_folders ORDER BY created_at DESC')
         .get();
@@ -634,13 +636,14 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-              child: Text('ADD ${selectedIds.length} LOG(S) TO FOLDER',
+              child: Text(
+                  tr(lang, 'ADD {n} LOG(S) TO FOLDER').replaceFirst('{n}', '${selectedIds.length}'),
                   style: LabStyles.headline(c, color: Colors.white).copyWith(fontSize: 14)),
             ),
             if (folders.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text('NO_FOLDERS_YET — create one below.',
+                child: Text(tr(lang, 'NO_FOLDERS_YET — create one below.'),
                     style: LabStyles.mono(c, fontSize: 9, color: Colors.grey[600])),
               ),
             for (final f in folders)
@@ -662,11 +665,11 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: LabButton(
-                  label: '+ NEW FOLDER',
+                  label: tr(lang, '+ NEW FOLDER'),
                   color: LabColors.primary,
                   onPressed: () {
                     Navigator.pop(c);
-                    _showCreateFolderDialog(context, db);
+                    _showCreateFolderDialog(context, db, lang);
                   },
                 ),
               ),
@@ -677,29 +680,31 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
     );
   }
 
-  Future<bool> _confirmDeleteFolder(BuildContext context, String name) async {
+  Future<bool> _confirmDeleteFolder(BuildContext context, String name, String lang) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
         backgroundColor: LabColors.background,
-        title: Text('DELETE FOLDER?',
+        title: Text(tr(lang, 'DELETE FOLDER?'),
             style: LabStyles.headline(c, color: Colors.white).copyWith(fontSize: 14)),
-        content: Text('This removes "${name.toUpperCase()}" — logs stay, only the grouping is deleted.',
+        content: Text(
+            tr(lang, 'This removes "{name}" — logs stay, only the grouping is deleted.')
+                .replaceFirst('{name}', name.toUpperCase()),
             style: LabStyles.mono(c, fontSize: 10, color: Colors.white70)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: Text('CANCEL', style: LabStyles.mono(c, color: Colors.grey))),
+              child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(c, color: Colors.grey))),
           TextButton(
               onPressed: () => Navigator.pop(c, true),
-              child: Text('DELETE', style: LabStyles.mono(c, color: Colors.redAccent))),
+              child: Text(tr(lang, 'DELETE'), style: LabStyles.mono(c, color: Colors.redAccent))),
         ],
       ),
     );
     return ok ?? false;
   }
 
-  void _showCreateFolderDialog(BuildContext context, AppDatabase db) {
+  void _showCreateFolderDialog(BuildContext context, AppDatabase db, String lang) {
     _folderNameController.clear();
     showDialog(
       context: context,
@@ -718,12 +723,12 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton(onPressed: () => Navigator.pop(c), child: Text('CANCEL', style: LabStyles.mono(c, fontSize: 8, color: Colors.grey))),
+                  TextButton(onPressed: () => Navigator.pop(c), child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(c, fontSize: 8, color: Colors.grey))),
                   const SizedBox(width: 8),
                   SizedBox(
                     width: 120,
                     child: LabButton(
-                      label: 'CREATE',
+                      label: tr(lang, 'CREATE'),
                       color: LabColors.primary,
                       onPressed: () async {
                         if (_folderNameController.text.trim().isNotEmpty) {
@@ -765,6 +770,7 @@ class _FolderDetailScreenState extends ConsumerState<_FolderDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final db = ref.read(databaseProvider);
+    final lang = ref.watch(languageProvider).value ?? 'en';
 
     return MainScaffold(
       title: widget.folderName.toUpperCase(),
@@ -828,7 +834,7 @@ class _FolderDetailScreenState extends ConsumerState<_FolderDetailScreen> {
                           ),
                           IconButton(
                             icon: const Icon(Icons.remove_circle_outline, size: 16, color: Colors.grey),
-                            tooltip: 'REMOVE FROM FOLDER',
+                            tooltip: tr(lang, 'REMOVE FROM FOLDER'),
                             onPressed: () => _removeFromFolder(id),
                           ),
                         ],

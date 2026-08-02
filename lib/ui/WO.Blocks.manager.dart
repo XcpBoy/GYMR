@@ -7,6 +7,7 @@ import 'WB.editor.dart';
 import '../providers/database_provider.dart';
 import '../providers/theme_provider.dart';
 import '../database/database.dart';
+import '../localization/strings.dart';
 
 // ─── MOCK WORKOUT BLOCK (placeholder — will be DB-driven) ────────────
 
@@ -379,24 +380,25 @@ class _WorkoutBlocksManagerScreenState
   }
 
   void _confirmDeleteAll(BuildContext context) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
         backgroundColor: LabColors.background,
-        title: Text('DELETE ALL BLOCKS',
+        title: Text(tr(lang, 'DELETE ALL BLOCKS'),
             style: LabStyles.mono(context,
                 fontSize: 12,
                 color: Colors.redAccent,
                 fontWeight: FontWeight.bold)),
-        content: Text('Delete every workout block from WO.BLCKS?',
+        content: Text(tr(lang, 'Delete every workout block from WO.BLCKS?'),
             style: LabStyles.mono(context, fontSize: 10)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: Text('CANCEL', style: LabStyles.mono(context))),
+              child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(context))),
           TextButton(
               onPressed: () => Navigator.pop(c, true),
-              child: Text('DELETE ALL',
+              child: Text(tr(lang, 'DELETE ALL'),
                   style: LabStyles.mono(context, color: Colors.redAccent))),
         ],
       ),
@@ -407,25 +409,26 @@ class _WorkoutBlocksManagerScreenState
   }
 
   void _confirmDeletePast(BuildContext context) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
         backgroundColor: LabColors.background,
-        title: Text('DEL PAST',
+        title: Text(tr(lang, 'DEL PAST'),
             style: LabStyles.mono(context,
                 fontSize: 12,
                 color: Colors.orange,
                 fontWeight: FontWeight.bold)),
         content: Text(
-            'Aggressively delete stale WBs that are not currently visible in WO.BLCKS. If the current WO.BLCKS list is empty, this deletes all possible WBs.',
+            tr(lang, 'Aggressively delete stale WBs that are not currently visible in WO.BLCKS. If the current WO.BLCKS list is empty, this deletes all possible WBs.'),
             style: LabStyles.mono(context, fontSize: 10)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: Text('CANCEL', style: LabStyles.mono(context))),
+              child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(context))),
           TextButton(
               onPressed: () => Navigator.pop(c, true),
-              child: Text('DELETE PAST',
+              child: Text(tr(lang, 'DELETE PAST'),
                   style: LabStyles.mono(context, color: Colors.orange))),
         ],
       ),
@@ -438,6 +441,7 @@ class _WorkoutBlocksManagerScreenState
   }
 
   void _showCreateDialog(BuildContext context) {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final nameC = TextEditingController();
     final folderC = TextEditingController();
     showModalBottomSheet(
@@ -453,14 +457,14 @@ class _WorkoutBlocksManagerScreenState
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('CREATE WB', style: LabStyles.headline(ctx)),
+            Text(tr(lang, 'CREATE WB'), style: LabStyles.headline(ctx)),
             const SizedBox(height: 24),
-            LabTextField(controller: nameC, label: 'BLOCK NAME'),
+            LabTextField(controller: nameC, label: tr(lang, 'BLOCK NAME')),
             const SizedBox(height: 16),
-            LabTextField(controller: folderC, label: 'FOLDER (OPTIONAL)'),
+            LabTextField(controller: folderC, label: tr(lang, 'FOLDER (OPTIONAL)')),
             const SizedBox(height: 24),
             LabButton(
-                label: 'Create Block',
+                label: tr(lang, 'Create Block'),
                 onPressed: () async {
                   if (nameC.text.trim().isNotEmpty) {
                     await ref.read(workoutBlockListProvider.notifier).add(
@@ -488,6 +492,7 @@ class _BlockCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
     final cardColor = tC.getColor(settings, 'UI_TAG_WO_BLOCKS_CARD',
@@ -537,7 +542,7 @@ class _BlockCard extends ConsumerWidget {
               // Tag/folder button
               IconButton(
                 icon: Icon(Icons.edit, size: 16, color: editColor),
-                tooltip: 'RENAME WB',
+                tooltip: tr(lang, 'RENAME WB'),
                 onPressed: () => _showRenameDialog(context, ref),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -548,7 +553,7 @@ class _BlockCard extends ConsumerWidget {
                     size: 16,
                     color:
                         block.folder != null ? folderColor : Colors.grey[600]),
-                tooltip: 'SET FOLDER',
+                tooltip: tr(lang, 'SET FOLDER'),
                 onPressed: () => _showFolderDialog(context, ref),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -558,7 +563,7 @@ class _BlockCard extends ConsumerWidget {
               IconButton(
                 icon: Icon(Icons.delete_outline,
                     size: 16, color: deleteColor.withValues(alpha: 0.75)),
-                tooltip: 'DELETE WB',
+                tooltip: tr(lang, 'DELETE WB'),
                 onPressed: () => _confirmDelete(context, ref),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -571,19 +576,20 @@ class _BlockCard extends ConsumerWidget {
   }
 
   void _showRenameDialog(BuildContext context, WidgetRef ref) {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final nameC = TextEditingController(text: block.name);
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
         backgroundColor: LabColors.background,
-        title: Text('RENAME WB',
+        title: Text(tr(lang, 'RENAME WB'),
             style: LabStyles.mono(context,
                 fontSize: 12, color: LabColors.primary)),
-        content: LabTextField(controller: nameC, label: 'BLOCK NAME'),
+        content: LabTextField(controller: nameC, label: tr(lang, 'BLOCK NAME')),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c),
-              child: Text('CANCEL', style: LabStyles.mono(context))),
+              child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(context))),
           TextButton(
             onPressed: () async {
               final newName = nameC.text.trim();
@@ -596,7 +602,7 @@ class _BlockCard extends ConsumerWidget {
                   .rename(block.id, newName);
               if (context.mounted) Navigator.pop(c);
             },
-            child: Text('SAVE',
+            child: Text(tr(lang, 'SAVE'),
                 style: LabStyles.mono(context, color: LabColors.primary)),
           ),
         ],
@@ -605,19 +611,20 @@ class _BlockCard extends ConsumerWidget {
   }
 
   void _showFolderDialog(BuildContext context, WidgetRef ref) {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final folderC = TextEditingController(text: block.folder ?? '');
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
         backgroundColor: LabColors.background,
-        title: Text('SET FOLDER',
+        title: Text(tr(lang, 'SET FOLDER'),
             style: LabStyles.mono(context,
                 fontSize: 12, color: LabColors.primary)),
-        content: LabTextField(controller: folderC, label: 'FOLDER NAME'),
+        content: LabTextField(controller: folderC, label: tr(lang, 'FOLDER NAME')),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c),
-              child: Text('CANCEL', style: LabStyles.mono(context))),
+              child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(context))),
           TextButton(
               onPressed: () async {
                 await ref.read(workoutBlockListProvider.notifier).setFolder(
@@ -627,7 +634,7 @@ class _BlockCard extends ConsumerWidget {
                         : null);
                 if (context.mounted) Navigator.pop(c);
               },
-              child: Text('SET',
+              child: Text(tr(lang, 'ASSIGN'),
                   style: LabStyles.mono(context, color: LabColors.primary))),
         ],
       ),
@@ -635,22 +642,23 @@ class _BlockCard extends ConsumerWidget {
   }
 
   void _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (c) => AlertDialog(
         backgroundColor: LabColors.background,
-        title: Text('DELETE WB',
+        title: Text(tr(lang, 'DELETE WB'),
             style:
                 LabStyles.mono(context, fontSize: 12, color: Colors.redAccent)),
-        content: Text('Remove "${block.name}"?',
+        content: Text('${tr(lang, 'Remove')} "${block.name}"?',
             style: LabStyles.mono(context, fontSize: 10)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c, false),
-              child: Text('CANCEL', style: LabStyles.mono(context))),
+              child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(context))),
           TextButton(
               onPressed: () => Navigator.pop(c, true),
-              child: Text('DELETE',
+              child: Text(tr(lang, 'DELETE'),
                   style: LabStyles.mono(context, color: Colors.redAccent))),
         ],
       ),

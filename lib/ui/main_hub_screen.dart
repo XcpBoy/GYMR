@@ -17,6 +17,7 @@ import 'db_inspector_screen.dart';
 import 'ovarch_plan_screen.dart';
 import 'somatic_spectrum_screen.dart' as somatic;
 import 'app_config_screen.dart';
+import '../localization/strings.dart';
 
 class MainHubScreen extends ConsumerWidget {
   const MainHubScreen({super.key});
@@ -25,6 +26,7 @@ class MainHubScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
+    final lang = ref.watch(languageProvider).value ?? 'en';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 32),
@@ -33,7 +35,7 @@ class MainHubScreen extends ConsumerWidget {
         children: [
           _buildCoreModulesGrid(context, settings, tC),
           const SizedBox(height: 12),
-          _buildNexusModule(context, settings, tC),
+          _buildNexusModule(context, settings, tC, lang),
           const SizedBox(height: 12),
           _buildDatasetModule(context, settings, tC),
           const SizedBox(height: 12),
@@ -285,7 +287,7 @@ class MainHubScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildNexusModule(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC) {
+  Widget _buildNexusModule(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC, String lang) {
     final color = tC.getColor(settings, "DASHBOARD_CARD_NEXUS", defaultColor: LabColors.nexusPurple);
     final bgColor = tC.getColor(settings, "DASHBOARD_CARD_NEXUS_BG", defaultColor: color.withValues(alpha: 0.08));
 
@@ -310,7 +312,7 @@ class MainHubScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text('IMPORT & EXPORT DATA', style: LabStyles.mono(context, fontSize: 8, color: color.withValues(alpha: 0.7))),
+                    Text(tr(lang, 'IMPORT & EXPORT DATA'), style: LabStyles.mono(context, fontSize: 8, color: color.withValues(alpha: 0.7))),
                     Text('07 NEXUS', style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
                   ],
                 ),

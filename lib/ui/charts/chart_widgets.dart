@@ -1,8 +1,10 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../logic/chart_models.dart';
 import '../styles.dart';
+import '../../localization/strings.dart';
 
 class LabChartContainer extends StatelessWidget {
   final String title;
@@ -181,7 +183,7 @@ class SessionLineChart extends StatelessWidget {
   Widget _buildEmpty(BuildContext context) => Center(child: Text("NO_DATA", style: LabStyles.mono(context)));
 }
 
-class MuscleDonutChart extends StatelessWidget {
+class MuscleDonutChart extends ConsumerWidget {
   final List<MuscleMetric> data;
 
   const MuscleDonutChart({super.key, required this.data});
@@ -202,7 +204,8 @@ class MuscleDonutChart extends StatelessWidget {
   static Color getColor(int index) => techPalette[index % techPalette.length];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     if (data.isEmpty) return Center(child: Text("NO_DATA", style: LabStyles.mono(context)));
 
     final total = data.fold<double>(0, (sum, item) => sum + item.value);
@@ -219,7 +222,7 @@ class MuscleDonutChart extends StatelessWidget {
       }
     }
     if (otherValue > 0) {
-      mainSlices.add(MuscleMetric(muscle: 'OTHER', value: otherValue, color: Colors.white24));
+      mainSlices.add(MuscleMetric(muscle: tr(lang, 'OTHER'), value: otherValue, color: Colors.white24));
     }
 
     return PieChart(

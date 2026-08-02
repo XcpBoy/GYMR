@@ -18,6 +18,7 @@ import 'complex_metadata_screen.dart';
 import 'exercise_history_screen.dart';
 import 'edit_exercise_screen.dart';
 import 'wb_shared/wb_shared_widgets.dart';
+import '../localization/strings.dart';
 
 // --- Timer State ---
 final currentWorkoutLogProvider = StreamProvider<WorkoutLog?>((ref) {
@@ -661,6 +662,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
       List<drift.TypedResult>? results) async {
     if (results == null || results.isEmpty) return const SizedBox.shrink();
 
+    final lang = ref.read(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     final bw = ref.read(bodyWeightAtDateProvider(widget.date)).value ?? 0.0;
     final Map<int, ({String name, double totalVp})> vpByEx = {};
@@ -736,7 +738,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
             child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('PERFORMANCE OVERVIEW',
+                  Text(tr(lang, 'PERFORMANCE OVERVIEW'),
                       style: LabStyles.mono(context,
                           fontSize: 10,
                           color: LabColors.accent,
@@ -1260,6 +1262,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
       BuildContext context, WidgetRef ref, DateTime date) async {
     final settings = ref.read(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
+    final lang = ref.read(languageProvider).value ?? 'en';
     showModalBottomSheet(
         context: context,
         backgroundColor: LabColors.background,
@@ -1271,13 +1274,13 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                  Text('INJECTION TYPE',
+                  Text(tr(lang, 'INJECTION TYPE'),
                       style:
                           LabStyles.headline(context, color: LabColors.primary)
                               .copyWith(fontSize: 18, letterSpacing: 2)),
                   const SizedBox(height: 24),
                   LabButton(
-                      label: 'Individual Movement',
+                      label: tr(lang, 'Individual Movement'),
                       color: tC.getColor(
                           settings, 'INJECTION_INDIVIDUAL_MOVEMENT',
                           defaultColor: LabColors.tertiary,
@@ -1305,7 +1308,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                       }),
                   const SizedBox(height: 12),
                   LabButton(
-                      label: 'Workout Block',
+                      label: tr(lang, 'Workout Block'),
                       color: tC.getColor(settings, 'INJECTION_WORKOUT_BLOCK',
                           defaultColor: LabColors.accent,
                           nameSeed: 'WORKOUT_BLOCK'),
@@ -1320,7 +1323,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                       }),
                   const SizedBox(height: 12),
                   LabButton(
-                      label: 'Plan Day',
+                      label: tr(lang, 'Plan Day'),
                       color: tC.getColor(settings, 'INJECTION_PLAN_DAY',
                           defaultColor: LabColors.primary,
                           nameSeed: 'PLAN_DAY'),
@@ -1340,7 +1343,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                       }),
                   const SizedBox(height: 12),
                   LabButton(
-                      label: 'Copy From Specific Day',
+                      label: tr(lang, 'Copy From Specific Day'),
                       color: tC.getColor(
                           settings, 'INJECTION_COPY_FROM_SPECIFIC_DAY',
                           defaultColor: LabColors.secondary,
@@ -1683,6 +1686,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
 
   // ─── WORKOUT BLOCK INJECTION ─────────────────────────────────
   Future<void> _showWbPicker(WidgetRef ref, DateTime date) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     final wbList = await OvarchPlanInjectionService.activeWorkoutBlocks(db);
     if (wbList.isEmpty) {
@@ -1708,7 +1712,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
       backgroundColor: LabColors.background,
       isScrollControlled: true,
       builder: (c) => QualitySearchPicker(
-        title: 'SELECT WORKOUT BLOCK',
+        title: tr(lang, 'SELECT WORKOUT BLOCK'),
         values: labels,
         closeOnSelect: false,
         onSelected: (wbName) => Navigator.pop(c, wbName),
@@ -1749,6 +1753,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
 
   Future<_InjectOptions?> _showPlanDayInjectConfig(BuildContext context,
       WidgetRef ref, DateTime date, List<PlanDayBlock> blocks) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final labels = blocks.map((b) => 'WB ${b.blockId}').join(' + ');
     bool injectPload = false;
     bool maxReps = true;
@@ -1832,7 +1837,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(c),
-                      child: Text('CANCEL',
+                      child: Text(tr(lang, 'CANCEL'),
                           style: LabStyles.mono(context, color: Colors.grey))),
                   TextButton(
                       onPressed: () => Navigator.pop(
@@ -1845,7 +1850,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                             applyToAll: true,
                             allSets: allSets,
                           )),
-                      child: Text('INJECT',
+                      child: Text(tr(lang, 'INJECT'),
                           style: LabStyles.mono(context,
                               color: LabColors.primary))),
                 ],
@@ -2054,6 +2059,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
 
   void _deleteAllSets(
       BuildContext context, WidgetRef ref, List<drift.TypedResult> results) {
+    final lang = ref.read(languageProvider).value ?? 'en';
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
@@ -2061,12 +2067,12 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
         title: Text('CRITICAL_PURGE',
             style: LabStyles.mono(c,
                 color: Colors.redAccent, fontWeight: FontWeight.bold)),
-        content: Text('DELETE ALL LOGGED SETS FOR THIS SESSION?',
+        content: Text(tr(lang, 'DELETE ALL LOGGED SETS FOR THIS SESSION?'),
             style: LabStyles.mono(c, fontSize: 12)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(c),
-              child: Text('ABORT', style: LabStyles.mono(c))),
+              child: Text(tr(lang, 'ABORT'), style: LabStyles.mono(c))),
           TextButton(
             onPressed: () async {
               final db = ref.read(databaseProvider);
@@ -2086,6 +2092,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
 
   void _createBlueprintFromCurrentDay(BuildContext context, WidgetRef ref,
       List<drift.TypedResult> results) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final nameC = TextEditingController();
     final db = ref.read(databaseProvider);
 
@@ -2115,7 +2122,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(c),
-                child: Text('ABORT', style: LabStyles.mono(c))),
+                child: Text(tr(lang, 'ABORT'), style: LabStyles.mono(c))),
             TextButton(
               onPressed: () async {
                 if (nameC.text.isEmpty) return;
@@ -2143,7 +2150,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                       content: Text('BLUEPRINT_CREATED_SUCCESSFULLY')));
                 }
               },
-              child: Text('GENERATE',
+              child: Text(tr(lang, 'GENERATE'),
                   style: LabStyles.mono(c, color: LabColors.accent)),
             )
           ],
@@ -2237,6 +2244,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     String loadType = widget.moduleLoadType;
     bool isIso = widget.moduleIsIso;
 
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
     final db = ref.read(databaseProvider);
@@ -2356,7 +2364,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                   children: [
                     Expanded(
                         child: LabButton(
-                            label: 'Add Set',
+                            label: tr(lang, 'Add Set'),
                             onPressed: () => _addNewSet(context),
                             isOutlined: true,
                             color: Colors.white)),
@@ -2736,6 +2744,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
   }
 
   void _showComplexModsModal(BuildContext context) {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final bool isLinked = widget.results.first
             .readTable(ref.read(databaseProvider).workoutSets)
             .supersetGroupId !=
@@ -2763,15 +2772,15 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                 if (isLinked)
                   _buildModCard(context, 'BREAK_LINK', Icons.link_off,
                       Colors.orangeAccent, () => _handleBreakSuperset(context)),
-                _buildModCard(context, 'EDIT MOVEMENT', Icons.settings,
+                _buildModCard(context, tr(lang, 'EDIT MOVEMENT'), Icons.settings,
                     LabColors.accent, () => _navigateToEdit(context)),
-                _buildModCard(context, 'PURGE', Icons.delete_forever,
+                _buildModCard(context, tr(lang, 'PURGE'), Icons.delete_forever,
                     Colors.redAccent, () => _confirmPurge(context)),
-                _buildModCard(context, 'MOVE TO TOP', Icons.arrow_upward,
+                _buildModCard(context, tr(lang, 'MOVE TO TOP'), Icons.arrow_upward,
                     Colors.white, () => _moveExerciseToExtreme(true)),
-                _buildModCard(context, 'MOVE TO BOTTOM', Icons.arrow_downward,
+                _buildModCard(context, tr(lang, 'MOVE TO BOTTOM'), Icons.arrow_downward,
                     Colors.white, () => _moveExerciseToExtreme(false)),
-                _buildModCard(context, 'ASSIGN BATCH', Icons.folder,
+                _buildModCard(context, tr(lang, 'ASSIGN BATCH'), Icons.folder,
                     Colors.tealAccent, () => _showBatchPopup(context)),
               ],
             ),
@@ -2829,6 +2838,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
   }
 
   Future<void> _showBatchPopup(BuildContext context) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     // Ensure table exists (safety net for hot reloads)
     await db.customStatement('''
@@ -2949,7 +2959,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                 SizedBox(
                   width: double.infinity,
                   child: LabButton(
-                    label: 'ASSIGN',
+                    label: tr(lang, 'ASSIGN'),
                     color: Colors.tealAccent,
                     onPressed: () async {
                       final name = nameC.text.trim();
@@ -3006,6 +3016,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
 
   Future<void> _renameBatch(
       AppDatabase db, String oldName, BuildContext dialogContext) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final newNameC = TextEditingController(text: oldName);
     final result = await showDialog<String>(
       context: dialogContext,
@@ -3026,12 +3037,12 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(c2, null),
-            child: Text('CANCEL', style: TextStyle(color: Colors.grey)),
+            child: Text(tr(lang, 'CANCEL'), style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
             onPressed: () =>
                 Navigator.pop(c2, newNameC.text.trim().toUpperCase()),
-            child: Text('RENAME', style: TextStyle(color: Colors.amber)),
+            child: Text(tr(lang, 'RENAME'), style: TextStyle(color: Colors.amber)),
           ),
         ],
       ),
@@ -3067,6 +3078,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
 
   Future<void> _deleteBatch(
       AppDatabase db, String batchName, BuildContext dialogContext) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final confirmed = await showDialog<bool>(
       context: dialogContext,
       builder: (c2) => AlertDialog(
@@ -3074,16 +3086,16 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
         title: Text('DELETE_BATCH',
             style: LabStyles.headline(c2).copyWith(fontSize: 14)),
         content: Text(
-            'Delete batch "${batchName.toUpperCase()}"?\nThis will remove it from all sets.',
+            '${tr(lang, 'Delete batch')} "${batchName.toUpperCase()}"?\n${tr(lang, 'This will remove it from all sets.')}',
             style: LabStyles.mono(c2, fontSize: 11, color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(c2, false),
-            child: Text('CANCEL', style: TextStyle(color: Colors.grey)),
+            child: Text(tr(lang, 'CANCEL'), style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(c2, true),
-            child: Text('DELETE', style: TextStyle(color: Colors.redAccent)),
+            child: Text(tr(lang, 'DELETE'), style: TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
@@ -3162,6 +3174,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
   }
 
   void _handleCreateSuperset(BuildContext context) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     final start =
         DateTime(widget.date.year, widget.date.month, widget.date.day);
@@ -3212,7 +3225,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                   label: 'SUPERSET_NAME',
                   placeholder: 'e.g. AGONIST_STATIC'),
               const SizedBox(height: 16),
-              Text('SELECT MOVEMENTS TO LINK:',
+              Text(tr(lang, 'SELECT MOVEMENTS TO LINK:'),
                   style:
                       LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
               const SizedBox(height: 8),
@@ -3234,7 +3247,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                           style: LabStyles.mono(context, fontSize: 10)),
                       value: selectedIds.contains(ex.id),
                       subtitle: isLinked
-                          ? Text('ALREADY LINKED: ${firstS.supersetName}',
+                          ? Text('${tr(lang, 'ALREADY LINKED:')} ${firstS.supersetName}',
                               style: LabStyles.mono(context,
                                   fontSize: 7, color: Colors.orangeAccent))
                           : null,
@@ -3256,7 +3269,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
               ),
               const SizedBox(height: 24),
               LabButton(
-                  label: 'Forge Link',
+                  label: tr(lang, 'Forge Link'),
                   onPressed: () async {
                     final String sName = nameC.text.toUpperCase().trim();
                     if (sName.isEmpty || selectedIds.isEmpty) return;
@@ -3299,6 +3312,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
   }
 
   void _showUtilityEditDialog(BuildContext context) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     final allSets = await db.select(db.workoutSets).get();
     final Set<String> existingUtilities = {};
@@ -3367,7 +3381,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                 ),
                 const SizedBox(height: 24),
                 LabButton(
-                    label: 'Apply Utility',
+                    label: tr(lang, 'Apply Utility'),
                     onPressed: () async {
                       final sets = widget.results
                           .map((r) => r.readTable(db.workoutSets).id)
@@ -4150,6 +4164,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     final tL = w + (isL ? widget.bodyWeight : 0);
     final isRed = (widget.set.trackName ?? '').contains('[RED_PR]');
 
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
     final completedColor = tC.getColor(settings, 'UI_TAG_SET_COMPLETED',
@@ -4209,7 +4224,10 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                       (widget.index + 1).toString().padLeft(2, '0'),
                       flex: 15, sideColor: sideColor),
                   _buildGridInput(
-                      isJst ? 'BODYWEIGHT' : (isL ? 'ADDED' : 'LOAD'), _lC,
+                      isJst
+                          ? tr(lang, 'BODYWEIGHT')
+                          : (isL ? tr(lang, 'ADDED') : tr(lang, 'LOAD')),
+                      _lC,
                       flex: 27, enabled: !isJst),
                   _buildGridInput(isIso ? 'SECS' : 'REPS', _rC, flex: 30),
                   _buildPRBox(flex: 25, isRed: isRed),
@@ -4222,7 +4240,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
             const SizedBox(height: 12),
             Row(children: [
               _buildSummaryBox(
-                  'TONNAGE',
+                  tr(lang, 'TONNAGE'),
                   (tL * (double.tryParse(_rC.text) ?? 0)).toStringAsFixed(1),
                   summaryBorderColor),
               const SizedBox(width: 4),
@@ -4282,6 +4300,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   }
 
   Widget _buildParticularTogglesCard() {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final Map<String, dynamic> exerciseMeta =
         widget.exercise.parsedComplexMetadata;
     final List<dynamic> rawToggles = exerciseMeta["particular_toggles"] ?? [];
@@ -4315,7 +4334,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('TOGGLES',
+          Text(tr(lang, 'TOGGLES'),
               style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
           const SizedBox(height: 12),
           Wrap(
@@ -4665,6 +4684,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   }
 
   void _confirmDel(BuildContext c) {
+    final lang = ref.read(languageProvider).value ?? 'en';
     showDialog(
         context: c,
         builder: (c) => AlertDialog(
@@ -4674,7 +4694,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(c),
-                      child: const Text('ABORT')),
+                      child: Text(tr(lang, 'ABORT'))),
                   TextButton(
                       onPressed: () async {
                         await (ref
@@ -4684,7 +4704,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                             .go();
                         Navigator.pop(c);
                       },
-                      child: const Text('PURGE'))
+                      child: Text(tr(lang, 'PURGE')))
                 ]));
   }
 
@@ -4697,6 +4717,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
         phs = meta["phases"] as Map<String, dynamic>? ?? {};
       } catch (_) {}
     }
+    final lang = ref.read(languageProvider).value ?? 'en';
     final cnt = widget.exercise.numPhases ?? (phs.isEmpty ? 1 : phs.length);
     return Container(
         width: double.infinity,
@@ -4706,7 +4727,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
             border: Border.all(
                 color: Colors.white.withValues(alpha: 0.1), width: 0.5)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('FAILURE PHASE',
+          Text(tr(lang, 'FAILURE PHASE'),
               style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
           const SizedBox(height: 12),
           GridView.builder(
@@ -4781,6 +4802,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   }
 
   Widget _buildSomaticCard() {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
@@ -4842,7 +4864,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                                           color: anomalyColor,
                                           fontWeight: FontWeight.bold),
                                       overflow: TextOverflow.ellipsis)),
-                              Text('EDIT',
+                              Text(tr(lang, 'EDIT'),
                                   style: LabStyles.mono(context,
                                       fontSize: 6.72,
                                       color: Colors.white70,
@@ -4889,7 +4911,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                                           color: recoveryColor,
                                           fontWeight: FontWeight.bold),
                                       overflow: TextOverflow.ellipsis)),
-                              Text('EDIT',
+                              Text(tr(lang, 'EDIT'),
                                   style: LabStyles.mono(context,
                                       fontSize: 6.72,
                                       color: Colors.white70,
@@ -4905,6 +4927,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   }
 
   void _showDiscomfortOverlay(BuildContext context, bool isRecovery) {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     final dC = TextEditingController();
     final tC = TextEditingController();
@@ -4940,7 +4963,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           Expanded(
                             child: Text(
                               editingLogId != null
-                                  ? 'EDIT'
+                                  ? tr(lang, 'EDIT')
                                   : (isRecovery
                                       ? 'SOMATIC_RECOVERY_REGISTRATION'
                                       : 'SOMATIC_ANOMALY_REGISTRATION'),
@@ -5059,7 +5082,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           Expanded(
                               child: LabTextField(
                                   controller: dC,
-                                  label: 'DESCRIPTION',
+                                  label: tr(lang, 'DESCRIPTION'),
                                   fontSize: 16.8,
                                   labelFontSize: 9.6,
                                   hintFontSize: 14.4)),
@@ -5068,7 +5091,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                             width: 48,
                             height: 42,
                             child: QuickActionButton(
-                              label: "SEARCH",
+                              label: tr(lang, "SEARCH"),
                               icon: Icons.search,
                               color: LabColors.accent,
                               fontSize: 8.4,
@@ -5105,7 +5128,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           Expanded(
                               child: LabTextField(
                                   controller: tC,
-                                  label: 'TAGS (COMMA_SEPARATED)',
+                                  label: tr(lang, 'TAGS (COMMA_SEPARATED)'),
                                   fontSize: 16.8,
                                   labelFontSize: 9.6,
                                   hintFontSize: 14.4)),
@@ -5114,7 +5137,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                             width: 48,
                             height: 42,
                             child: QuickActionButton(
-                              label: "SEARCH",
+                              label: tr(lang, "SEARCH"),
                               icon: Icons.tag,
                               color: Colors.purpleAccent,
                               fontSize: 8.4,
@@ -5175,7 +5198,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                                   style: LabStyles.mono(c,
                                       fontSize: 12, color: Colors.white),
                                   decoration: InputDecoration(
-                                    labelText: 'FOLDER (OPTIONAL)',
+                                    labelText: tr(lang, 'FOLDER (OPTIONAL)'),
                                     labelStyle: LabStyles.mono(c,
                                         fontSize: 9.6, color: Colors.grey),
                                     border: OutlineInputBorder(
@@ -5341,7 +5364,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                       const SizedBox(height: 16),
                       LabButton(
                           label: editingLogId != null
-                              ? (isRecovery ? 'UPDATE_RECOVERY' : 'UPDATE')
+                              ? (isRecovery ? 'UPDATE_RECOVERY' : tr(lang, 'UPDATE'))
                               : (isRecovery
                                   ? 'REGISTER_RECOVERY'
                                   : 'REGISTER_ANOMALY'),
@@ -5390,7 +5413,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                           }),
                       const SizedBox(height: 8),
                       LabButton(
-                          label: 'CLOSE',
+                          label: tr(lang, 'CLOSE'),
                           isOutlined: true,
                           color: Colors.grey,
                           fontSize: 14.4,
@@ -5539,6 +5562,7 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
   }
 
   void _showWbProjections(BuildContext context, WidgetRef ref) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     final wbList = await OvarchPlanInjectionService.activeWorkoutBlocks(db);
     if (wbList.isEmpty || !context.mounted) {
@@ -5687,7 +5711,7 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
                               if (p['injectedToday'] == true)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 4),
-                                  child: Text('INJECTED TODAY',
+                                  child: Text(tr(lang, 'INJECTED TODAY'),
                                       style: LabStyles.mono(context,
                                           fontSize: 8,
                                           color: LabColors.primary,
@@ -5740,7 +5764,7 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
                                       Padding(
                                         padding: const EdgeInsets.only(top: 4),
                                         child: Text(
-                                            'PURPOSE: ${k['intention']}',
+                                            '${tr(lang, 'PURPOSE:')} ${k['intention']}',
                                             style: LabStyles.mono(context,
                                                 fontSize: 10,
                                                 color: Colors.amber)),
@@ -5754,7 +5778,7 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
                                           Padding(
                                             padding: const EdgeInsets.symmetric(
                                                 vertical: 4),
-                                            child: Text('SET 1: (NO DATA)',
+                                            child: Text(tr(lang, 'SET 1: (NO DATA)'),
                                                 style: LabStyles.mono(context,
                                                     fontSize: 10,
                                                     color: Colors.grey[600])),
@@ -5850,7 +5874,7 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
                                               // REP RANGE row
                                               Row(
                                                 children: [
-                                                  Text('REP RANGE:',
+                                                  Text(tr(lang, 'REP RANGE:'),
                                                       style: LabStyles.mono(
                                                           context,
                                                           fontSize: 10,
@@ -5910,7 +5934,7 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
               ),
             ),
             const SizedBox(height: 12),
-            LabButton(label: 'CLOSE', onPressed: () => Navigator.pop(c)),
+            LabButton(label: tr(lang, 'CLOSE'), onPressed: () => Navigator.pop(c)),
             const SizedBox(height: 8),
           ],
         ),
@@ -5920,25 +5944,26 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     // -- Define slices here -------------------------------------------
     // Add / remove / reorder slices freely. Each slice is modular.
     final slices = <WorkoutOptsSlice>[
       WorkoutOptsSlice(
-        label: 'MAKE BLUEPRINT FROM CURRENT',
+        label: tr(lang, 'MAKE BLUEPRINT FROM CURRENT'),
         icon: Icons.layers,
         color: _tc('UI_TAG_WO_BLUEPRINT', 'WO_BLUEPRINT'),
         onTap: widget.onMakeBlueprint,
       ),
       WorkoutOptsSlice(
-        label: 'DELETE ALL SETS',
+        label: tr(lang, 'DELETE ALL SETS'),
         icon: Icons.delete_forever,
         color: _tc('UI_TAG_WO_PURGE', 'WO_PURGE'),
         onTap: widget.onDeleteAll,
       ),
       WorkoutOptsSlice(
         label: widget.maintainExtended
-            ? 'MAINTAIN EXTENDED ON'
-            : 'MAINTAIN EXTENDED',
+            ? tr(lang, 'MAINTAIN EXTENDED ON')
+            : tr(lang, 'MAINTAIN EXTENDED'),
         icon: widget.maintainExtended ? Icons.visibility : Icons.visibility_off,
         color: widget.maintainExtended
             ? LabColors.primary
@@ -6171,6 +6196,9 @@ class _WbInjectConfigDialogState extends State<_WbInjectConfigDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final lang =
+        ProviderScope.containerOf(context).read(languageProvider).value ??
+            'en';
     return AlertDialog(
       backgroundColor: LabColors.background,
       title: Text('INJECT WB OPTIONS',
@@ -6250,7 +6278,7 @@ class _WbInjectConfigDialogState extends State<_WbInjectConfigDialog> {
       actions: [
         TextButton(
             onPressed: widget.onCancel,
-            child: Text('CANCEL',
+            child: Text(tr(lang, 'CANCEL'),
                 style: LabStyles.mono(context, color: Colors.grey))),
         TextButton(
             onPressed: () => widget.onInject(_InjectOptions(
@@ -6262,7 +6290,7 @@ class _WbInjectConfigDialogState extends State<_WbInjectConfigDialog> {
                   allSets: _allSets,
                   knsOptions: _knsOptions,
                 )),
-            child: Text('INJECT',
+            child: Text(tr(lang, 'INJECT'),
                 style: LabStyles.mono(context, color: LabColors.primary))),
       ],
     );

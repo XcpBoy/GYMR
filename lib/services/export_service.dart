@@ -14,6 +14,7 @@ import 'package:path/path.dart' as p;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqlite3/sqlite3.dart';
 import '../providers/theme_provider.dart';
+import '../localization/strings.dart';
 
 class LoadDetails {
   final String type;
@@ -390,7 +391,7 @@ class ExportService {
 
   static Future<void> exportWorkoutsToPdf(List<TypedResult> rows,
       AppDatabase db, Map<String, ThemeSetting> settings, ThemeController tC,
-      {String? fileName, bool share = true}) async {
+      {String? fileName, bool share = true, String lang = 'en'}) async {
     final pdf = pw.Document();
     final unicodeFont = await _loadUnicodeFont();
     final emojiFont = await _loadEmojiFont();
@@ -701,12 +702,12 @@ class ExportService {
                 content.add(pw.TableHelper.fromTextArray(
                   headers: segmentStartRow == 0
                       ? [
-                          'SET',
-                          'EXERCISE',
+                          tr(lang, 'SET'),
+                          tr(lang, 'EXERCISE'),
                           'UTIL.',
                           'L/R',
                           'NAT.',
-                          'LOAD',
+                          tr(lang, 'LOAD'),
                           'REPS/SECS',
                           'EORM',
                           'PR',
@@ -714,8 +715,8 @@ class ExportService {
                           'RIR',
                           'TECH',
                           'FAIL',
-                          'TOGGLES',
-                          'NOTES'
+                          tr(lang, 'TOGGLES'),
+                          tr(lang, 'NOTES')
                         ]
                       : null,
                   data: currentSegment,
@@ -831,7 +832,7 @@ class ExportService {
           if (somaticAnomalies.isNotEmpty) {
             content.add(pw.Header(level: 1, text: "SOMATIC_ANOMALIES_LOG"));
             content.add(pw.TableHelper.fromTextArray(
-              headers: ['DATE', 'EXERCISE', 'ANOMALY_DETAILS'],
+              headers: [tr(lang, 'DATE'), tr(lang, 'EXERCISE'), 'ANOMALY_DETAILS'],
               data: somaticAnomalies
                   .map((a) => [a['date'], a['exercise'], a['logs']])
                   .toList(),
@@ -851,7 +852,7 @@ class ExportService {
             content.add(pw.SizedBox(height: 10));
             content.add(pw.Header(level: 1, text: "SOMATIC_RECOVERY_LOG"));
             content.add(pw.TableHelper.fromTextArray(
-              headers: ['DATE', 'EXERCISE', 'RECOVERY_DETAILS'],
+              headers: [tr(lang, 'DATE'), tr(lang, 'EXERCISE'), 'RECOVERY_DETAILS'],
               data: somaticRecoveries
                   .map((r) => [r['date'], r['exercise'], r['logs']])
                   .toList(),
@@ -873,7 +874,7 @@ class ExportService {
             content.add(
                 pw.Header(level: 1, text: "EXERCISE_TECHNICAL_DESCRIPTIONS"));
             content.add(pw.TableHelper.fromTextArray(
-              headers: ['EXERCISE', 'TECHNICAL_DESCRIPTION'],
+              headers: [tr(lang, 'EXERCISE'), 'TECHNICAL_DESCRIPTION'],
               data: exerciseDescriptions
                   .map((e) => [e['name'], e['desc']])
                   .toList(),
@@ -892,7 +893,7 @@ class ExportService {
             content.add(pw.SizedBox(height: 20));
             content.add(pw.Header(level: 1, text: "SUPERSET_BLOCKS_STRUCTURE"));
             content.add(pw.TableHelper.fromTextArray(
-              headers: ['DATE', 'SUPERSET_NAME', 'COMPONENTS'],
+              headers: [tr(lang, 'DATE'), 'SUPERSET_NAME', tr(lang, 'COMPONENTS')],
               data: supersetGroups.values
                   .map((group) => [
                         group.first['date'],
@@ -931,7 +932,7 @@ class ExportService {
 
   static Future<void> exportWorkoutsToExcel(List<TypedResult> rows,
       AppDatabase db, Map<String, ThemeSetting> settings, ThemeController tC,
-      {String? fileName, bool share = true}) async {
+      {String? fileName, bool share = true, String lang = 'en'}) async {
     var excel = Excel.createExcel();
     Sheet sheet = excel['WORKOUTS'];
 
@@ -981,16 +982,16 @@ class ExportService {
       sheet.appendRow([
         TextCellValue('---'),
         TextCellValue(displayDate),
-        TextCellValue('--- DAY SEGMENT ---'),
+        TextCellValue(tr(lang, '--- DAY SEGMENT ---')),
       ]);
 
       sheet.appendRow([
-        TextCellValue('SET #'),
-        TextCellValue('DATE'),
-        TextCellValue('EXERCISE'),
+        TextCellValue(tr(lang, 'SET #')),
+        TextCellValue(tr(lang, 'DATE')),
+        TextCellValue(tr(lang, 'EXERCISE')),
         TextCellValue('L/R'),
-        TextCellValue('NATURE'),
-        TextCellValue('LOAD'),
+        TextCellValue(tr(lang, 'NATURE')),
+        TextCellValue(tr(lang, 'LOAD')),
         TextCellValue('REPS/SECS'),
         TextCellValue('EORM'),
         TextCellValue('IS_PR'),
@@ -998,9 +999,9 @@ class ExportService {
         TextCellValue('RIR'),
         TextCellValue('TECH'),
         TextCellValue('FAILURE_PHASE'),
-        TextCellValue('TOGGLES'),
-        TextCellValue('NOTES'),
-        TextCellValue('SOMATIC')
+        TextCellValue(tr(lang, 'TOGGLES')),
+        TextCellValue(tr(lang, 'NOTES')),
+        TextCellValue(tr(lang, 'SOMATIC'))
       ]);
 
       int daySetCounter = 0;
@@ -1167,7 +1168,7 @@ class ExportService {
 
   static Future<void> exportWorkoutsToCsv(
       List<TypedResult> rows, AppDatabase db,
-      {String? fileName, bool share = true}) async {
+      {String? fileName, bool share = true, String lang = 'en'}) async {
     List<List<dynamic>> csvData = [];
 
     // 1. PRE-FETCH DATA (BATCH)
@@ -1197,23 +1198,23 @@ class ExportService {
       // Day Segment Separator
       csvData.add(["---", "DAY_SEGMENT: $displayDate", "---"]);
       csvData.add([
-        "SET #",
-        "DATE",
-        "EXERCISE",
+        tr(lang, "SET #"),
+        tr(lang, "DATE"),
+        tr(lang, "EXERCISE"),
         "UTIL",
         "L/R",
-        "NATURE",
-        "LOAD",
+        tr(lang, "NATURE"),
+        tr(lang, "LOAD"),
         "REPS/SECS",
         "EORM",
         "PR",
         "RPE",
         "RIR",
         "TECH",
-        "FAILURE",
-        "TOGGLES",
-        "NOTES",
-        "SOMATIC"
+        tr(lang, "FAILURE"),
+        tr(lang, "TOGGLES"),
+        tr(lang, "NOTES"),
+        tr(lang, "SOMATIC")
       ]);
 
       int daySetCounter = 0;
@@ -1344,7 +1345,7 @@ class ExportService {
 
   static Future<void> exportWorkoutsToMarkdown(List<TypedResult> rows,
       AppDatabase db, Map<String, ThemeSetting> settings, ThemeController tC,
-      {String? fileName, bool share = true}) async {
+      {String? fileName, bool share = true, String lang = 'en'}) async {
     final buffer = StringBuffer();
 
     // 1. PRE-FETCH DATA (BATCH)
@@ -1381,7 +1382,7 @@ class ExportService {
 
     buffer.writeln("# GYMR // TECHNICAL_WORKOUT_REPORT");
     buffer.writeln(
-        "Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}");
+        "${tr(lang, 'Generated on:')} ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}");
     buffer.writeln();
 
     for (var monthKey in sortedMonths) {
@@ -1400,7 +1401,7 @@ class ExportService {
         buffer.writeln("### $displayDate");
         buffer.writeln();
         buffer.writeln(
-            "| SET | EXERCISE | UTIL. | L/R | NAT. | LOAD | REPS/SECS | EORM | PR | RPE | RIR | TECH | FAIL | TOGGLES | NOTES |");
+            "| ${tr(lang, 'SET')} | ${tr(lang, 'EXERCISE')} | UTIL. | L/R | NAT. | ${tr(lang, 'LOAD')} | REPS/SECS | EORM | PR | RPE | RIR | TECH | FAIL | ${tr(lang, 'TOGGLES')} | ${tr(lang, 'NOTES')} |");
         buffer.writeln(
             "|:---|:---|:---:|:---:|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---|:---|:---|");
 
@@ -1562,7 +1563,7 @@ class ExportService {
     if (somaticAnomalies.isNotEmpty) {
       buffer.writeln("## SOMATIC_ANOMALIES_LOG");
       buffer.writeln();
-      buffer.writeln("| DATE | EXERCISE | ANOMALY_DETAILS |");
+      buffer.writeln("| ${tr(lang, 'DATE')} | ${tr(lang, 'EXERCISE')} | ANOMALY_DETAILS |");
       buffer.writeln("|:---|:---|:---|");
       for (var a in somaticAnomalies) {
         buffer.writeln("| ${a['date']} | ${a['exercise']} | ${a['logs']} |");
@@ -1573,7 +1574,7 @@ class ExportService {
     if (somaticRecoveries.isNotEmpty) {
       buffer.writeln("## SOMATIC_RECOVERY_LOG");
       buffer.writeln();
-      buffer.writeln("| DATE | EXERCISE | RECOVERY_DETAILS |");
+      buffer.writeln("| ${tr(lang, 'DATE')} | ${tr(lang, 'EXERCISE')} | RECOVERY_DETAILS |");
       buffer.writeln("|:---|:---|:---|");
       for (var r in somaticRecoveries) {
         buffer.writeln("| ${r['date']} | ${r['exercise']} | ${r['logs']} |");
@@ -1584,7 +1585,7 @@ class ExportService {
     if (exerciseDescriptions.isNotEmpty) {
       buffer.writeln("## EXERCISE_TECHNICAL_DESCRIPTIONS");
       buffer.writeln();
-      buffer.writeln("| EXERCISE | TECHNICAL_DESCRIPTION |");
+      buffer.writeln("| ${tr(lang, 'EXERCISE')} | TECHNICAL_DESCRIPTION |");
       buffer.writeln("|:---|:---|");
       for (var e in exerciseDescriptions) {
         buffer
@@ -1596,7 +1597,7 @@ class ExportService {
     if (supersetGroups.isNotEmpty) {
       buffer.writeln("## SUPERSET_BLOCKS_STRUCTURE");
       buffer.writeln();
-      buffer.writeln("| DATE | SUPERSET_NAME | COMPONENTS |");
+      buffer.writeln("| ${tr(lang, 'DATE')} | SUPERSET_NAME | ${tr(lang, 'COMPONENTS')} |");
       buffer.writeln("|:---|:---|:---|");
       for (var group in supersetGroups.values) {
         buffer.writeln(
@@ -1617,7 +1618,8 @@ class ExportService {
   }
 
   static Future<void> exportBlueprintsToCsv(
-      List<Map<String, dynamic>> combinedData, AppDatabase db) async {
+      List<Map<String, dynamic>> combinedData, AppDatabase db,
+      {String lang = 'en'}) async {
     List<List<dynamic>> csvData = [
       ["BP_NAME", "BP_INTENTION", "EX_NAME", "TARGET_SETS_REPS", "ORDER"]
     ];
@@ -1817,7 +1819,7 @@ class ExportService {
   }
 
   static Future<String> exportExercisesToCsv(List<BaseExercise> exercises,
-      {bool share = true}) async {
+      {bool share = true, String lang = 'en'}) async {
     List<List<dynamic>> csvData = [
       [
         "NAME",
@@ -2101,7 +2103,8 @@ class ExportService {
 
   // --- RAW TABLE EXPORT ---
   /// Exports a single DB table as CSV. Used by NEXUS raw data section.
-  static Future<void> exportTableToCsv(AppDatabase db, String tableName) async {
+  static Future<void> exportTableToCsv(AppDatabase db, String tableName,
+      {String lang = 'en'}) async {
     // Query all rows
     final result = await db.customSelect('SELECT * FROM $tableName').get();
     if (result.isEmpty) {
@@ -2704,7 +2707,8 @@ class ExportService {
   }
 
   static Future<String> exportWorkoutBlocksToXlsx(
-      List<Map<String, dynamic>> combinedData, AppDatabase db) async {
+      List<Map<String, dynamic>> combinedData, AppDatabase db,
+      {String lang = 'en'}) async {
     var excel = Excel.createExcel();
     // Rename the default sheet instead of creating a new one
     excel.rename('Sheet1', 'WO.BLOCKS');

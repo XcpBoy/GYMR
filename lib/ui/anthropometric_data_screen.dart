@@ -7,6 +7,7 @@ import '../database/database.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
+import '../localization/strings.dart';
 
 class AnthropometricDataScreen extends ConsumerStatefulWidget {
   const AnthropometricDataScreen({super.key});
@@ -60,6 +61,7 @@ class _AnthropometricDataScreenState extends ConsumerState<AnthropometricDataScr
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(databaseProvider);
+    final lang = ref.watch(languageProvider).value ?? 'en';
 
     // We use the same table but filter by 'WEIGHT' label for tab 0
     final logsStream = _watchLogs(db, weightOnly: _activeTab == 0);
@@ -73,7 +75,7 @@ class _AnthropometricDataScreenState extends ConsumerState<AnthropometricDataScr
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _buildInputSection(context),
+                _buildInputSection(context, lang),
                 const SizedBox(height: 32),
                 Text('HISTORICAL_METRICS_FEED', style: LabStyles.mono(context, color: LabColors.primary, fontSize: 10)),
                 const SizedBox(height: 16),
@@ -96,7 +98,7 @@ class _AnthropometricDataScreenState extends ConsumerState<AnthropometricDataScr
                     }
                     if (!snapshot.hasData) {
                       return Center(
-                          child: Text('LOADING...',
+                          child: Text(tr(lang, 'LOADING...'),
                               style: LabStyles.mono(context,
                                   color: Colors.grey)));
                     }
@@ -162,7 +164,7 @@ class _AnthropometricDataScreenState extends ConsumerState<AnthropometricDataScr
     );
   }
 
-  Widget _buildInputSection(BuildContext context) {
+  Widget _buildInputSection(BuildContext context, String lang) {
     final isWeightTab = _activeTab == 0;
     return Container(
       padding: const EdgeInsets.all(16),
@@ -251,7 +253,7 @@ class _AnthropometricDataScreenState extends ConsumerState<AnthropometricDataScr
           ],
           const SizedBox(height: 24),
           LabButton(
-            label: isWeightTab ? 'Save Weight' : 'Inject Metric',
+            label: isWeightTab ? tr(lang, 'Save Weight') : tr(lang, 'Inject Metric'),
             onPressed: _saveMetric,
             color: LabColors.primary,
           ),

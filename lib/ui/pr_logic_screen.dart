@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'styles.dart';
 import 'main_scaffold.dart';
+import '../localization/strings.dart';
 
-class PRLogicScreen extends StatelessWidget {
+class PRLogicScreen extends ConsumerWidget {
   const PRLogicScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     return MainScaffold(
       title: 'PR.LOGIC_PROTOCOL',
       body: SingleChildScrollView(
@@ -14,13 +17,13 @@ class PRLogicScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildHeader(context),
+            _buildHeader(context, lang),
             const SizedBox(height: 24),
             _buildFormulaCard(
               context,
               'ESTIMATED_1RM (EPLEY)',
               'w * (1 + (r / 30))',
-              'The core metric for theoretical peak performance. Normalizes different rep ranges to a single intensity value.',
+              tr(lang, 'The core metric for theoretical peak performance. Normalizes different rep ranges to a single intensity value.'),
               LabColors.workoutRed,
             ),
             const SizedBox(height: 16),
@@ -28,7 +31,7 @@ class PRLogicScreen extends StatelessWidget {
               context,
               'EFFICIENCY_COEFFICIENT',
               'e1RM / (rest_factor + 1.0)',
-              'Measures performance relative to rest intervals. Higher density workouts yield higher efficiency.',
+              tr(lang, 'Measures performance relative to rest intervals. Higher density workouts yield higher efficiency.'),
               LabColors.primary,
             ),
             const SizedBox(height: 16),
@@ -36,7 +39,7 @@ class PRLogicScreen extends StatelessWidget {
               context,
               'RECOVERY_ADJUSTED_e1RM',
               'e1RM * (1.1 - (0.1 * RPE))',
-              'Adjusts potential based on perceived exertion. A lower RPE for the same load indicates higher systemic recovery.',
+              tr(lang, 'Adjusts potential based on perceived exertion. A lower RPE for the same load indicates higher systemic recovery.'),
               LabColors.accent,
             ),
             const SizedBox(height: 16),
@@ -44,7 +47,7 @@ class PRLogicScreen extends StatelessWidget {
               context,
               'TECHNICAL_e1RM',
               'e1RM * technique_score',
-              'Multiplies theoretical peak by form quality (0.5x to 1.5x). Prioritizes execution over raw weight.',
+              tr(lang, 'Multiplies theoretical peak by form quality (0.5x to 1.5x). Prioritizes execution over raw weight.'),
               LabColors.inventoryOrange,
             ),
             const SizedBox(height: 32),
@@ -53,11 +56,11 @@ class PRLogicScreen extends StatelessWidget {
               style: LabStyles.mono(context, fontSize: 10, color: Colors.grey),
             ),
             const SizedBox(height: 12),
-            _buildCriteriaItem(context, 'LOAD_PR', 'Current Load > Historical Max Load'),
-            _buildCriteriaItem(context, 'REPS_PR', 'Reps > Historical Max Reps for the specific Load'),
-            _buildCriteriaItem(context, 'STRENGTH_PR', 'Current e1RM > Historical Max e1RM'),
-            _buildCriteriaItem(context, 'DENSITY_PR', 'Current Efficiency > Historical Max Efficiency'),
-            _buildCriteriaItem(context, 'RECOVERY_PR', 'Current Recovery-Adj > Historical Max Recovery-Adj'),
+            _buildCriteriaItem(context, 'LOAD_PR', tr(lang, 'Current Load > Historical Max Load')),
+            _buildCriteriaItem(context, 'REPS_PR', tr(lang, 'Reps > Historical Max Reps for the specific Load')),
+            _buildCriteriaItem(context, 'STRENGTH_PR', tr(lang, 'Current e1RM > Historical Max e1RM')),
+            _buildCriteriaItem(context, 'DENSITY_PR', tr(lang, 'Current Efficiency > Historical Max Efficiency')),
+            _buildCriteriaItem(context, 'RECOVERY_PR', tr(lang, 'Current Recovery-Adj > Historical Max Recovery-Adj')),
             const SizedBox(height: 40),
             _buildSystemNote(context),
           ],
@@ -66,7 +69,7 @@ class PRLogicScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(BuildContext context, String lang) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -88,7 +91,7 @@ class PRLogicScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Text(
-            'The Rainbow Trophy activates when ANY quality surpasses historical data. The Red Trophy (SMART PR) only activates for the absolute best theoretical performance of the session.',
+            tr(lang, 'The Rainbow Trophy activates when ANY quality surpasses historical data. The Red Trophy (SMART PR) only activates for the absolute best theoretical performance of the session.'),
             style: LabStyles.mono(context, fontSize: 9, color: Colors.grey[400]!),
           ),
         ],

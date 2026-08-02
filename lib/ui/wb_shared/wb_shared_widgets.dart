@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' as drift;
 import 'dart:async';
 
+import '../../localization/strings.dart';
 import '../../providers/database_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../database/database.dart';
@@ -307,15 +308,17 @@ class _BlueprintSearchPickerState
         final e = r.readTable(db.baseExercises);
         return e.fullName;
       }).join(' • ');
+      final lang = ref.read(languageProvider).value ?? 'en';
       if (mounted)
         setState(() {
-          sums[b.id] = n.isEmpty ? 'EMPTY' : n;
+          sums[b.id] = n.isEmpty ? tr(lang, 'EMPTY') : n;
         });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     return Container(
         height: MediaQuery.of(context).size.height * 0.8,
         padding:
@@ -341,14 +344,14 @@ class _BlueprintSearchPickerState
                             icon: const Icon(Icons.close, color: Colors.white))
                       ]),
                   const SizedBox(height: 16),
-                  LabTextField(controller: sC, label: 'Search...')
+                  LabTextField(controller: sC, label: tr(lang, 'Search...'))
                 ])),
             Expanded(
                 child: ListView.builder(
                     itemCount: flt.length,
                     itemBuilder: (c, i) => LabListTile(
                         title: flt[i].name.toUpperCase(),
-                        subtitle: sums[flt[i].id] ?? 'LOADING...',
+                        subtitle: sums[flt[i].id] ?? tr(lang, 'LOADING...'),
                         onTap: () {
                           widget.onSelected(flt[i]);
                           Navigator.pop(context);
@@ -653,6 +656,7 @@ class _ExerciseSearchPickerState extends ConsumerState<ExerciseSearchPicker> {
 
   void _showFilterSheet(String title, Set<String> values, String? current,
       ValueChanged<String?> onSelect) {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final sorted = values.toList()..sort();
     showModalBottomSheet(
       context: context,
@@ -672,7 +676,7 @@ class _ExerciseSearchPickerState extends ConsumerState<ExerciseSearchPicker> {
               shrinkWrap: true,
               children: [
                 ListTile(
-                  title: Text('CLEAR',
+                  title: Text(tr(lang, 'CLEAR'),
                       style: LabStyles.mono(ctx,
                           fontSize: 11, color: Colors.redAccent)),
                   onTap: () {
@@ -909,6 +913,7 @@ class _ExerciseSearchPickerState extends ConsumerState<ExerciseSearchPicker> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final h = MediaQuery.of(context).size.height;
     // Active colors for BASE/MUSCLE text fields
     final activeBaseColor =
@@ -959,7 +964,7 @@ class _ExerciseSearchPickerState extends ConsumerState<ExerciseSearchPicker> {
                           style: LabStyles.mono(context,
                               fontSize: 12, color: Colors.white),
                           decoration: InputDecoration(
-                            hintText: 'SEARCH...',
+                            hintText: tr(lang, 'SEARCH...'),
                             hintStyle: TextStyle(
                                 color: Colors.grey[600], fontSize: 11),
                             contentPadding: const EdgeInsets.symmetric(
@@ -1023,7 +1028,8 @@ class _ExerciseSearchPickerState extends ConsumerState<ExerciseSearchPicker> {
                     Expanded(
                         child: _filterChip('LOAD', _fLoad, () {
                       _showFilterSheet(
-                          'FILTER BY LOAD TYPE', _loadValues, _fLoad, (v) {
+                          tr(lang, 'FILTER BY LOAD TYPE'), _loadValues, _fLoad,
+                          (v) {
                         setState(() => _fLoad = v);
                         _applyFilters();
                       });
@@ -1048,7 +1054,8 @@ class _ExerciseSearchPickerState extends ConsumerState<ExerciseSearchPicker> {
                     )),
                     Expanded(
                         child: _filterChip('IMPL', _fImpl, () {
-                      _showFilterSheet('FILTER BY IMPL', _implValues, _fImpl,
+                      _showFilterSheet(
+                          tr(lang, 'FILTER BY IMPL'), _implValues, _fImpl,
                           (v) {
                         setState(() => _fImpl = v);
                         _applyFilters();
@@ -1091,7 +1098,7 @@ class _ExerciseSearchPickerState extends ConsumerState<ExerciseSearchPicker> {
                     child: GestureDetector(
                       onTap: _clearAllFilters,
                       child: Text(
-                        'CLEAR ALL FILTERS',
+                        tr(lang, 'CLEAR ALL FILTERS'),
                         style: LabStyles.mono(context,
                             fontSize: 8,
                             color: Colors.redAccent,
@@ -1114,7 +1121,7 @@ class _ExerciseSearchPickerState extends ConsumerState<ExerciseSearchPicker> {
             child: Row(
               children: [
                 Text(
-                  'RESULTS: ${_filtered.length}',
+                  '${tr(lang, 'RESULTS')}: ${_filtered.length}',
                   style: LabStyles.mono(context,
                       fontSize: 9,
                       color: LabColors.primary,
@@ -1122,7 +1129,7 @@ class _ExerciseSearchPickerState extends ConsumerState<ExerciseSearchPicker> {
                 ),
                 const SizedBox(width: 16),
                 Text(
-                  'TOTAL: ${_all.length}',
+                  '${tr(lang, 'TOTAL')}: ${_all.length}',
                   style:
                       LabStyles.mono(context, fontSize: 9, color: Colors.white),
                 ),
@@ -1347,6 +1354,7 @@ class _EditableSessionTimerState extends ConsumerState<EditableSessionTimer> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final logAsync = ref.watch(widget.logProvider);
     ref.listen(widget.tickProvider, (_, __) {
       _updateFromLog(logAsync.value);
@@ -1401,7 +1409,9 @@ class _EditableSessionTimerState extends ConsumerState<EditableSessionTimer> {
                 child: LabButton(
                   label: isRunning
                       ? "STOP_SESSION"
-                      : (accumulated == 0 ? "START_SESSION" : "RESUME"),
+                      : (accumulated == 0
+                          ? "START_SESSION"
+                          : tr(lang, "RESUME")),
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   onPressed: () async {

@@ -10,6 +10,7 @@ import 'lab_widgets.dart';
 import 'main_scaffold.dart';
 import 'charts/performance_dashboard.dart';
 import 'workout_manager.dart'; // To access selectedDateProvider
+import '../localization/strings.dart';
 
 class ExerciseHistoryScreen extends ConsumerWidget {
   final BaseExercise exercise;
@@ -19,6 +20,7 @@ class ExerciseHistoryScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final historyAsync = ref.watch(exerciseFullHistoryProvider(exercise.id));
     final bw = ref.watch(_latestBodyWeightProvider).valueOrNull ?? 0.0;
+    final lang = ref.watch(languageProvider).value ?? 'en';
 
     return MainScaffold(
       title: 'KNS.HISTORICAL_REPORT',
@@ -26,7 +28,7 @@ class ExerciseHistoryScreen extends ConsumerWidget {
       body: Column(
         children: [
           _buildExerciseHeader(context, ref),
-          _buildJumpToAnalyzerButton(context),
+          _buildJumpToAnalyzerButton(context, lang),
           const Divider(height: 1, color: LabColors.cyanBorder, thickness: 0.5),
           Expanded(
             child: historyAsync.when(
@@ -95,11 +97,11 @@ class ExerciseHistoryScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildJumpToAnalyzerButton(BuildContext context) {
+  Widget _buildJumpToAnalyzerButton(BuildContext context, String lang) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: LabButton(
-        label: "JUMP TO GRFCL HISTORY",
+        label: tr(lang, "JUMP TO GRFCL HISTORY"),
         color: LabColors.visualsNeon,
         isOutlined: true,
         onPressed: () {

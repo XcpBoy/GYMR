@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import '../providers/theme_provider.dart';
 import '../providers/database_provider.dart';
 import '../database/database.dart';
+import '../localization/strings.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 
@@ -124,6 +125,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final exercises = ref.watch(allExercisesProvider).value ?? [];
     final batchNamesAsync = ref.watch(allBatchNamesProvider);
@@ -413,7 +415,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
         controller: _tabController,
         children: [
           for (int i = 0; i < categories.length; i++)
-            _buildCategoryTab(context, categories[i], i, settings),
+            _buildCategoryTab(context, categories[i], i, settings, lang),
         ],
       ),
       bottomNavigationBar: const LabFooter(),
@@ -421,14 +423,14 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
   }
 
   Widget _buildCategoryTab(BuildContext context, _ThemeCategory category,
-      int tabIndex, Map<String, ThemeSetting> settings) {
+      int tabIndex, Map<String, ThemeSetting> settings, String lang) {
     final query = _tabSearchControllers[tabIndex].text.toLowerCase();
     final isSearching = query.isNotEmpty;
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _buildTabSearchField(context, tabIndex, category.title),
+        _buildTabSearchField(context, tabIndex, category.title, lang),
         const SizedBox(height: 16),
         for (final section in category.sections)
           Builder(builder: (context) {
@@ -445,7 +447,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: _buildSectionCard(
-                  context, section, filtered, expanded, isSearching, settings),
+                  context, section, filtered, expanded, isSearching, settings, lang),
             );
           }),
         const SizedBox(height: 80),
@@ -454,7 +456,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
   }
 
   Widget _buildTabSearchField(
-      BuildContext context, int tabIndex, String categoryTitle) {
+      BuildContext context, int tabIndex, String categoryTitle, String lang) {
     return Container(
       decoration: BoxDecoration(
         color: LabColors.surfaceContainerLowest,
@@ -465,7 +467,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
         controller: _tabSearchControllers[tabIndex],
         style: LabStyles.mono(context, fontSize: 11, color: Colors.white70),
         decoration: InputDecoration(
-          hintText: "SEARCH $categoryTitle...",
+          hintText: "${tr(lang, 'SEARCH')} $categoryTitle...",
           hintStyle:
               LabStyles.mono(context, fontSize: 11, color: Colors.grey[700]),
           prefixIcon: Icon(Icons.search,
@@ -486,7 +488,8 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
       List<String> filteredItems,
       bool expanded,
       bool forceExpanded,
-      Map<String, ThemeSetting> settings) {
+      Map<String, ThemeSetting> settings,
+      String lang) {
     return Container(
       decoration: BoxDecoration(
         color: LabColors.surfaceDim,
@@ -531,7 +534,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
               child: section.isValueType
                   ? _buildValueList(context, filteredItems, section.key, settings)
                   : _buildSwatchGrid(
-                      context, filteredItems, section.key, settings,
+                      context, filteredItems, section.key, settings, lang,
                       defaults: section.defaults),
             ),
         ],
@@ -540,7 +543,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
   }
 
   Widget _buildSwatchGrid(BuildContext context, List<String> items,
-      String prefix, Map<String, ThemeSetting> settings,
+      String prefix, Map<String, ThemeSetting> settings, String lang,
       {Map<String, Color>? defaults}) {
     if (items.isEmpty) {
       if (prefix == 'wo_batch') {
@@ -559,7 +562,8 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  "NO BATCHES YET — Create workout sets with a batch name in complex_metadata to register colors here.",
+                  tr(lang,
+                      "NO BATCHES YET — Create workout sets with a batch name in complex_metadata to register colors here."),
                   style: LabStyles.mono(context,
                       fontSize: 9, color: Colors.grey[600]),
                 ),

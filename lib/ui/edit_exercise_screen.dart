@@ -9,6 +9,7 @@ import 'lab_widgets.dart';
 import 'main_scaffold.dart';
 import 'wb_shared/wb_shared_widgets.dart';
 import 'complex_metadata_screen.dart'; // NEW
+import '../localization/strings.dart';
 
 class EditExerciseScreen extends ConsumerStatefulWidget {
   final BaseExercise exercise;
@@ -395,6 +396,7 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     return MainScaffold(
       title: 'EDIT_EXERCISE',
       body: SingleChildScrollView(
@@ -406,33 +408,33 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
             children: [
               _buildSectionTitle('CORE_IDENTIFICATION'),
               const SizedBox(height: 16),
-              _buildSearchableField('BASE NAME (E.G : VERTICAL PULL)', _nameController, 'name'),
+              _buildSearchableField(tr(lang, 'BASE NAME (E.G : VERTICAL PULL)'), _nameController, 'name'),
               const SizedBox(height: 12),
               LabButton(
-                label: 'Copy Existing Movement', 
-                onPressed: _showCopyPicker, 
+                label: tr(lang, 'Copy Existing Movement'),
+                onPressed: _showCopyPicker,
                 color: LabColors.tertiary,
                 isOutlined: true,
                 padding: const EdgeInsets.symmetric(vertical: 8),
               ),
               const SizedBox(height: 12),
               LabButton(
-                label: 'Complex Metadata Input', 
-                onPressed: _showComplexMetadataInput, 
+                label: tr(lang, 'Complex Metadata Input'),
+                onPressed: _showComplexMetadataInput,
                 color: LabColors.primary,
                 isOutlined: true,
                 padding: const EdgeInsets.symmetric(vertical: 8),
               ),
               const SizedBox(height: 16),
-              _buildSearchableField('Field / Discipline', _fieldController, 'field'),
+              _buildSearchableField(tr(lang, 'Field / Discipline'), _fieldController, 'field'),
               const SizedBox(height: 16),
               LabTextField(
-                controller: _descriptionController, 
-                label: 'Technical Description / Notes', 
+                controller: _descriptionController,
+                label: tr(lang, 'Technical Description / Notes'),
                 maxLines: 3,
                 keyboardType: TextInputType.multiline,
               ),
-              
+
               const SizedBox(height: 24),
               _buildSectionTitle('QUALITIES'),
               const SizedBox(height: 16),
@@ -443,7 +445,7 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
               _buildDynamicList('PREFIXES', _prefixControllers, () => setState(() => _prefixControllers.add(TextEditingController())), type: 'prefix'),
               const SizedBox(height: 16),
               _buildDynamicList('SUFFIXES', _suffixControllers, () => setState(() => _suffixControllers.add(TextEditingController())), type: 'suffix'),
-              
+
               const SizedBox(height: 32),
               _buildSectionTitle('LOAD_METRICS'),
               const SizedBox(height: 16),
@@ -459,7 +461,7 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
                 Expanded(
                     child: LabTextField(
                         controller: _vpMultiplierController,
-                        label: 'VP MULTIPLIER',
+                        label: tr(lang, 'VP MULTIPLIER'),
                         keyboardType:
                             const TextInputType.numberWithOptions(decimal: true))),
               ]),
@@ -467,36 +469,36 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
               const SizedBox(height: 32),
               _buildSectionTitle('TARGETING'),
               const SizedBox(height: 16),
-              _buildSearchableField('Primary Muscle', _primaryMuscleController, 'muscle'),
+              _buildSearchableField(tr(lang, 'Primary Muscle'), _primaryMuscleController, 'muscle'),
               const SizedBox(height: 16),
-              _buildSearchableField('Secondary Muscle', _secondaryMuscleController, 'muscle'),
-              
+              _buildSearchableField(tr(lang, 'Secondary Muscle'), _secondaryMuscleController, 'muscle'),
+
               const SizedBox(height: 32),
-              _buildSearchableField('Pattern Type', _patternTypeController, 'pattern'),
+              _buildSearchableField(tr(lang, 'Pattern Type'), _patternTypeController, 'pattern'),
               const SizedBox(height: 16),
-              _buildSearchableField('Purpose / Intention', _intentionController, 'purpose'),
-              
+              _buildSearchableField(tr(lang, 'Purpose / Intention'), _intentionController, 'purpose'),
+
               const SizedBox(height: 32),
               _buildSectionTitle('BIOMECHANICAL_TISSUE'),
               const SizedBox(height: 16),
-              _buildSearchableField('Type of Tissue', _tissueTypeController, 'tissueType'),
+              _buildSearchableField(tr(lang, 'Type of Tissue'), _tissueTypeController, 'tissueType'),
               const SizedBox(height: 16),
-              _buildSearchableField('Name of Tissue', _tissueNameController, 'tissueName'),
-              
+              _buildSearchableField(tr(lang, 'Name of Tissue'), _tissueNameController, 'tissueName'),
+
               const SizedBox(height: 32),
               _buildSectionTitle('PHASES'),
               const SizedBox(height: 16),
-              LabTextField(controller: _numPhasesController, label: 'Number of Phases'),
+              LabTextField(controller: _numPhasesController, label: tr(lang, 'Number of Phases')),
               const SizedBox(height: 16),
               ..._phaseDescriptionControllers.asMap().entries.map((entry) => Padding(
-                padding: const EdgeInsets.only(bottom: 12), 
-                child: _buildSearchableField('Phase ${entry.key + 1}', entry.value, 'phase')
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildSearchableField('${tr(lang, 'Phase')} ${entry.key + 1}', entry.value, 'phase')
               )),
 
               const SizedBox(height: 40),
-              LabButton(label: 'Update Movement', onPressed: _updateExercise, color: LabColors.accent),
+              LabButton(label: tr(lang, 'Update Movement'), onPressed: _updateExercise, color: LabColors.accent),
               const SizedBox(height: 12),
-              LabButton(label: 'Abort', onPressed: () => Navigator.pop(context), isOutlined: true, color: Colors.redAccent),
+              LabButton(label: tr(lang, 'Abort'), onPressed: () => Navigator.pop(context), isOutlined: true, color: Colors.redAccent),
               const SizedBox(height: 40),
             ],
           ),

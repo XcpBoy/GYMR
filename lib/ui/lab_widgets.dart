@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/theme_provider.dart';
 import '../database/database.dart';
+import '../localization/strings.dart';
 import 'styles.dart';
 import 'home_screen.dart';
 import 'workout_manager.dart';
@@ -89,6 +90,7 @@ class _LabUtilitySelectorState extends ConsumerState<LabUtilitySelector> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final sorted = _sortedSuggestions();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -144,7 +146,7 @@ class _LabUtilitySelectorState extends ConsumerState<LabUtilitySelector> {
                   }
                   _newUtilC.clear();
                 },
-                child: Text('ADD', style: LabStyles.mono(context, fontSize: 10, color: Colors.black, fontWeight: FontWeight.bold)),
+                child: Text(tr(lang, 'ADD'), style: LabStyles.mono(context, fontSize: 10, color: Colors.black, fontWeight: FontWeight.bold)),
               ),
             ),
             const SizedBox(width: 6),
@@ -193,8 +195,8 @@ class _LabUtilitySelectorState extends ConsumerState<LabUtilitySelector> {
               selected: true,
               borderColor: _tagColor(tag),
               onTap: () => _toggleTag(tag),
-              onEdit: () => _showRenameDialog(context, tag),
-              onDelete: () => _showDeleteConfirm(context, tag),
+              onEdit: () => _showRenameDialog(context, tag, lang),
+              onDelete: () => _showDeleteConfirm(context, tag, lang),
             )).toList(),
           ),
           const SizedBox(height: 12),
@@ -214,8 +216,8 @@ class _LabUtilitySelectorState extends ConsumerState<LabUtilitySelector> {
                 selected: false,
                 borderColor: _tagColor(tag),
                 onTap: () => _toggleTag(tag),
-                onEdit: () => _showRenameDialog(context, tag),
-                onDelete: () => _showDeleteConfirm(context, tag),
+                onEdit: () => _showRenameDialog(context, tag, lang),
+                onDelete: () => _showDeleteConfirm(context, tag, lang),
               )).toList(),
           ),
         ],
@@ -223,7 +225,7 @@ class _LabUtilitySelectorState extends ConsumerState<LabUtilitySelector> {
     );
   }
 
-  void _showRenameDialog(BuildContext context, String oldName) {
+  void _showRenameDialog(BuildContext context, String oldName, String lang) {
     final editC = TextEditingController(text: oldName);
     showDialog(
       context: context,
@@ -232,28 +234,30 @@ class _LabUtilitySelectorState extends ConsumerState<LabUtilitySelector> {
         title: Text('RENAME_UTILITY', style: LabStyles.mono(context, fontSize: 12, color: LabColors.primary)),
         content: LabTextField(controller: editC, label: 'NEW_NAME'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: Text('CANCEL', style: LabStyles.mono(context))),
+          TextButton(onPressed: () => Navigator.pop(c), child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(context))),
           TextButton(
             onPressed: () {
               widget.onRename(oldName, editC.text.toUpperCase().trim());
               Navigator.pop(c);
             },
-            child: Text('UPDATE', style: LabStyles.mono(context, color: LabColors.primary)),
+            child: Text(tr(lang, 'UPDATE'), style: LabStyles.mono(context, color: LabColors.primary)),
           ),
         ],
       ),
     );
   }
 
-  void _showDeleteConfirm(BuildContext context, String tag) {
+  void _showDeleteConfirm(BuildContext context, String tag, String lang) {
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
         backgroundColor: LabColors.background,
         title: Text('DELETE_UTILITY_TAG', style: LabStyles.mono(context, fontSize: 12, color: Colors.redAccent)),
-        content: Text('REMOVING "$tag" WILL CLEAR IT FROM ALL RECORDS.', style: LabStyles.mono(context, fontSize: 10)),
+        content: Text(
+            tr(lang, 'REMOVING "{tag}" WILL CLEAR IT FROM ALL RECORDS.').replaceFirst('{tag}', tag),
+            style: LabStyles.mono(context, fontSize: 10)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(c), child: Text('CANCEL', style: LabStyles.mono(context))),
+          TextButton(onPressed: () => Navigator.pop(c), child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(context))),
           TextButton(
             onPressed: () {
               widget.onDelete(tag);
@@ -498,12 +502,17 @@ class QualitySearchPicker extends StatefulWidget {
   final List<String> values;
   final Function(String) onSelected;
   final bool closeOnSelect;
+  // Optional: this widget is plain (no ref access), so callers that have a
+  // WidgetRef can pass the current lang through to get the "Filter..."
+  // hint translated. Defaults to 'en' so existing call sites keep compiling.
+  final String lang;
   const QualitySearchPicker({
     super.key,
     required this.title,
     required this.values,
     required this.onSelected,
     this.closeOnSelect = true,
+    this.lang = 'en',
   });
   @override State<QualitySearchPicker> createState() => _QualitySearchPickerState();
 }
@@ -543,7 +552,7 @@ class _QualitySearchPickerState extends State<QualitySearchPicker> {
                   ]
                 ),
                 const SizedBox(height: 16),
-                LabTextField(controller: sC, label: 'Filter...')
+                LabTextField(controller: sC, label: tr(widget.lang, 'Filter...'))
               ]
             )
           ),

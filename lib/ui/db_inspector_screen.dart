@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../providers/database_provider.dart';
 import '../providers/theme_provider.dart';
 import '../database/database.dart';
+import '../localization/strings.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
@@ -43,6 +44,10 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   static const int _maxUndoDepth = 10;
 
   bool get _canUndo => _undoStack.isNotEmpty;
+
+  // Current language for `tr(...)` calls. Uses `ref.read` since most callers
+  // here are async handlers/dialog builders rather than `build()` itself.
+  String get _lang => ref.read(languageProvider).value ?? 'en';
 
   @override
   void initState() {
@@ -223,8 +228,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content:
-                  Text('UNDO: ${snap.label}', style: LabStyles.mono(context))),
+              content: Text('${tr(_lang, 'UNDO')}: ${snap.label}',
+                  style: LabStyles.mono(context))),
         );
         setState(() {});
       }
@@ -233,7 +238,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('UNDO ERROR: $e', style: LabStyles.mono(context)),
+              content: Text('${tr(_lang, 'UNDO ERROR')}: $e',
+                  style: LabStyles.mono(context)),
               backgroundColor: Colors.redAccent),
         );
       }
@@ -338,7 +344,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: LabColors.surfaceContainerHigh,
-        title: Text('CONFIRM: $title',
+        title: Text('${tr(_lang, 'CONFIRM')}: $title',
             style: LabStyles.mono(context,
                 color: LabColors.accent, fontWeight: FontWeight.bold)),
         content: SingleChildScrollView(
@@ -347,10 +353,10 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('CANCEL', style: LabStyles.mono(context))),
+              child: Text(tr(_lang, 'CANCEL'), style: LabStyles.mono(context))),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: Text('PROCEED',
+              child: Text(tr(_lang, 'PROCEED'),
                   style: LabStyles.mono(context, color: LabColors.accent))),
         ],
       ),
@@ -362,7 +368,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: LabColors.surfaceContainerHigh,
-        title: Text('CONFIRM AGAIN',
+        title: Text(tr(_lang, 'CONFIRM AGAIN'),
             style: LabStyles.mono(context,
                 color: Colors.redAccent, fontWeight: FontWeight.bold)),
         content: SingleChildScrollView(
@@ -370,7 +376,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('This action will modify the database.',
+              Text(tr(_lang, 'This action will modify the database.'),
                   style: LabStyles.mono(context, fontSize: 10)),
               if (sanityResult != null) ...[
                 const SizedBox(height: 12),
@@ -379,7 +385,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                         fontSize: 8, color: Colors.grey)),
               ],
               const SizedBox(height: 12),
-              Text('Type CONFIRM to proceed:',
+              Text(tr(_lang, 'Type CONFIRM to proceed:'),
                   style: LabStyles.mono(context,
                       fontSize: 10, color: LabColors.accent)),
             ],
@@ -388,11 +394,11 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('ABORT',
+              child: Text(tr(_lang, 'ABORT'),
                   style: LabStyles.mono(context, color: Colors.redAccent))),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: Text('CONFIRM',
+              child: Text(tr(_lang, 'CONFIRM'),
                   style: LabStyles.mono(context, color: LabColors.primary))),
         ],
       ),
@@ -429,7 +435,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDState) => AlertDialog(
           backgroundColor: LabColors.surfaceContainerHigh,
-          title: Text('FIND & REPLACE — ${cfg.label}',
+          title: Text('${tr(_lang, 'FIND & REPLACE')} — ${cfg.label}',
               style: LabStyles.mono(context, color: LabColors.accent)),
           content: SingleChildScrollView(
             child: Column(
@@ -449,7 +455,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                           size: 18),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text('APPLY TO ALL TEXT COLUMNS',
+                        child: Text(tr(_lang, 'APPLY TO ALL TEXT COLUMNS'),
                             style: LabStyles.mono(context,
                                 fontSize: 10, color: Colors.white)),
                       ),
@@ -463,7 +469,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                     dropdownColor: LabColors.surfaceContainerHigh,
                     style: LabStyles.mono(context,
                         fontSize: 12, color: Colors.white),
-                    decoration: _inputDecoration('Column'),
+                    decoration: _inputDecoration(tr(_lang, 'Column')),
                     items: visibleCols
                         .map((c) =>
                             DropdownMenuItem(value: c, child: Text(c)))
@@ -474,12 +480,12 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                 ],
                 TextField(
                     controller: findCtrl,
-                    decoration: _inputDecoration('Find text'),
+                    decoration: _inputDecoration(tr(_lang, 'Find text')),
                     style: LabStyles.mono(context, fontSize: 12)),
                 const SizedBox(height: 8),
                 TextField(
                     controller: replaceCtrl,
-                    decoration: _inputDecoration('Replace with'),
+                    decoration: _inputDecoration(tr(_lang, 'Replace with')),
                     style: LabStyles.mono(context, fontSize: 12)),
                 const SizedBox(height: 8),
                 InkWell(
@@ -495,7 +501,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                            'WHOLE WORD ONLY (unchecked: "FL" also matches inside "FLOATING")',
+                            tr(_lang,
+                                'WHOLE WORD ONLY (unchecked: "FL" also matches inside "FLOATING")'),
                             style: LabStyles.mono(context,
                                 fontSize: 9, color: Colors.grey[400])),
                       ),
@@ -508,10 +515,10 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: Text('CANCEL', style: LabStyles.mono(context))),
+                child: Text(tr(_lang, 'CANCEL'), style: LabStyles.mono(context))),
             TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: Text('REPLACE ALL',
+                child: Text(tr(_lang, 'REPLACE ALL'),
                     style: LabStyles.mono(context, color: LabColors.accent))),
           ],
         ),
@@ -613,14 +620,15 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('REPLACE COMPLETE', style: LabStyles.mono(context)),
+          content:
+              Text(tr(_lang, 'REPLACE COMPLETE'), style: LabStyles.mono(context)),
         ));
       }
     } catch (e) {
       debugPrint('DB.EDIT ERROR: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('ERROR: $e', style: LabStyles.mono(context)),
+          content: Text('${tr(_lang, 'ERROR')}: $e', style: LabStyles.mono(context)),
           backgroundColor: Colors.redAccent,
         ));
       }
@@ -656,6 +664,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         columns: columns,
         initialColumn: initialColumn,
         loadValues: _loadCategoryValues,
+        lang: _lang,
       ),
     );
 
@@ -704,13 +713,13 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       return map;
     }).toList();
 
-    final details = 'Table: ${cfg.table}\n'
-        'Column: $column\n'
-        'TO REPLACE: ${from.display}\n'
-        'REPLACE WITH: ${to.display}\n'
-        'AFFECTED ROWS: ${snapshotRows.length}';
+    final details = '${tr(_lang, 'Table')}: ${cfg.table}\n'
+        '${tr(_lang, 'Column')}: $column\n'
+        '${tr(_lang, 'TO REPLACE')}: ${from.display}\n'
+        '${tr(_lang, 'REPLACE WITH')}: ${to.display}\n'
+        '${tr(_lang, 'AFFECTED ROWS')}: ${snapshotRows.length}';
 
-    final ok = await _confirmAction('CATEGORY REPLACE', details);
+    final ok = await _confirmAction(tr(_lang, 'CATEGORY REPLACE'), details);
     if (!ok) return;
 
     _pushUndo(_UndoSnapshot(
@@ -744,7 +753,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(
-                  'CATEGORY REPLACE COMPLETE: ${snapshotRows.length} rows',
+                  '${tr(_lang, 'CATEGORY REPLACE COMPLETE')}: ${snapshotRows.length} ${tr(_lang, 'rows')}',
                   style: LabStyles.mono(context))),
         );
         setState(() {});
@@ -753,7 +762,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       debugPrint('DB.EDIT ERROR: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('ERROR: $e', style: LabStyles.mono(context)),
+          content: Text('${tr(_lang, 'ERROR')}: $e', style: LabStyles.mono(context)),
           backgroundColor: Colors.redAccent,
         ));
       }
@@ -776,7 +785,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDState) => AlertDialog(
           backgroundColor: LabColors.surfaceContainerHigh,
-          title: Text('NORMALIZE COLUMN — ${cfg.label}',
+          title: Text('${tr(_lang, 'NORMALIZE COLUMN')} — ${cfg.label}',
               style: LabStyles.mono(context, color: LabColors.accent)),
           content: SingleChildScrollView(
             child: Column(
@@ -788,7 +797,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                   dropdownColor: LabColors.surfaceContainerHigh,
                   style: LabStyles.mono(context,
                       fontSize: 12, color: Colors.white),
-                  decoration: _inputDecoration('Column'),
+                  decoration: _inputDecoration(tr(_lang, 'Column')),
                   items: visibleCols
                       .map((c) =>
                           DropdownMenuItem(value: c, child: Text(c)))
@@ -808,7 +817,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                           size: 18),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text('UPPERCASE',
+                        child: Text(tr(_lang, 'UPPERCASE'),
                             style: LabStyles.mono(context,
                                 fontSize: 10, color: Colors.white)),
                       ),
@@ -817,9 +826,10 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                    'Trims/collapses whitespace on the selected column only. '
-                    'Never merges or deletes rows — two different exercises '
-                    'stay two rows.',
+                    tr(_lang,
+                        'Trims/collapses whitespace on the selected column only. '
+                        'Never merges or deletes rows — two different exercises '
+                        'stay two rows.'),
                     style: LabStyles.mono(context,
                         fontSize: 9, color: Colors.grey[400])),
               ],
@@ -828,10 +838,10 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
-                child: Text('CANCEL', style: LabStyles.mono(context))),
+                child: Text(tr(_lang, 'CANCEL'), style: LabStyles.mono(context))),
             TextButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: Text('PREVIEW',
+                child: Text(tr(_lang, 'PREVIEW'),
                     style: LabStyles.mono(context, color: LabColors.accent))),
           ],
         ),
@@ -884,13 +894,13 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         .take(20)
         .map((c) => '"${c.oldVal}" -> "${c.newVal}"')
         .join('\n');
-    final details = 'Table: ${cfg.table}\n'
-        'Column: $column\n'
-        'AFFECTED ROWS: ${changes.length}\n\n'
+    final details = '${tr(_lang, 'Table')}: ${cfg.table}\n'
+        '${tr(_lang, 'Column')}: $column\n'
+        '${tr(_lang, 'AFFECTED ROWS')}: ${changes.length}\n\n'
         '$previewLines'
-        '${changes.length > 20 ? '\n… and ${changes.length - 20} more' : ''}';
+        '${changes.length > 20 ? '\n… ${tr(_lang, 'and')} ${changes.length - 20} ${tr(_lang, 'more')}' : ''}';
 
-    final ok = await _confirmAction('NORMALIZE COLUMN', details);
+    final ok = await _confirmAction(tr(_lang, 'NORMALIZE COLUMN'), details);
     if (!ok) return;
 
     final snapshotRows = changes.map((c) => c.snapshot).toList();
@@ -916,7 +926,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('NORMALIZE COMPLETE: ${changes.length} rows',
+          content: Text(
+              '${tr(_lang, 'NORMALIZE COMPLETE')}: ${changes.length} ${tr(_lang, 'rows')}',
               style: LabStyles.mono(context)),
         ));
         setState(() {});
@@ -925,7 +936,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       debugPrint('DB.EDIT ERROR: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('ERROR: $e', style: LabStyles.mono(context)),
+          content: Text('${tr(_lang, 'ERROR')}: $e', style: LabStyles.mono(context)),
           backgroundColor: Colors.redAccent,
         ));
       }
@@ -1086,9 +1097,10 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   /// Fixes columns that were incorrectly typed as TEXT by old REINDEX.
   Future<void> _repairColumnTypes(_TableCfg cfg) async {
     final ok = await _confirmAction(
-      'REPAIR COLUMN TYPES',
-      'This will fix all columns in ${cfg.table} that have wrong SQL types.'
-          '\n\nRequired after a buggy REINDEX changed REAL/INTEGER columns to TEXT.',
+      tr(_lang, 'REPAIR COLUMN TYPES'),
+      '${tr(_lang, 'This will fix all columns in')} ${cfg.table} '
+          '${tr(_lang, 'that have wrong SQL types.')}'
+          '\n\n${tr(_lang, 'Required after a buggy REINDEX changed REAL/INTEGER columns to TEXT.')}',
     );
     if (!ok) return;
 
@@ -1185,7 +1197,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                  content: Text('REPAIR: Fixed table schema (types + defaults)',
+                  content: Text(
+                      '${tr(_lang, 'REPAIR')}: ${tr(_lang, 'Fixed table schema (types + defaults)')}',
                       style: LabStyles.mono(context))),
             );
             setState(() {});
@@ -1195,8 +1208,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                  content:
-                      Text('REPAIR ERROR: $e', style: LabStyles.mono(context)),
+                  content: Text('${tr(_lang, 'REPAIR ERROR')}: $e',
+                      style: LabStyles.mono(context)),
                   backgroundColor: Colors.redAccent),
             );
           }
@@ -1210,8 +1223,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
           .map((e) => '${e.key}: ${currentTypes[e.key]} -> ${e.value}')
           .join('\n');
 
-      final ok2 = await _confirmAction('REPAIR TYPES',
-          'Fixing ${fixes.length} columns in ${cfg.table}:\n$details');
+      final ok2 = await _confirmAction(tr(_lang, 'REPAIR TYPES'),
+          '${tr(_lang, 'Fixing')} ${fixes.length} ${tr(_lang, 'columns in')} ${cfg.table}:\n$details');
       if (!ok2) return;
 
       await db.customStatement('PRAGMA foreign_keys = OFF');
@@ -1273,7 +1286,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(
-                  'REPAIR COMPLETE: ${fixes.length} columns fixed in ${cfg.table}',
+                  '${tr(_lang, 'REPAIR COMPLETE')}: ${fixes.length} ${tr(_lang, 'columns fixed in')} ${cfg.table}',
                   style: LabStyles.mono(context))),
         );
         setState(() {});
@@ -1284,7 +1297,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('REPAIR ERROR: $e', style: LabStyles.mono(context)),
+              content: Text('${tr(_lang, 'REPAIR ERROR')}: $e',
+                  style: LabStyles.mono(context)),
               backgroundColor: Colors.redAccent),
         );
       }
@@ -1299,10 +1313,10 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   /// Uses a transaction for atomicity.
   Future<void> _reindexRows(_TableCfg cfg) async {
     final ok = await _confirmAction(
-      'REINDEX ROWS',
-      'This will reassign sequential IDs (1,2,3...) to all rows in ${cfg.table}.'
-          '\\n\\nAll FK references in other tables will be updated.'
-          '\\n\\nThis operation is IRREVERSIBLE.',
+      tr(_lang, 'REINDEX ROWS'),
+      '${tr(_lang, 'This will reassign sequential IDs (1,2,3...) to all rows in')} ${cfg.table}.'
+          '\\n\\n${tr(_lang, 'All FK references in other tables will be updated.')}'
+          '\\n\\n${tr(_lang, 'This operation is IRREVERSIBLE.')}',
     );
     if (!ok) return;
 
@@ -1336,7 +1350,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-                content: Text('REINDEX: Already sequential, no changes needed',
+                content: Text(
+                    '${tr(_lang, 'REINDEX')}: ${tr(_lang, 'Already sequential, no changes needed')}',
                     style: LabStyles.mono(context))),
           );
           setState(() => _isProcessing = false);
@@ -1449,7 +1464,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(
-                  'REINDEX COMPLETE: ${rows.length} rows, ${idMap.length} IDs remapped',
+                  '${tr(_lang, 'REINDEX COMPLETE')}: ${rows.length} ${tr(_lang, 'rows')}, ${idMap.length} ${tr(_lang, 'IDs remapped')}',
                   style: LabStyles.mono(context))),
         );
         // Force refresh
@@ -1463,8 +1478,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content:
-                  Text('REINDEX ERROR: $e', style: LabStyles.mono(context)),
+              content: Text('${tr(_lang, 'REINDEX ERROR')}: $e',
+                  style: LabStyles.mono(context)),
               backgroundColor: Colors.redAccent),
         );
       }
@@ -1482,30 +1497,32 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: LabColors.surfaceContainerHigh,
-        title: Text(' MERGE ROWS — ${cfg.label}',
+        title: Text(' ${tr(_lang, 'MERGE ROWS')} — ${cfg.label}',
             style: LabStyles.mono(context, color: LabColors.accent)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('PK to KEEP (survives):',
+            Text(tr(_lang, 'PK to KEEP (survives):'),
                 style:
                     LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
             TextField(
                 controller: pk1Ctrl,
                 keyboardType: TextInputType.number,
-                decoration: _inputDecoration('PK 1 (keep)'),
+                decoration: _inputDecoration(tr(_lang, 'PK 1 (keep)')),
                 style: LabStyles.mono(context, fontSize: 12)),
             const SizedBox(height: 12),
-            Text('PK to DELETE (merge into PK 1):',
+            Text(tr(_lang, 'PK to DELETE (merge into PK 1):'),
                 style:
                     LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
             TextField(
                 controller: pk2Ctrl,
                 keyboardType: TextInputType.number,
-                decoration: _inputDecoration('PK 2 (delete)'),
+                decoration: _inputDecoration(tr(_lang, 'PK 2 (delete)')),
                 style: LabStyles.mono(context, fontSize: 12)),
             const SizedBox(height: 8),
-            Text('All FK references to PK 2 will be updated to point to PK 1.',
+            Text(
+                tr(_lang,
+                    'All FK references to PK 2 will be updated to point to PK 1.'),
                 style: LabStyles.mono(context,
                     fontSize: 8, color: Colors.orangeAccent)),
           ],
@@ -1513,10 +1530,10 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('CANCEL', style: LabStyles.mono(context))),
+              child: Text(tr(_lang, 'CANCEL'), style: LabStyles.mono(context))),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: Text('MERGE',
+              child: Text(tr(_lang, 'MERGE'),
                   style: LabStyles.mono(context, color: LabColors.accent))),
         ],
       ),
@@ -1571,7 +1588,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
               content: Text(
-                  'MERGED: PK $pk2 → PK $pk1 (${fks.length} FK tables updated)',
+                  '${tr(_lang, 'MERGED')}: PK $pk2 → PK $pk1 (${fks.length} ${tr(_lang, 'FK tables updated')})',
                   style: LabStyles.mono(context))),
         );
       }
@@ -1579,7 +1596,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       debugPrint('DB.EDIT ERROR: $e');
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('MERGE ERROR: $e', style: LabStyles.mono(context)),
+            content: Text('${tr(_lang, 'MERGE ERROR')}: $e',
+                style: LabStyles.mono(context)),
             backgroundColor: Colors.redAccent));
     } finally {
       if (mounted) setState(() => _isProcessing = false);
@@ -1690,7 +1708,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                   icon: Icon(Icons.undo,
                       size: 16,
                       color: _canUndo ? LabColors.accent : Colors.grey[800]),
-                  tooltip: _canUndo ? 'UNDO HISTORY' : 'NO_UNDO_HISTORY',
+                  tooltip:
+                      _canUndo ? tr(_lang, 'UNDO HISTORY') : 'NO_UNDO_HISTORY',
                   color: LabColors.surfaceContainerHigh,
                   itemBuilder: (ctx) {
                     final recent = _undoStack.reversed.take(5).toList();
@@ -1701,7 +1720,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                           enabled: i == 0,
                           child: Text(
                               i == 0
-                                  ? 'UNDO: ${recent[i].label}'
+                                  ? '${tr(_lang, 'UNDO')}: ${recent[i].label}'
                                   : '${i + 1}. ${recent[i].label}',
                               style: LabStyles.mono(context,
                                   fontSize: 10,
@@ -1714,8 +1733,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                   onSelected: (i) async {
                     if (i != 0) return;
                     final snap = _undoStack.last;
-                    final ok =
-                        await _confirmAction('UNDO', 'Revert: ${snap.label}');
+                    final ok = await _confirmAction(
+                        tr(_lang, 'UNDO'), '${tr(_lang, 'Revert')}: ${snap.label}');
                     if (ok) await _undoLast();
                   },
                   padding: EdgeInsets.zero,
@@ -1729,46 +1748,46 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                     PopupMenuItem(
                       enabled: false,
                       height: 24,
-                      child: Text('VIEW',
+                      child: Text(tr(_lang, 'VIEW'),
                           style: LabStyles.mono(context,
                               fontSize: 8,
                               color: Colors.grey[600],
                               fontWeight: FontWeight.bold)),
                     ),
-                    _batchMenuItem('config', Icons.tune, 'VIEW CONFIG',
-                        LabColors.primary),
+                    _batchMenuItem('config', Icons.tune,
+                        tr(_lang, 'VIEW CONFIG'), LabColors.primary),
                     const PopupMenuDivider(height: 12),
                     PopupMenuItem(
                       enabled: false,
                       height: 24,
-                      child: Text('EDIT',
+                      child: Text(tr(_lang, 'EDIT'),
                           style: LabStyles.mono(context,
                               fontSize: 8,
                               color: Colors.grey[600],
                               fontWeight: FontWeight.bold)),
                     ),
                     _batchMenuItem('findReplace', Icons.find_replace,
-                        'FIND & REPLACE ALL', LabColors.accent),
+                        tr(_lang, 'FIND & REPLACE ALL'), LabColors.accent),
                     _batchMenuItem('categoryReplace', Icons.swap_horiz,
-                        'CATEGORY REPLACE', LabColors.accent),
+                        tr(_lang, 'CATEGORY REPLACE'), LabColors.accent),
                     _batchMenuItem('normalize', Icons.spellcheck,
-                        'NORMALIZE COLUMN', LabColors.accent),
+                        tr(_lang, 'NORMALIZE COLUMN'), LabColors.accent),
                     const PopupMenuDivider(height: 12),
                     PopupMenuItem(
                       enabled: false,
                       height: 24,
-                      child: Text('DESTRUCTIVE',
+                      child: Text(tr(_lang, 'DESTRUCTIVE'),
                           style: LabStyles.mono(context,
                               fontSize: 8,
                               color: Colors.redAccent,
                               fontWeight: FontWeight.bold)),
                     ),
-                    _batchMenuItem('merge', Icons.call_merge, 'MERGE ROWS',
-                        Colors.redAccent),
+                    _batchMenuItem('merge', Icons.call_merge,
+                        tr(_lang, 'MERGE ROWS'), Colors.redAccent),
                     _batchMenuItem('reindex', Icons.format_list_numbered,
-                        'REINDEX ROWS', Colors.redAccent),
+                        tr(_lang, 'REINDEX ROWS'), Colors.redAccent),
                     _batchMenuItem('repairTypes', Icons.build_circle,
-                        'REPAIR COLUMN TYPES', Colors.redAccent),
+                        tr(_lang, 'REPAIR COLUMN TYPES'), Colors.redAccent),
                   ],
                   onSelected: (v) {
                     final cfg = _tableConfigs[_tabCtrl.index];
@@ -2162,7 +2181,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                   IconButton(
                     icon: const Icon(Icons.tune, size: 16),
                     color: LabColors.primary,
-                    tooltip: 'PAGE SIZE / COLUMNS',
+                    tooltip: tr(_lang, 'PAGE SIZE / COLUMNS'),
                     onPressed: () => _showConfigDialog(cfg),
                     padding: EdgeInsets.zero,
                     constraints:
@@ -2331,7 +2350,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       context: context,
       builder: (c) => AlertDialog(
         backgroundColor: LabColors.background,
-        title: Text('JUMP TO PAGE',
+        title: Text(tr(_lang, 'JUMP TO PAGE'),
             style: LabStyles.mono(context,
                 fontSize: 12, fontWeight: FontWeight.bold)),
         content: TextField(
@@ -2350,11 +2369,13 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(c),
-            child: Text('CANCEL', style: LabStyles.mono(context, color: Colors.grey)),
+            child: Text(tr(_lang, 'CANCEL'),
+                style: LabStyles.mono(context, color: Colors.grey)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(c, int.tryParse(ctrl.text)),
-            child: Text('GO', style: LabStyles.mono(context, color: LabColors.accent)),
+            child: Text(tr(_lang, 'GO'),
+                style: LabStyles.mono(context, color: LabColors.accent)),
           ),
         ],
       ),
@@ -2376,7 +2397,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       builder: (c) => StatefulBuilder(
         builder: (c, setDState) => AlertDialog(
           backgroundColor: LabColors.background,
-          title: Text('${cfg.label} CONFIG',
+          title: Text('${cfg.label} ${tr(_lang, 'CONFIG')}',
               style: LabStyles.mono(context,
                   fontSize: 12, fontWeight: FontWeight.bold)),
           content: SizedBox(
@@ -2393,7 +2414,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('ROWS PER PAGE',
+                      Text(tr(_lang, 'ROWS PER PAGE'),
                           style: LabStyles.mono(context,
                               fontSize: 9,
                               color: Colors.grey[400],
@@ -2441,7 +2462,9 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('VISIBLE COLUMNS  (drag ⋮⋮ to reorder)',
+                        Text(
+                            tr(_lang,
+                                'VISIBLE COLUMNS  (drag ⋮⋮ to reorder)'),
                             style: LabStyles.mono(context,
                                 fontSize: 9,
                                 color: Colors.grey[400],
@@ -2514,7 +2537,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(c),
-                child: Text('CANCEL',
+                child: Text(tr(_lang, 'CANCEL'),
                     style: LabStyles.mono(context, color: Colors.grey))),
             TextButton(
                 onPressed: () async {
@@ -2526,7 +2549,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
                   await _persistColumnConfig(cfg.key, hidden, order);
                   if (c.mounted) Navigator.pop(c);
                 },
-                child: Text('APPLY',
+                child: Text(tr(_lang, 'APPLY'),
                     style: LabStyles.mono(context, color: LabColors.primary))),
           ],
         ),
@@ -2635,13 +2658,14 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: LabColors.surfaceContainerHigh,
-        title: Text('EDIT CELL — $col',
+        title: Text('${tr(_lang, 'EDIT CELL')} — $col',
             style: LabStyles.mono(context, color: LabColors.accent)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Table: ${cfg.table}  |  PK: $pk',
+            Text(
+                '${tr(_lang, 'Table')}: ${cfg.table}  |  ${tr(_lang, 'PK')}: $pk',
                 style:
                     LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
             const SizedBox(height: 8),
@@ -2659,10 +2683,10 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: Text('CANCEL', style: LabStyles.mono(context))),
+              child: Text(tr(_lang, 'CANCEL'), style: LabStyles.mono(context))),
           TextButton(
               onPressed: () => Navigator.pop(ctx, ctrl.text),
-              child: Text('SAVE',
+              child: Text(tr(_lang, 'SAVE'),
                   style: LabStyles.mono(context, color: LabColors.accent))),
         ],
       ),
@@ -2672,8 +2696,8 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
 
     // Double confirm
     final ok = await _confirmAction(
-      'EDIT CELL',
-      'Table: ${cfg.table}\nColumn: $col\nPK: $pk\n\nFrom: "$currentValue"\nTo: "$newValue"',
+      tr(_lang, 'EDIT CELL'),
+      '${tr(_lang, 'Table')}: ${cfg.table}\n${tr(_lang, 'Column')}: $col\n${tr(_lang, 'PK')}: $pk\n\n${tr(_lang, 'From')}: "$currentValue"\n${tr(_lang, 'To')}: "$newValue"',
     );
     if (!ok) return;
 
@@ -2694,14 +2718,15 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('CELL UPDATED', style: LabStyles.mono(context))));
+            content: Text(tr(_lang, 'CELL UPDATED'),
+                style: LabStyles.mono(context))));
         setState(() {}); // refresh
       }
     } catch (e) {
       debugPrint('DB.EDIT ERROR: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('ERROR: $e', style: LabStyles.mono(context)),
+          content: Text('${tr(_lang, 'ERROR')}: $e', style: LabStyles.mono(context)),
           backgroundColor: Colors.redAccent,
         ));
       }
@@ -2779,12 +2804,14 @@ class _CategoryReplaceDialog extends StatefulWidget {
   final String initialColumn;
   final Future<List<_CategoryValueOption>> Function(
       _TableCfg cfg, String column) loadValues;
+  final String lang;
 
   const _CategoryReplaceDialog({
     required this.cfg,
     required this.columns,
     required this.initialColumn,
     required this.loadValues,
+    required this.lang,
   });
 
   @override
@@ -2866,7 +2893,8 @@ class _CategoryReplaceDialogState extends State<_CategoryReplaceDialog> {
         side: BorderSide(
             color: LabColors.primary.withValues(alpha: 0.35), width: 0.75),
       ),
-      title: Text('CATEGORY REPLACE — ${widget.cfg.label}',
+      title: Text(
+          '${tr(widget.lang, 'CATEGORY REPLACE')} — ${widget.cfg.label}',
           style: LabStyles.mono(context,
               fontSize: 12,
               color: LabColors.accent,
@@ -2877,20 +2905,22 @@ class _CategoryReplaceDialogState extends State<_CategoryReplaceDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildSectionHeader('COLUMN'),
+            _buildSectionHeader(tr(widget.lang, 'COLUMN')),
             const SizedBox(height: 6),
             _buildColumnList(),
             const SizedBox(height: 10),
-            _buildValueSelector('TO REPLACE', _selectedFrom, (value) {
+            _buildValueSelector(
+                tr(widget.lang, 'TO REPLACE'), _selectedFrom, (value) {
               setState(() => _selectedFrom = value);
             }),
             const SizedBox(height: 8),
-            _buildValueSelector('REPLACE WITH', _selectedTo, (value) {
+            _buildValueSelector(
+                tr(widget.lang, 'REPLACE WITH'), _selectedTo, (value) {
               setState(() => _selectedTo = value);
             }),
             if (_loadError != null) ...[
               const SizedBox(height: 8),
-              Text('ERROR: $_loadError',
+              Text('${tr(widget.lang, 'ERROR')}: $_loadError',
                   style: LabStyles.mono(context,
                       fontSize: 8, color: Colors.redAccent)),
             ],
@@ -2900,7 +2930,7 @@ class _CategoryReplaceDialogState extends State<_CategoryReplaceDialog> {
       actions: [
         TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text('CANCEL', style: LabStyles.mono(context))),
+            child: Text(tr(widget.lang, 'CANCEL'), style: LabStyles.mono(context))),
         TextButton(
           onPressed: _canApply
               ? () {
@@ -2914,7 +2944,7 @@ class _CategoryReplaceDialogState extends State<_CategoryReplaceDialog> {
                   );
                 }
               : null,
-          child: Text('APPLY REPLACE',
+          child: Text(tr(widget.lang, 'APPLY REPLACE'),
               style: LabStyles.mono(context,
                   color: _canApply ? LabColors.accent : Colors.grey)),
         ),

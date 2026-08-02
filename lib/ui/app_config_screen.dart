@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/theme_provider.dart';
+import '../providers/database_provider.dart';
 import '../database/database.dart';
+import '../localization/strings.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 
@@ -74,28 +76,22 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
   }
 
   Widget _buildGeneralTab(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
+    final db = ref.read(databaseProvider);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         _buildSectionCard(context, "LANGUAGE", [
           Row(
             children: [
-              Icon(Icons.lock_outline, size: 16, color: Colors.grey[600]),
-              const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text("ENGLISH",
-                        style: LabStyles.mono(context,
-                            fontSize: 11,
-                            color: Colors.grey[400],
-                            fontWeight: FontWeight.bold)),
-                    Text("MORE LANGUAGES SOON",
-                        style: LabStyles.mono(context,
-                            fontSize: 8, color: Colors.grey[700])),
-                  ],
-                ),
+                child: _buildLayoutOption(context, "ENGLISH", lang == 'en',
+                    () => setLanguage(db, 'en')),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildLayoutOption(context, "ESPAÑOL", lang == 'es',
+                    () => setLanguage(db, 'es')),
               ),
             ],
           ),
@@ -105,9 +101,9 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
           SizedBox(
             width: double.infinity,
             child: LabButton(
-              label: "RESET COLORS TO DEFAULT",
+              label: tr(lang, "RESET COLORS TO DEFAULT"),
               color: Colors.redAccent,
-              onPressed: () => _confirmResetColors(context),
+              onPressed: () => _confirmResetColors(context, lang),
             ),
           ),
         ]),
@@ -232,7 +228,7 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
     );
   }
 
-  void _confirmResetColors(BuildContext context) {
+  void _confirmResetColors(BuildContext context, String lang) {
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
@@ -240,19 +236,20 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
         title: Text('RESET_COLORS',
             style: LabStyles.headline(c).copyWith(fontSize: 14)),
         content: Text(
-            'This will erase every color you\'ve customized across the whole app and restore defaults. Wallpaper and toggle settings are not affected.\n\nThis cannot be undone.',
+            tr(lang,
+                'This will erase every color you\'ve customized across the whole app and restore defaults. Wallpaper and toggle settings are not affected.\n\nThis cannot be undone.'),
             style: LabStyles.mono(c, fontSize: 11, color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(c),
-            child: Text('CANCEL', style: TextStyle(color: Colors.grey)),
+            child: Text(tr(lang, 'CANCEL'), style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
             onPressed: () async {
               await ref.read(themeControllerProvider).resetAllColors();
               if (c.mounted) Navigator.pop(c);
             },
-            child: Text('RESET', style: TextStyle(color: Colors.redAccent)),
+            child: Text(tr(lang, 'RESET'), style: TextStyle(color: Colors.redAccent)),
           ),
         ],
       ),
