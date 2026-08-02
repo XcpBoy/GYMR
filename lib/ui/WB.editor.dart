@@ -1135,10 +1135,10 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     if (widget.isScrolling) {
       return Center(
-          child: Text(
-              DateFormat('EEEE, MMM d, yyyy').format(widget.date).toUpperCase(),
+          child: Text(formatLocalizedDate(lang, widget.date),
               style: LabStyles.mono(context, color: Colors.grey[800])));
     }
 
@@ -1149,7 +1149,6 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
     final bw = ref.watch(bodyWeightAtDateProvider(widget.date)).value ?? 0.0;
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
-    final lang = ref.watch(languageProvider).value ?? 'en';
 
     return Stack(children: [
       SingleChildScrollView(
@@ -1179,7 +1178,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                           style: LabStyles.mono(context,
                               fontSize: 9, color: Colors.grey[300]),
                           decoration: InputDecoration(
-                            hintText: 'BLOCK DESCRIPTION...',
+                            hintText: tr(lang, 'BLOCK DESCRIPTION...'),
                             hintStyle:
                                 TextStyle(color: Colors.grey[700], fontSize: 9),
                             border: InputBorder.none,
@@ -1222,25 +1221,25 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                   context: context,
                   builder: (c) => AlertDialog(
                     backgroundColor: LabColors.background,
-                    title: Text('DELETE ALL KNS?',
+                    title: Text(tr(lang, 'DELETE ALL KNS?'),
                         style: LabStyles.mono(context,
                             color: Colors.redAccent,
                             fontWeight: FontWeight.bold)),
                     content: Text(
-                        'This will remove all exercises from this WB.',
+                        tr(lang, 'This will remove all exercises from this WB.'),
                         style: LabStyles.mono(context, fontSize: 11)),
                     actions: [
                       TextButton(
                           onPressed: () => Navigator.pop(c),
-                          child:
-                              Text('CANCEL', style: LabStyles.mono(context))),
+                          child: Text(tr(lang, 'CANCEL'),
+                              style: LabStyles.mono(context))),
                       TextButton(
                           onPressed: () {
                             ref.read(wbEditorProvider.notifier).clearAll();
                             ref.read(knsVersionProvider.notifier).state++;
                             Navigator.pop(c);
                           },
-                          child: Text('DELETE ALL',
+                          child: Text(tr(lang, 'DELETE ALL'),
                               style: LabStyles.mono(context,
                                   color: Colors.redAccent))),
                     ],
@@ -1256,7 +1255,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                   border: Border.all(color: Colors.redAccent, width: 0.5),
                 ),
                 child: Text(
-                  'DELETE ALL KNS',
+                  tr(lang, 'DELETE ALL KNS'),
                   style: LabStyles.mono(context,
                       fontSize: 9,
                       color: Colors.redAccent,
@@ -1280,7 +1279,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
             ],
             workoutAsync.when(
               data: (results) {
-                if (results.isEmpty) return _buildEmptyState(context);
+                if (results.isEmpty) return _buildEmptyState(context, lang);
 
                 final Map<int, List<drift.TypedResult>> groupedByEx = {};
                 final List<int> exerciseIdsInOrder = [];
@@ -1866,14 +1865,14 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
         tickProvider: timerTickProvider);
   }
 
-  Widget _buildEmptyState(BuildContext context) {
+  Widget _buildEmptyState(BuildContext context, String lang) {
     return Center(
         child: Padding(
             padding: const EdgeInsets.only(top: 100),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.inbox, size: 48, color: Colors.grey[800]),
               const SizedBox(height: 16),
-              Text('NO_MOVEMENTS_LOGGED_FOR_THIS_PERIOD',
+              Text(tr(lang, 'NO_MOVEMENTS_LOGGED_FOR_THIS_PERIOD'),
                   style: LabStyles.mono(context,
                       color: Colors.grey[600]!, fontSize: 10))
             ])));
@@ -2373,7 +2372,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                                 style: LabStyles.mono(context,
                                     fontSize: 9, color: Colors.grey[300]),
                                 decoration: InputDecoration(
-                                  hintText: 'KNS PURPOSE...',
+                                  hintText: tr(lang, 'KNS PURPOSE...'),
                                   hintStyle: TextStyle(
                                       color: Colors.grey[700], fontSize: 9),
                                   border: InputBorder.none,
@@ -3046,7 +3045,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
               ),
               const SizedBox(height: 24),
               LabButton(
-                  label: 'Forge Link',
+                  label: tr(lang, 'Forge Link'),
                   onPressed: () async {
                     final String sName = nameC.text.toUpperCase().trim();
                     if (sName.isEmpty || selectedIds.isEmpty) return;
@@ -3089,6 +3088,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
   }
 
   void _showUtilityEditDialog(BuildContext context) async {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     final allSets = await db.select(db.workoutSets).get();
     final Set<String> existingUtilities = {};
@@ -3138,7 +3138,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('EDIT_MOVEMENT_UTILITY',
+                Text(tr(lang, 'EDIT_MOVEMENT_UTILITY'),
                     style: LabStyles.headline(context).copyWith(fontSize: 16)),
                 const SizedBox(height: 24),
                 Flexible(
@@ -3157,7 +3157,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                 ),
                 const SizedBox(height: 24),
                 LabButton(
-                    label: 'Apply Utility',
+                    label: tr(lang, 'Apply Utility'),
                     onPressed: () async {
                       final sets = widget.results
                           .map((r) => r.readTable(db.workoutSets).id)
@@ -5252,7 +5252,7 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('WORKOUT OPTS',
+              Text(tr(lang, 'WORKOUT OPTS'),
                   style: LabStyles.headline(context,
                           color: _tc('UI_TAG_WORKOUT_OPTS', 'WORKOUT_OPTS'))
                       .copyWith(fontSize: 16, letterSpacing: 2)),
@@ -5390,8 +5390,8 @@ class _SetIntentPickerState extends ConsumerState<_SetIntentPicker> {
                   controller: _searchC,
                   style: LabStyles.mono(context,
                       fontSize: 11, color: Colors.white),
-                  decoration: const InputDecoration(
-                    hintText: 'SEARCH INTENT...',
+                  decoration: InputDecoration(
+                    hintText: tr(lang, 'SEARCH INTENT...'),
                     border: InputBorder.none,
                     isDense: true,
                   ),
@@ -5416,7 +5416,7 @@ class _SetIntentPickerState extends ConsumerState<_SetIntentPicker> {
                   style: LabStyles.mono(context,
                       fontSize: 12, color: Colors.white),
                   decoration: InputDecoration(
-                    hintText: 'INTENT NAME',
+                    hintText: tr(lang, 'INTENT NAME'),
                     hintStyle: TextStyle(color: Colors.grey[600], fontSize: 12),
                     border: OutlineInputBorder(
                         borderSide: BorderSide(color: Colors.white24)),
@@ -5428,7 +5428,7 @@ class _SetIntentPickerState extends ConsumerState<_SetIntentPicker> {
                   style: LabStyles.mono(context,
                       fontSize: 12, color: Colors.white),
                   decoration: InputDecoration(
-                    hintText: 'COLOR HEX (e.g. #FF5722)',
+                    hintText: tr(lang, 'COLOR HEX (e.g. #FF5722)'),
                     hintStyle: TextStyle(color: Colors.grey[600], fontSize: 12),
                     border: OutlineInputBorder(
                         borderSide: BorderSide(color: Colors.white24)),
@@ -5548,8 +5548,8 @@ class _SetIntentPickerState extends ConsumerState<_SetIntentPicker> {
                                                   style: LabStyles.mono(c2,
                                                       fontSize: 12,
                                                       color: Colors.white),
-                                                  decoration: const InputDecoration(
-                                                      hintText: 'NAME',
+                                                  decoration: InputDecoration(
+                                                      hintText: tr(lang, 'NAME'),
                                                       border:
                                                           OutlineInputBorder())),
                                               const SizedBox(height: 8),
@@ -5558,8 +5558,8 @@ class _SetIntentPickerState extends ConsumerState<_SetIntentPicker> {
                                                   style: LabStyles.mono(c2,
                                                       fontSize: 12,
                                                       color: Colors.white),
-                                                  decoration: const InputDecoration(
-                                                      hintText: 'COLOR HEX',
+                                                  decoration: InputDecoration(
+                                                      hintText: tr(lang, 'COLOR HEX'),
                                                       border:
                                                           OutlineInputBorder())),
                                             ],

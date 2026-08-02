@@ -153,7 +153,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
     final lang = ref.watch(languageProvider).value ?? 'en';
 
     return MainScaffold(
-      title: 'SOMATIC_SPECTRUM',
+      title: 'SPECTRO.SOMTCO',
       body: RefreshIndicator(
         onRefresh: () async => setState(() {}),
         child: FutureBuilder<Map<int, String>>(
@@ -231,7 +231,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
                   ? Container(
                       width: double.infinity,
                       alignment: Alignment.centerLeft,
-                      child: Text('NO_FOLDERS_YET',
+                      child: Text(tr(lang, 'NO_FOLDERS_YET'),
                           style: LabStyles.mono(context,
                               fontSize: 8, color: Colors.grey[700]!)),
                     )
@@ -321,7 +321,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
               _buildSelectionBar(context, db, lang),
             ],
             const SizedBox(height: 8),
-            _buildFilteredSortedList(context, allLogs, labels),
+            _buildFilteredSortedList(context, allLogs, labels, lang),
           ],
         );
       },
@@ -348,7 +348,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('SPECTRUM_OVERVIEW',
+          Text(tr(lang, 'SPECTRUM_OVERVIEW'),
               style: LabStyles.mono(context,
                   fontSize: 9, color: Colors.grey, fontWeight: FontWeight.bold)),
           const SizedBox(height: 10),
@@ -502,8 +502,8 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
     );
   }
 
-  Widget _buildFilteredSortedList(
-      BuildContext context, List<drift.QueryRow> allLogs, Map<int, String> labels) {
+  Widget _buildFilteredSortedList(BuildContext context, List<drift.QueryRow> allLogs,
+      Map<int, String> labels, String lang) {
     var logs = allLogs;
     final q = _logSearchC.text.toLowerCase();
     if (q.isNotEmpty) {
@@ -544,7 +544,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(border: Border.all(color: Colors.white10, width: 0.5)),
         child: Center(
-            child: Text('NO_SOMATIC_LOGS_YET',
+            child: Text(tr(lang, 'NO_SOMATIC_LOGS_YET'),
                 style: LabStyles.mono(context, fontSize: 8, color: Colors.grey[700]!))),
       );
     }
@@ -716,9 +716,9 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('CREATE_FOLDER', style: LabStyles.headline(c, color: Colors.white).copyWith(fontSize: 14)),
+              Text(tr(lang, 'CREATE_FOLDER'), style: LabStyles.headline(c, color: Colors.white).copyWith(fontSize: 14)),
               const SizedBox(height: 16),
-              LabTextField(controller: _folderNameController, label: 'FOLDER_NAME'),
+              LabTextField(controller: _folderNameController, label: tr(lang, 'FOLDER_NAME')),
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
@@ -795,7 +795,7 @@ class _FolderDetailScreenState extends ConsumerState<_FolderDetailScreen> {
                 final logs = snap.data ?? [];
                 if (logs.isEmpty) {
                   return Center(
-                      child: Text('EMPTY_FOLDER',
+                      child: Text(tr(lang, 'EMPTY_FOLDER'),
                           style: LabStyles.mono(context, fontSize: 10, color: Colors.grey[700]!)));
                 }
                 return Column(

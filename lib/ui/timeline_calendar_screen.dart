@@ -230,7 +230,7 @@ class _CalendarDayCell extends StatelessWidget {
           children: [
             const Icon(Icons.analytics, color: LabColors.primary, size: 18),
             const SizedBox(width: 8),
-            Text(DateFormat('EEEE, MMM d').format(date).toUpperCase(), style: LabStyles.mono(context, fontSize: 12, fontWeight: FontWeight.bold)),
+            Text(formatLocalizedDate(lang, date, withYear: false), style: LabStyles.mono(context, fontSize: 12, fontWeight: FontWeight.bold)),
           ],
         ),
         content: Container(
@@ -241,7 +241,7 @@ class _CalendarDayCell extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("KNS_SUMMARY:", style: LabStyles.mono(context, fontSize: 10, color: LabColors.primary)),
+                Text(tr(lang, "KNS_SUMMARY:"), style: LabStyles.mono(context, fontSize: 10, color: LabColors.primary)),
                 const SizedBox(height: 12),
                 ...data!.exercises.map((ex) {
                   final pattern = data!.exercisePatterns[ex] ?? "NONE";
@@ -270,7 +270,7 @@ class _CalendarDayCell extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text("TOTAL_VOLUME:", style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
+                    Text(tr(lang, "TOTAL_VOLUME:"), style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
                     Text("${data!.totalVolume.toStringAsFixed(0)} KG", style: LabStyles.mono(context, fontSize: 8, fontWeight: FontWeight.bold, color: LabColors.accent)),
                   ],
                 ),
@@ -284,7 +284,7 @@ class _CalendarDayCell extends StatelessWidget {
               Navigator.pop(c);
               Navigator.push(context, MaterialPageRoute(builder: (c) => WorkoutManagerScreen(initialDate: date)));
             },
-            child: Text("GOTO_SESSION", style: LabStyles.mono(context, color: LabColors.primary)),
+            child: Text(tr(lang, "GOTO_SESSION"), style: LabStyles.mono(context, color: LabColors.primary)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(c),

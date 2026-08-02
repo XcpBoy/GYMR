@@ -8,6 +8,7 @@ import 'styles.dart';
 import 'main_scaffold.dart';
 import 'lab_widgets.dart';
 import '../logic/calculator.dart';
+import '../localization/strings.dart';
 
 enum DatasetCategory { sets, notes, weight, anthropometric }
 
@@ -31,16 +32,17 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     return MainScaffold(
-      title: 'FULL_DATASET_EXPLORER',
+      title: tr(lang, 'FULL_DATASET_EXPLORER'),
       screenKey: 'DATASET',
       body: Column(
         children: [
-          _buildCategorySelector(),
-          if (_selectedCategory == DatasetCategory.sets || _selectedCategory == DatasetCategory.notes) _buildAdvancedFilters(),
-          _buildPaginationHeader(),
+          _buildCategorySelector(lang),
+          if (_selectedCategory == DatasetCategory.sets || _selectedCategory == DatasetCategory.notes) _buildAdvancedFilters(lang),
+          _buildPaginationHeader(lang),
           Expanded(
-            child: _buildDataExplorer(),
+            child: _buildDataExplorer(lang),
           ),
         ],
       ),
@@ -48,25 +50,25 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
     );
   }
 
-  Widget _buildPaginationHeader() {
+  Widget _buildPaginationHeader(String lang) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       alignment: Alignment.centerRight,
       child: Text(
-        'SHOWING_TOP_${_limit}_RECORDS',
+        tr(lang, 'SHOWING TOP {n} RECORDS').replaceAll('{n}', '$_limit'),
         style: LabStyles.mono(context, fontSize: 8, color: Colors.grey[600]!),
       ),
     );
   }
 
-  Widget _buildDataExplorer() {
+  Widget _buildDataExplorer(String lang) {
     final db = ref.watch(databaseProvider);
 
     switch (_selectedCategory) {
       case DatasetCategory.sets:
-        return _buildSetsList(db);
+        return _buildSetsList(db, lang);
       case DatasetCategory.notes:
-        return _buildNotesList(db);
+        return _buildNotesList(db, lang);
       case DatasetCategory.weight:
         return _buildWeightList(db);
       case DatasetCategory.anthropometric:
@@ -74,7 +76,7 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
     }
   }
 
-  Widget _buildNotesList(AppDatabase db) {
+  Widget _buildNotesList(AppDatabase db, String lang) {
     var query = db.select(db.workoutSets).join([
       innerJoin(db.baseExercises, db.baseExercises.id.equalsExp(db.workoutSets.baseExerciseId)),
     ])..where(db.workoutSets.notes.isNotNull());
@@ -91,7 +93,7 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
       builder: (context, snapshot) {
         if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: LabColors.primary));
         final data = snapshot.data!;
-        if (data.isEmpty) return _buildNoDataPlaceholder("NO_NOTES_FOUND");
+        if (data.isEmpty) return _buildNoDataPlaceholder(tr(lang, "NO_NOTES_FOUND"));
 
         return ListView.builder(
           padding: const EdgeInsets.only(bottom: 100, left: 16, right: 16, top: 8),
@@ -142,7 +144,7 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
     return Center(child: Text(msg, style: LabStyles.mono(context, fontSize: 10, color: Colors.grey)));
   }
 
-  Widget _buildSetsList(AppDatabase db) {
+  Widget _buildSetsList(AppDatabase db, String lang) {
     var query = db.select(db.workoutSets).join([
       innerJoin(db.baseExercises, db.baseExercises.id.equalsExp(db.workoutSets.baseExerciseId)),
       innerJoin(db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId)),
@@ -176,13 +178,13 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
         return ListView.builder(
           padding: const EdgeInsets.only(bottom: 100),
           itemCount: filtered.length,
-          itemBuilder: (context, index) => _buildSetCard(filtered[index], db),
+          itemBuilder: (context, index) => _buildSetCard(filtered[index], db, lang),
         );
       },
     );
   }
 
-  Widget _buildSetCard(TypedResult row, AppDatabase db) {
+  Widget _buildSetCard(TypedResult row, AppDatabase db, String lang) {
     final set = row.readTable(db.workoutSets);
     final ex = row.readTable(db.baseExercises);
     final log = row.readTable(db.workoutLogs);
@@ -241,9 +243,9 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  _buildDataField("LOAD", "${set.weight}KG"),
+                  _buildDataField(tr(lang, "LOAD"), "${set.weight}KG"),
                   _buildDataField("BW", "${bw.toStringAsFixed(1)}KG"),
-                  _buildDataField("TOTAL", "${totalLoad.toStringAsFixed(1)}KG", highlight: true),
+                  _buildDataField(tr(lang, "TOTAL"), "${totalLoad.toStringAsFixed(1)}KG", highlight: true),
                   _buildDataField("REPS", "${set.reps.toString().replaceAll(RegExp(r'\.0$'), '')}${details.isIsometric ? 'S' : ''}"),
                 ],
               ),
@@ -372,7 +374,7 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
     );
   }
 
-  Widget _buildAdvancedFilters() {
+  Widget _buildAdvancedFilters(String lang) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: LabColors.surfaceDim, border: Border.all(color: LabColors.cyanBorder.withValues(alpha: 0.1), width: 0.5)),
@@ -389,7 +391,7 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                     decoration: LabStyles.hairlineBorder(),
-                    child: Text(_timeRange == null ? 'TIME_RANGE: ALL' : '${DateFormat('dd/MM').format(_timeRange!.start)} - ${DateFormat('dd/MM').format(_timeRange!.end)}', style: LabStyles.mono(context, fontSize: 9, color: LabColors.primary)),
+                    child: Text(_timeRange == null ? tr(lang, 'TIME_RANGE: ALL') : '${DateFormat('dd/MM').format(_timeRange!.start)} - ${DateFormat('dd/MM').format(_timeRange!.end)}', style: LabStyles.mono(context, fontSize: 9, color: LabColors.primary)),
                   ),
                 ),
               ),
@@ -404,8 +406,8 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildToggle('PR_ONLY', _onlyPr, (v) => setState(() => _onlyPr = v)),
-              _buildLimitDropdown(),
+              _buildToggle(tr(lang, 'PR_ONLY'), _onlyPr, (v) => setState(() => _onlyPr = v)),
+              _buildLimitDropdown(lang),
             ],
           ),
         ],
@@ -413,10 +415,10 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
     );
   }
 
-  Widget _buildLimitDropdown() {
+  Widget _buildLimitDropdown(String lang) {
     return Row(
       children: [
-        Text('LIMIT:', style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
+        Text(tr(lang, 'LIMIT:'), style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
         const SizedBox(width: 8),
         DropdownButton<int>(
           value: _limit,
@@ -444,17 +446,17 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
     );
   }
 
-  Widget _buildCategorySelector() {
+  Widget _buildCategorySelector(String lang) {
     return Container(
       height: 60,
       decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: LabColors.cyanBorder, width: 0.5))),
       child: ListView(
         scrollDirection: Axis.horizontal,
         children: [
-          _buildCategoryTab('SETS', DatasetCategory.sets),
-          _buildCategoryTab('NOTES', DatasetCategory.notes),
-          _buildCategoryTab('WEIGHT', DatasetCategory.weight),
-          _buildCategoryTab('ANTROPMT', DatasetCategory.anthropometric),
+          _buildCategoryTab(tr(lang, 'SETS'), DatasetCategory.sets),
+          _buildCategoryTab(tr(lang, 'NOTES'), DatasetCategory.notes),
+          _buildCategoryTab(tr(lang, 'WEIGHT'), DatasetCategory.weight),
+          _buildCategoryTab(tr(lang, 'ANTROPMT'), DatasetCategory.anthropometric),
         ],
       ),
     );

@@ -10,6 +10,7 @@ import 'lab_widgets.dart';
 import 'main_scaffold.dart';
 import '../database/database.dart';
 import 'timeline_calendar_screen.dart';
+import '../localization/strings.dart';
 
 class TimelineScreen extends ConsumerStatefulWidget {
   const TimelineScreen({super.key});
@@ -32,18 +33,19 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final selectedMonth = ref.watch(selectedMonthProvider);
     final timelineData = ref.watch(timelineProvider(selectedMonth));
     final themeSettings = ref.watch(themeSettingsProvider).value ?? {};
     final themeController = ref.read(themeControllerProvider);
 
     return MainScaffold(
-      title: 'CHRONO_HISTORY',
+      title: tr(lang, 'CHRONO_HISTORY'),
       screenKey: 'TIMELINE',
       body: Column(
         children: [
           _buildMonthNavigator(context, selectedMonth),
-          _buildFilters(context),
+          _buildFilters(context, lang),
           Expanded(
             child: timelineData.when(
               data: (weeks) {
@@ -68,7 +70,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                   return TimelineWeek(year: week.year, weekNumber: week.weekNumber, days: filteredDays);
                 }).toList();
 
-                if (displayWeeks.isEmpty) return _buildEmptyState(context);
+                if (displayWeeks.isEmpty) return _buildEmptyState(context, lang);
                 
                 return ListView.builder(
                   controller: _scrollController,
@@ -88,7 +90,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
     );
   }
 
-  Widget _buildFilters(BuildContext context) {
+  Widget _buildFilters(BuildContext context, String lang) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -96,14 +98,14 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
           Expanded(
             child: LabTextField(
               controller: _searchController,
-              label: 'FILTER_BY_MOVE_OR_FIELD',
+              label: tr(lang, 'FILTER_BY_MOVE_OR_FIELD'),
               onChanged: (v) => setState(() => _searchQuery = v),
             ),
           ),
           const SizedBox(width: 12),
           Column(
             children: [
-              Text('PR_ONLY', style: LabStyles.mono(context, fontSize: 7, color: Colors.grey)),
+              Text(tr(lang, 'PR_ONLY'), style: LabStyles.mono(context, fontSize: 7, color: Colors.grey)),
               const SizedBox(height: 4),
               GestureDetector(
                 onTap: () => setState(() => _onlyPr = !_onlyPr),
@@ -156,14 +158,14 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
     );
   }
 
-  Widget _buildEmptyState(BuildContext context) {
+  Widget _buildEmptyState(BuildContext context, String lang) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(Icons.calendar_today, size: 48, color: Colors.grey[800]),
           const SizedBox(height: 16),
-          Text("NO_DATA_FOR_THIS_PERIOD", style: LabStyles.mono(context, color: Colors.grey)),
+          Text(tr(lang, "NO_DATA_FOR_THIS_PERIOD"), style: LabStyles.mono(context, color: Colors.grey)),
         ],
       ),
     );

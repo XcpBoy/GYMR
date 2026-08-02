@@ -25,7 +25,7 @@ class _OvarchPlanScreenState extends ConsumerState<OvarchPlanScreen> {
     final db = ref.watch(databaseProvider);
 
     return MainScaffold(
-      title: '10 OVARCH PLAN',
+      title: '10 PLAN.GENRL',
       floatingActionButton: FloatingActionButton(
         backgroundColor: LabColors.primary,
         onPressed: () => _showPlanDialog(),

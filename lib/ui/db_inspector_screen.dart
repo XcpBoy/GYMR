@@ -1662,7 +1662,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   @override
   Widget build(BuildContext context) {
     return MainScaffold(
-      title: 'DB.EDIT',
+      title: 'INSPECTOR.DB',
       screenKey: 'DATASET',
       automaticallyImplyLeading: false,
       body: Column(

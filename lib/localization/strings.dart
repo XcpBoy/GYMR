@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import '../providers/database_provider.dart';
 import '../database/database.dart';
 
@@ -31,12 +32,23 @@ Future<void> setLanguage(AppDatabase db, String lang) async {
 /// traducción registrada, devuelve el texto en inglés tal cual (nunca
 /// revienta ni muestra texto vacío).
 ///
-/// Los identificadores de estilo (C.WO, KNS.INVTRY, THEME.MDFYR,
+/// Los identificadores de estilo (C.WO, RTNA.ACTL, MDFCDR.TMA,
 /// PURGE_SET, etc.) NO pasan por aquí a propósito - esos los renombra el
 /// usuario directamente, no son "texto en inglés" a traducir.
 String tr(String lang, String en) {
   if (lang != 'es') return en;
   return esTranslations[en] ?? en;
+}
+
+/// Fecha completa localizada: "MONDAY, JUL 27, 2026" (en) /
+/// "LUNES, JUL 27, 2026" (es). Día y mes salen de `esTranslations`; el
+/// número de día/año no cambia. `withYear: false` da el formato corto
+/// "MONDAY, JUL 27" (usado en popups sin año).
+String formatLocalizedDate(String lang, DateTime d, {bool withYear = true}) {
+  final day = tr(lang, DateFormat('EEEE').format(d).toUpperCase());
+  final mon = tr(lang, DateFormat('MMM').format(d).toUpperCase());
+  final base = '$day, $mon ${d.day}';
+  return withYear ? '$base, ${d.year}' : base;
 }
 
 /// Mapa maestro inglés -> español. Se llena por pantalla; cada bloque de
@@ -79,6 +91,46 @@ final Map<String, String> esTranslations = {
   'SAT': 'SAB',
   'SUN': 'DOM',
   'CLOSE': 'CERRAR',
+
+  // --- timeline_screen.dart / full_dataset_screen.dart / export_service.dart ---
+  'CHRONO_HISTORY': 'CRONO_HISTORIA',
+  'FILTER_BY_MOVE_OR_FIELD': 'FILTRAR_POR_MOVIMIENTO_O_CAMPO',
+  'PR_ONLY': 'SOLO_PR',
+  'NO_DATA_FOR_THIS_PERIOD': 'SIN_DATOS_PARA_ESTE_PERÍODO',
+  'GOTO_SESSION': 'IR_A_SESIÓN',
+  'KNS_SUMMARY:': 'RESUMEN_KNS:',
+  'TOTAL_VOLUME:': 'VOLUMEN_TOTAL:',
+  'FULL_DATASET_EXPLORER': 'EXPLORADOR_DATASET_COMPLETO',
+  'SETS': 'SERIES',
+  'WEIGHT': 'PESO',
+  'ANTROPMT': 'ANTROPOM',
+  'LIMIT:': 'LÍMITE:',
+  'TIME_RANGE: ALL': 'RANGO_DE_TIEMPO: TODO',
+  'NO_NOTES_FOUND': 'NO_SE_ENCONTRARON_NOTAS',
+  'SHOWING TOP {n} RECORDS': 'MOSTRANDO LOS {n} PRIMEROS REGISTROS',
+  'SET': 'SERIE',
+
+  // --- workout_manager.dart / WB.editor.dart (C.WO fechas + utilidades) ---
+  'EDIT_MOVEMENT_UTILITY': 'EDITAR UTILIDAD DE MOVIMIENTO',
+  'MONDAY': 'LUNES',
+  'TUESDAY': 'MARTES',
+  'WEDNESDAY': 'MIÉRCOLES',
+  'THURSDAY': 'JUEVES',
+  'FRIDAY': 'VIERNES',
+  'SATURDAY': 'SÁBADO',
+  'SUNDAY': 'DOMINGO',
+  'JAN': 'ENE',
+  'FEB': 'FEB',
+  'MAR': 'MAR',
+  'APR': 'ABR',
+  'MAY': 'MAY',
+  'JUN': 'JUN',
+  'JUL': 'JUL',
+  'AUG': 'AGO',
+  'SEP': 'SEP',
+  'OCT': 'OCT',
+  'NOV': 'NOV',
+  'DEC': 'DIC',
 
   // --- charts/chart_widgets.dart ---
   'OTHER': 'OTRO',
@@ -123,12 +175,12 @@ final Map<String, String> esTranslations = {
 
   // --- WO.Blocks.manager.dart ---
   'DELETE ALL BLOCKS': 'ELIMINAR TODOS LOS BLOQUES',
-  'Delete every workout block from WO.BLCKS?':
-      '¿Eliminar todos los bloques de entrenamiento de WO.BLCKS?',
+  'Delete every workout block from BLQS.ENTR?':
+      '¿Eliminar todos los bloques de entrenamiento de BLQS.ENTR?',
   'DELETE ALL': 'ELIMINAR TODO',
   'DEL PAST': 'ELIM. PASADOS',
-  'Aggressively delete stale WBs that are not currently visible in WO.BLCKS. If the current WO.BLCKS list is empty, this deletes all possible WBs.':
-      'Elimina agresivamente los bloques obsoletos que no están visibles actualmente en WO.BLCKS. Si la lista actual de WO.BLCKS está vacía, esto elimina todos los bloques posibles.',
+  'Aggressively delete stale WBs that are not currently visible in BLQS.ENTR. If the current BLQS.ENTR list is empty, this deletes all possible WBs.':
+      'Elimina agresivamente los bloques obsoletos que no están visibles actualmente en BLQS.ENTR. Si la lista actual de BLQS.ENTR está vacía, esto elimina todos los bloques posibles.',
   'DELETE PAST': 'ELIMINAR PASADOS',
   'CREATE WB': 'CREAR BLOQUE',
   'BLOCK NAME': 'NOMBRE DEL BLOQUE',
@@ -376,4 +428,59 @@ final Map<String, String> esTranslations = {
   'DELETE ALL SETS': 'ELIMINAR TODAS LAS SERIES',
   'MAINTAIN EXTENDED ON': 'MANTENER EXPANDIDO ACTIVADO',
   'MAINTAIN EXTENDED': 'MANTENER EXPANDIDO',
+
+  // --- follow-up batch: specific gaps requested by owner ---
+  'CURRENT WORKOUT': 'ENTRENAMIENTO ACTUAL',
+  'WORKOUT OPTS': 'OPCIONES DE ENTRENAMIENTO',
+  'NO_MOVEMENTS_LOGGED_FOR_THIS_PERIOD': 'Sin movimientos registrados',
+  'RAW_DATA_VIEW_ONLY': 'SOLO VISTA DE DATOS CRUDOS',
+  'VISUAL_INTERFACE_CUSTOMIZATION': 'PERSONALIZACIÓN DE LA INTERFAZ VISUAL',
+  'APP_WIDE_SETTINGS': 'CONFIGURACIÓN GENERAL DE LA APP',
+  'SEARCH INVENTORY...': 'BUSCAR EN INVENTARIO...',
+  'DELETE ALL KNS?': '¿ELIMINAR TODOS LOS KNS?',
+  'This will remove all exercises from this WB.': 'Esto eliminará todos los ejercicios de este WB.',
+  'DELETE ALL KNS': 'ELIMINAR TODOS LOS KNS',
+
+  // --- app_config_screen.dart (round 2) ---
+  'GENERAL': 'GENERAL',
+  'VISUALS': 'VISUALES',
+  'LANGUAGE': 'IDIOMA',
+  'KNS CARD FACE': 'CARA DE TARJETA KNS',
+  'NEW': 'NUEVO',
+  'ORIGINAL': 'ORIGINAL',
+
+  // --- somatic_spectrum_screen.dart (round 2) ---
+  'NO_FOLDERS_YET': 'AÚN_NO_HAY_CARPETAS',
+  'SPECTRUM_OVERVIEW': 'RESUMEN_DEL_ESPECTRO',
+  'NO_SOMATIC_LOGS_YET': 'AÚN_NO_HAY_REGISTROS_SOMÁTICOS',
+  'CREATE_FOLDER': 'CREAR_CARPETA',
+  'FOLDER_NAME': 'NOMBRE_DE_CARPETA',
+  'EMPTY_FOLDER': 'CARPETA_VACÍA',
+
+  // --- theme_modding_screen.dart (round 2) ---
+  'WORKOUT': 'ENTRENAMIENTO',
+  'GLOBAL': 'GLOBAL',
+  'DATA': 'DATOS',
+  'LIBRARY': 'BIBLIOTECA',
+  'HEADER & OPTS': 'ENCABEZADO Y OPCIONES',
+  'TAG FILTERS': 'FILTROS DE ETIQUETAS',
+  'KNS TAG LABELS': 'ETIQUETAS DE KNS',
+  'UTILS': 'UTILIDADES',
+  'BATCH COLORS': 'COLORES DE LOTE',
+  'INJECTION TYPE COLORS': 'COLORES DE TIPO DE INYECCIÓN',
+  'NO_ITEMS': 'SIN_ELEMENTOS',
+  'EMPTY_REFERENCE': 'REFERENCIA_VACÍA',
+  'RGB_MANUAL_TUNING': 'AJUSTE_MANUAL_RGB',
+  'TRANSPARENCY_TUNING': 'AJUSTE_DE_TRANSPARENCIA',
+  'APPLY_CONFIGURATION': 'APLICAR_CONFIGURACIÓN',
+  'COLOR_SELECTOR': 'SELECTOR_DE_COLOR',
+
+  // --- WB.editor.dart (round 2) ---
+  'BLOCK DESCRIPTION...': 'DESCRIPCIÓN DEL BLOQUE...',
+  'KNS PURPOSE...': 'PROPÓSITO DEL KNS...',
+  'SEARCH INTENT...': 'BUSCAR INTENCIÓN...',
+  'INTENT NAME': 'NOMBRE DE INTENCIÓN',
+  'COLOR HEX (e.g. #FF5722)': 'COLOR HEX (ej. #FF5722)',
+  'NAME': 'NOMBRE',
+  'COLOR HEX': 'COLOR HEX',
 };

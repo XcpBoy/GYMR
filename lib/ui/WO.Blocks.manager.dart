@@ -189,7 +189,7 @@ class WorkoutBlockListNotifier extends StateNotifier<List<WorkoutBlockEntry>> {
   }
 }
 
-// ─── WO.BLCKS.MANAGER SCREEN ────────────────────────────────────────
+// ─── BLQS.ENTR.MANAGER SCREEN ────────────────────────────────────────
 
 class WorkoutBlocksManagerScreen extends ConsumerStatefulWidget {
   const WorkoutBlocksManagerScreen({super.key});
@@ -237,7 +237,7 @@ class _WorkoutBlocksManagerScreenState
     });
 
     return MainScaffold(
-      title: 'WO.BLCKS',
+      title: 'BLQS.ENTR',
       screenKey: 'BLUEPRINT',
       floatingActionButton: FloatingActionButton(
         backgroundColor: LabColors.primary,
@@ -390,7 +390,7 @@ class _WorkoutBlocksManagerScreenState
                 fontSize: 12,
                 color: Colors.redAccent,
                 fontWeight: FontWeight.bold)),
-        content: Text(tr(lang, 'Delete every workout block from WO.BLCKS?'),
+        content: Text(tr(lang, 'Delete every workout block from BLQS.ENTR?'),
             style: LabStyles.mono(context, fontSize: 10)),
         actions: [
           TextButton(
@@ -420,7 +420,7 @@ class _WorkoutBlocksManagerScreenState
                 color: Colors.orange,
                 fontWeight: FontWeight.bold)),
         content: Text(
-            tr(lang, 'Aggressively delete stale WBs that are not currently visible in WO.BLCKS. If the current WO.BLCKS list is empty, this deletes all possible WBs.'),
+            tr(lang, 'Aggressively delete stale WBs that are not currently visible in BLQS.ENTR. If the current BLQS.ENTR list is empty, this deletes all possible WBs.'),
             style: LabStyles.mono(context, fontSize: 10)),
         actions: [
           TextButton(

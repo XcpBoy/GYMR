@@ -407,7 +407,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
         controller: _filterController,
         style: LabStyles.mono(context, fontSize: 12, color: Colors.white),
         decoration: InputDecoration(
-          hintText: 'SEARCH_INVENTORY...',
+          hintText: tr(lang, 'SEARCH INVENTORY...'),
           hintStyle: LabStyles.mono(context, fontSize: 10, color: Colors.grey[600]),
           contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
           border: OutlineInputBorder(

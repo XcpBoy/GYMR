@@ -115,6 +115,7 @@ class ExerciseHistoryScreen extends ConsumerWidget {
   }
 
   Widget _buildDateGroup(BuildContext context, WidgetRef ref, DateTime date, List<_HistSet> rows, double bw) {
+    final lang = ref.read(languageProvider).value ?? 'en';
     final intentionText = exercise.intention ?? '';
     bool isIso = intentionText.contains('[ISO:true]') || intentionText.startsWith('[ISO]');
     final metaMatch = RegExp(r'\[NT:.*\|ISO:(.*)\]').firstMatch(intentionText);
@@ -146,7 +147,7 @@ class ExerciseHistoryScreen extends ConsumerWidget {
                     children: [
                       const Icon(Icons.calendar_today, size: 10, color: LabColors.primary),
                       const SizedBox(width: 8),
-                      Text(DateFormat('EEEE, MMM d, yyyy').format(date).toUpperCase(), style: LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold)),
+                      Text(formatLocalizedDate(lang, date), style: LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   if (bw > 0)

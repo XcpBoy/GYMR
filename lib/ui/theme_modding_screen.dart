@@ -256,61 +256,61 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
     ];
 
     final List<String> dashboardItems = [
-      "CRRNT.WO",
-      "CRRNT.WO_BG",
-      "KNS.INVTRY",
-      "KNS.INVTRY_BG",
+      "RTNA.ACTL",
+      "RTNA.ACTL_BG",
+      "INVTRO.KNS",
+      "INVTRO.KNS_BG",
       "WO.BLKCS",
       "WO.BLKCS_BG",
       "TIMELINE",
       "TIMELINE_BG",
-      "ANTRPMT.DT",
-      "ANTRPMT.DT_BG",
-      "VSR.STATS",
-      "VSR.STATS_BG",
+      "DTS.ANTRPMT",
+      "DTS.ANTRPMT_BG",
+      "VSLZA.DT",
+      "VSLZA.DT_BG",
       "NEXUS",
       "NEXUS_BG",
       "DATASET",
       "DATASET_BG",
-      "THEME.MDFYR",
-      "THEME.MDFYR_BG",
+      "MDFCDR.TMA",
+      "MDFCDR.TMA_BG",
       "PLANNING",
       "PLANNING_BG",
-      "DB_INSPECTOR",
-      "DB_INSPECTOR_BG",
-      "SOMATIC_SPECTRUM",
-      "SOMATIC_SPECTRUM_BG",
-      "APP.CONFIG",
-      "APP.CONFIG_BG",
+      "INSPECTOR.DB",
+      "INSPECTOR.DB_BG",
+      "SPECTRO.SOMTCO",
+      "SPECTRO.SOMTCO_BG",
+      "CONFIG.APP",
+      "CONFIG.APP_BG",
     ];
     final Map<String, Color> dashboardDefaults = {
-      "CRRNT.WO": LabColors.workoutRed,
-      "CRRNT.WO_BG": LabColors.workoutRed.withValues(alpha: 0.08),
-      "KNS.INVTRY": LabColors.inventoryOrange,
-      "KNS.INVTRY_BG": LabColors.inventoryOrange.withValues(alpha: 0.08),
+      "RTNA.ACTL": LabColors.workoutRed,
+      "RTNA.ACTL_BG": LabColors.workoutRed.withValues(alpha: 0.08),
+      "INVTRO.KNS": LabColors.inventoryOrange,
+      "INVTRO.KNS_BG": LabColors.inventoryOrange.withValues(alpha: 0.08),
       "WO.BLKCS": LabColors.blueprintBlue,
       "WO.BLKCS_BG": LabColors.blueprintBlue.withValues(alpha: 0.08),
       "TIMELINE": LabColors.timelineGrey,
       "TIMELINE_BG": LabColors.timelineGrey.withValues(alpha: 0.08),
-      "ANTRPMT.DT": LabColors.biometricYellow,
-      "ANTRPMT.DT_BG": LabColors.biometricYellow.withValues(alpha: 0.08),
-      "VSR.STATS": LabColors.visualsNeon,
-      "VSR.STATS_BG": LabColors.visualsNeon.withValues(alpha: 0.08),
+      "DTS.ANTRPMT": LabColors.biometricYellow,
+      "DTS.ANTRPMT_BG": LabColors.biometricYellow.withValues(alpha: 0.08),
+      "VSLZA.DT": LabColors.visualsNeon,
+      "VSLZA.DT_BG": LabColors.visualsNeon.withValues(alpha: 0.08),
       "NEXUS": LabColors.nexusPurple,
       "NEXUS_BG": LabColors.nexusPurple.withValues(alpha: 0.08),
       "DATASET": LabColors.datasetGold,
       "DATASET_BG": LabColors.datasetGold.withValues(alpha: 0.08),
-      "THEME.MDFYR": LabColors.themeWhite,
-      "THEME.MDFYR_BG": LabColors.themeWhite.withValues(alpha: 0.08),
+      "MDFCDR.TMA": LabColors.themeWhite,
+      "MDFCDR.TMA_BG": LabColors.themeWhite.withValues(alpha: 0.08),
       "PLANNING": LabColors.secondary,
       "PLANNING_BG": LabColors.secondary.withValues(alpha: 0.08),
-      "DB_INSPECTOR": LabColors.tertiary,
-      "DB_INSPECTOR_BG": LabColors.tertiary.withValues(alpha: 0.08),
-      "SOMATIC_SPECTRUM": LabColors.supersetBlockDefault,
-      "SOMATIC_SPECTRUM_BG":
+      "INSPECTOR.DB": LabColors.tertiary,
+      "INSPECTOR.DB_BG": LabColors.tertiary.withValues(alpha: 0.08),
+      "SPECTRO.SOMTCO": LabColors.supersetBlockDefault,
+      "SPECTRO.SOMTCO_BG":
           LabColors.supersetBlockDefault.withValues(alpha: 0.08),
-      "APP.CONFIG": LabColors.onSurfaceVariant,
-      "APP.CONFIG_BG": LabColors.onSurfaceVariant.withValues(alpha: 0.08),
+      "CONFIG.APP": LabColors.onSurfaceVariant,
+      "CONFIG.APP_BG": LabColors.onSurfaceVariant.withValues(alpha: 0.08),
     };
 
     final List<String> footerItems = [
@@ -357,17 +357,17 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
       ..sort();
 
     final List<_ThemeCategory> categories = [
-      _ThemeCategory("WORKOUT", [
-        _ThemeSection("HEADER & OPTS", "wo_header", woHeaderUI,
+      _ThemeCategory(tr(lang, "WORKOUT"), [
+        _ThemeSection(tr(lang, "HEADER & OPTS"), "wo_header", woHeaderUI,
             defaults: woHeaderDefaults),
-        _ThemeSection("TAG FILTERS", "wo_filters", woFilterUI),
-        _ThemeSection("KNS TAG LABELS", "wo_tags", woTagUI),
-        _ThemeSection("UTILS", "wo_priority", woPriorityUI),
-        _ThemeSection("BATCH COLORS", "wo_batch", woBatchUI),
-        _ThemeSection("INJECTION TYPE COLORS", "injection", injectionUI,
+        _ThemeSection(tr(lang, "TAG FILTERS"), "wo_filters", woFilterUI),
+        _ThemeSection(tr(lang, "KNS TAG LABELS"), "wo_tags", woTagUI),
+        _ThemeSection(tr(lang, "UTILS"), "wo_priority", woPriorityUI),
+        _ThemeSection(tr(lang, "BATCH COLORS"), "wo_batch", woBatchUI),
+        _ThemeSection(tr(lang, "INJECTION TYPE COLORS"), "injection", injectionUI,
             defaults: injectionDefaults),
       ]),
-      _ThemeCategory("GLOBAL", [
+      _ThemeCategory(tr(lang, "GLOBAL"), [
         _ThemeSection("UNILATERAL_SIDE_COLORS", "unilateral", unilateralUI),
         _ThemeSection("EORM_HIGHLIGHTS", "eorm", eormUI),
         _ThemeSection("HOME_DASHBOARD_CARDS", "dashboard_card", dashboardItems,
@@ -377,7 +377,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
         _ThemeSection("NEXUS_EXCHANGE_COLORS", "nexus", nexusUI,
             defaults: nexusDefaults),
       ]),
-      _ThemeCategory("DATA", [
+      _ThemeCategory(tr(lang, "DATA"), [
         _ThemeSection("VISUAL_ATMOSPHERE", "wallpaper", screens,
             isValueType: true),
         _ThemeSection("MOVEMENT_UTILITIES", "utility", utilities),
@@ -386,7 +386,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
         _ThemeSection("MOVEMENT_PATTERNS", "pattern", patterns),
         _ThemeSection("FIELD_DISCIPLINES", "field", fields),
       ]),
-      _ThemeCategory("LIBRARY", [
+      _ThemeCategory(tr(lang, "LIBRARY"), [
         _ThemeSection("EXERCISE_NAMES", "movement", exerciseNames),
       ]),
     ];
@@ -395,7 +395,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
       backgroundColor: LabColors.background,
       appBar: AppBar(
         backgroundColor: LabColors.background,
-        title: Text("THEME.MDFYR",
+        title: Text("MDFCDR.TMA",
             style: LabStyles.mono(context, fontWeight: FontWeight.bold)),
         centerTitle: true,
         iconTheme: const IconThemeData(color: LabColors.primary),
@@ -532,7 +532,8 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
               child: section.isValueType
-                  ? _buildValueList(context, filteredItems, section.key, settings)
+                  ? _buildValueList(
+                      context, filteredItems, section.key, settings, lang)
                   : _buildSwatchGrid(
                       context, filteredItems, section.key, settings, lang,
                       defaults: section.defaults),
@@ -575,7 +576,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(12.0),
-          child: Text("NO_ITEMS",
+          child: Text(tr(lang, "NO_ITEMS"),
               style: LabStyles.mono(context,
                   fontSize: 10, color: Colors.grey[700])),
         ),
@@ -612,7 +613,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
                 '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
             final label = item.replaceAll('TAG_', '').toUpperCase();
             return InkWell(
-              onTap: () => _showColorPicker(context, key, color),
+              onTap: () => _showColorPicker(context, key, color, lang),
               child: Column(
                 children: [
                   Expanded(
@@ -671,12 +672,12 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
   }
 
   Widget _buildValueList(BuildContext context, List<String> items,
-      String prefix, Map<String, ThemeSetting> settings) {
+      String prefix, Map<String, ThemeSetting> settings, String lang) {
     if (items.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(12.0),
-          child: Text("NO_ITEMS",
+          child: Text(tr(lang, "NO_ITEMS"),
               style: LabStyles.mono(context,
                   fontSize: 10, color: Colors.grey[700])),
         ),
@@ -690,8 +691,9 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
       children: items.map((item) {
         final key = "${prefix.toUpperCase()}_$item";
         final value = controller.getValue(settings, key) ?? "";
-        final fileName =
-            value.isNotEmpty ? value.split('/').last : "EMPTY_REFERENCE";
+        final fileName = value.isNotEmpty
+            ? value.split('/').last
+            : tr(lang, "EMPTY_REFERENCE");
         return InkWell(
           onTap: () async {
             final result =
@@ -747,7 +749,8 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
     );
   }
 
-  void _showColorPicker(BuildContext context, String key, Color initialColor) {
+  void _showColorPicker(
+      BuildContext context, String key, Color initialColor, String lang) {
     setState(() => _pickerColor = initialColor);
     showModalBottomSheet(
       context: context,
@@ -765,7 +768,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text("COLOR_SELECTOR // ${key.toUpperCase()}",
+                Text("${tr(lang, "COLOR_SELECTOR")} // ${key.toUpperCase()}",
                     style: LabStyles.mono(context,
                         fontSize: 11, color: LabColors.primary)),
                 const SizedBox(height: 10),
@@ -801,7 +804,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text("RGB_MANUAL_TUNING",
+                    Text(tr(lang, "RGB_MANUAL_TUNING"),
                         style: LabStyles.mono(context,
                             fontSize: 9, color: Colors.grey)),
                     Container(
@@ -843,7 +846,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
                   }),
                 ),
                 const SizedBox(height: 8),
-                Text("TRANSPARENCY_TUNING",
+                Text(tr(lang, "TRANSPARENCY_TUNING"),
                     style: LabStyles.mono(context,
                         fontSize: 9, color: Colors.grey)),
                 const SizedBox(height: 4),
@@ -859,7 +862,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
                 ),
                 const SizedBox(height: 14),
                 LabButton(
-                    label: "APPLY_CONFIGURATION",
+                    label: tr(lang, "APPLY_CONFIGURATION"),
                     onPressed: () => Navigator.pop(context)),
               ],
             ),

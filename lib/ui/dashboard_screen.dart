@@ -96,9 +96,9 @@ class DashboardScreen extends ConsumerWidget {
       children: [
         _buildModuleCard(
           context,
-          'CRRNT.WO',
+          'RTNA.ACTL',
           Icons.fitness_center,
-          controller.getColor(settings, "DASHBOARD_CARD_CRRNT.WO", defaultColor: LabColors.primary),
+          controller.getColor(settings, "DASHBOARD_CARD_RTNA.ACTL", defaultColor: LabColors.primary),
           settings,
           controller,
           () {
@@ -107,9 +107,9 @@ class DashboardScreen extends ConsumerWidget {
         ),
         _buildModuleCard(
           context,
-          'KNS.INVTRY',
+          'INVTRO.KNS',
           Icons.inventory_2,
-          controller.getColor(settings, "DASHBOARD_CARD_KNS.INVTRY", defaultColor: LabColors.primary),
+          controller.getColor(settings, "DASHBOARD_CARD_INVTRO.KNS", defaultColor: LabColors.primary),
           settings,
           controller,
           () {
@@ -118,7 +118,7 @@ class DashboardScreen extends ConsumerWidget {
         ),
         _buildModuleCard(
           context,
-          'WO.BLCKS',
+          'BLQS.ENTR',
            Icons.view_module_rounded,
            controller.getColor(settings, "DASHBOARD_CARD_WO.BLKCS", defaultColor: LabColors.blueprintBlue, aliases: ["DASHBOARD_CARD_SESSION.BP"]),
           settings,
@@ -129,18 +129,18 @@ class DashboardScreen extends ConsumerWidget {
         ),
         _buildModuleCard(
           context,
-          'VSR.STATS',
+          'VSLZA.DT',
           Icons.analytics,
-          controller.getColor(settings, "DASHBOARD_CARD_VSR.STATS", defaultColor: Colors.grey[800]!),
+          controller.getColor(settings, "DASHBOARD_CARD_VSLZA.DT", defaultColor: Colors.grey[800]!),
           settings,
           controller,
           () {},
         ),
         _buildModuleCard(
           context,
-          'ANTRPMT.DT',
+          'DTS.ANTRPMT',
           Icons.straighten,
-          controller.getColor(settings, "DASHBOARD_CARD_ANTRPMT.DT", defaultColor: LabColors.accent),
+          controller.getColor(settings, "DASHBOARD_CARD_DTS.ANTRPMT", defaultColor: LabColors.accent),
           settings,
           controller,
           () {
@@ -161,7 +161,7 @@ class DashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildModuleCard(BuildContext context, String label, IconData icon, Color color, Map<String, ThemeSetting> settings, ThemeController controller, VoidCallback onTap) {
-    final bgAliases = label == 'WO.BLCKS' ? ["DASHBOARD_CARD_WO.BLKCS_BG", "DASHBOARD_CARD_SESSION.BP_BG"] : <String>[];
+    final bgAliases = label == 'BLQS.ENTR' ? ["DASHBOARD_CARD_WO.BLKCS_BG", "DASHBOARD_CARD_SESSION.BP_BG"] : <String>[];
     final bgColor = controller.getColor(settings, "DASHBOARD_CARD_${label}_BG", defaultColor: LabColors.surfaceContainerLow, aliases: bgAliases);
     
     return Material(

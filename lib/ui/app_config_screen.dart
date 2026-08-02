@@ -43,12 +43,13 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
   Widget build(BuildContext context) {
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
+    final lang = ref.watch(languageProvider).value ?? 'en';
 
     return Scaffold(
       backgroundColor: LabColors.background,
       appBar: AppBar(
         backgroundColor: LabColors.background,
-        title: Text("APP.CONFIG",
+        title: Text("CONFIG.APP",
             style: LabStyles.mono(context, fontWeight: FontWeight.bold)),
         centerTitle: true,
         iconTheme: const IconThemeData(color: LabColors.onSurfaceVariant),
@@ -61,14 +62,14 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
           labelStyle:
               LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold),
           unselectedLabelStyle: LabStyles.mono(context, fontSize: 10),
-          tabs: const [Tab(text: "GENERAL"), Tab(text: "VISUALS")],
+          tabs: [Tab(text: tr(lang, "GENERAL")), Tab(text: tr(lang, "VISUALS"))],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: [
           _buildGeneralTab(context),
-          _buildVisualsTab(context, settings, tC),
+          _buildVisualsTab(context, settings, tC, lang),
         ],
       ),
       bottomNavigationBar: const LabFooter(),
@@ -81,7 +82,7 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        _buildSectionCard(context, "LANGUAGE", [
+        _buildSectionCard(context, tr(lang, "LANGUAGE"), [
           Row(
             children: [
               Expanded(
@@ -97,7 +98,7 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
           ),
         ]),
         const SizedBox(height: 12),
-        _buildSectionCard(context, "RESET", [
+        _buildSectionCard(context, tr(lang, "RESET"), [
           SizedBox(
             width: double.infinity,
             child: LabButton(
@@ -112,7 +113,7 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
   }
 
   Widget _buildVisualsTab(BuildContext context,
-      Map<String, ThemeSetting> settings, ThemeController tC) {
+      Map<String, ThemeSetting> settings, ThemeController tC, String lang) {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -121,32 +122,32 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
             _buildToggleRow(context, settings, tC, t),
             const SizedBox(height: 12),
           ],
-          _buildKnsFaceLayoutPicker(context, settings, tC),
+          _buildKnsFaceLayoutPicker(context, settings, tC, lang),
         ]),
       ],
     );
   }
 
   Widget _buildKnsFaceLayoutPicker(BuildContext context,
-      Map<String, ThemeSetting> settings, ThemeController tC) {
+      Map<String, ThemeSetting> settings, ThemeController tC, String lang) {
     final isOriginal = tC.getBool(
         settings, 'APPCFG_KNS_FACE_LAYOUT_ORIGINAL',
         defaultValue: false);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text("KNS CARD FACE",
+        Text(tr(lang, "KNS CARD FACE"),
             style: LabStyles.mono(context, fontSize: 10, color: Colors.white)),
         const SizedBox(height: 8),
         Row(
           children: [
             Expanded(
-              child: _buildLayoutOption(context, "NEW", !isOriginal,
+              child: _buildLayoutOption(context, tr(lang, "NEW"), !isOriginal,
                   () => tC.setBool('APPCFG_KNS_FACE_LAYOUT_ORIGINAL', false)),
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: _buildLayoutOption(context, "ORIGINAL", isOriginal,
+              child: _buildLayoutOption(context, tr(lang, "ORIGINAL"), isOriginal,
                   () => tC.setBool('APPCFG_KNS_FACE_LAYOUT_ORIGINAL', true)),
             ),
           ],

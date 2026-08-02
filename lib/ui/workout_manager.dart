@@ -264,10 +264,10 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     if (widget.isScrolling) {
       return Center(
-          child: Text(
-              DateFormat('EEEE, MMM d, yyyy').format(widget.date).toUpperCase(),
+          child: Text(formatLocalizedDate(lang, widget.date),
               style: LabStyles.mono(context, color: Colors.grey[800])));
     }
 
@@ -325,7 +325,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                       border: Border.all(color: workoutOptsColor, width: 0.5),
                     ),
                     child: Text(
-                      'WORKOUT OPTS',
+                      tr(lang, 'WORKOUT OPTS'),
                       style: LabStyles.mono(context,
                           fontSize: 9,
                           color: workoutOptsColor,
@@ -337,7 +337,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
         workoutAsync.when(
           data: (results) {
             if (results.isEmpty) {
-              return SliverToBoxAdapter(child: _buildEmptyState(context));
+              return SliverToBoxAdapter(child: _buildEmptyState(context, lang));
             }
 
             final Map<int, List<drift.TypedResult>> groupedByEx = {};
@@ -803,6 +803,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
         DateFormat('yyyy-MM-dd').format(DateTime.now());
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final dateColor =
         tC.getColor(settings, 'UI_DATE_DISPLAY', defaultColor: Colors.white);
     final sessionNums = ref.watch(sessionNumbersProvider).value ?? {};
@@ -861,10 +862,10 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
         const SizedBox(height: 4),
         Text(
           isToday
-              ? 'CURRENT WORKOUT'
+              ? tr(lang, 'CURRENT WORKOUT')
               : (seshNum != null
                   ? 'SESH #$seshNum'
-                  : DateFormat('EEEE, MMM d, yyyy').format(date).toUpperCase()),
+                  : formatLocalizedDate(lang, date)),
           style: LabStyles.headline(context).copyWith(
               fontSize: 22,
               color: tC.getColor(settings, 'UI_SESH_NUMBER',
@@ -1245,14 +1246,14 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
         tickProvider: timerTickProvider);
   }
 
-  Widget _buildEmptyState(BuildContext context) {
+  Widget _buildEmptyState(BuildContext context, String lang) {
     return Center(
         child: Padding(
             padding: const EdgeInsets.only(top: 100),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.inbox, size: 48, color: Colors.grey[800]),
               const SizedBox(height: 16),
-              Text('NO_MOVEMENTS_LOGGED_FOR_THIS_PERIOD',
+              Text(tr(lang, 'NO_MOVEMENTS_LOGGED_FOR_THIS_PERIOD'),
                   style: LabStyles.mono(context,
                       color: Colors.grey[600]!, fontSize: 10))
             ])));
@@ -3362,7 +3363,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('EDIT_MOVEMENT_UTILITY',
+                Text(tr(lang, 'EDIT_MOVEMENT_UTILITY'),
                     style: LabStyles.headline(context).copyWith(fontSize: 16)),
                 const SizedBox(height: 24),
                 Flexible(
@@ -5987,7 +5988,7 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('WORKOUT OPTS',
+              Text(tr(lang, 'WORKOUT OPTS'),
                   style: LabStyles.headline(context,
                           color: _tc('UI_TAG_WORKOUT_OPTS', 'WORKOUT_OPTS'))
                       .copyWith(fontSize: 16, letterSpacing: 2)),
