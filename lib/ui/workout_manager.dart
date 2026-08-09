@@ -341,13 +341,22 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
             }
 
             // Absolute chronological creation-order rank for the day, keyed
-            // by set id. `results` is already sorted asc by orderIndex then
-            // timestamp (see workoutSetsProvider), which reflects insertion
-            // order across the whole day regardless of which exercise a set
-            // belongs to or where that exercise renders on screen.
+            // by set id. `results` arrives sorted by orderIndex first, but
+            // orderIndex is shared/inherited across every set in an exercise
+            // (a new set copies its exercise's original orderIndex - see
+            // _addNewSet), so it only reflects exercise-group display order,
+            // not per-set creation time. Re-sort by `timestamp` (the actual
+            // insertion moment) to get true day-wide chronological rank.
             final Map<int, int> globalRankBySetId = {};
-            for (var i = 0; i < results.length; i++) {
-              globalRankBySetId[results[i].readTable(db.workoutSets).id] =
+            final List<drift.TypedResult> resultsByCreationTime =
+                List<drift.TypedResult>.from(results)
+                  ..sort((a, b) => a
+                      .readTable(db.workoutSets)
+                      .timestamp
+                      .compareTo(b.readTable(db.workoutSets).timestamp));
+            for (var i = 0; i < resultsByCreationTime.length; i++) {
+              globalRankBySetId[
+                      resultsByCreationTime[i].readTable(db.workoutSets).id] =
                   i + 1;
             }
 
