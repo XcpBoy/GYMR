@@ -36,8 +36,8 @@ Future<void> setLanguage(AppDatabase db, String lang) async {
 /// PURGE_SET, etc.) NO pasan por aquí a propósito - esos los renombra el
 /// usuario directamente, no son "texto en inglés" a traducir.
 String tr(String lang, String en) {
-  if (lang != 'es') return en;
-  return esTranslations[en] ?? en;
+  if (lang == 'es') return esTranslations[en] ?? en;
+  return enTranslations[en] ?? en;
 }
 
 /// Fecha completa localizada: "MONDAY, JUL 27, 2026" (en) /
@@ -496,4 +496,13 @@ final Map<String, String> esTranslations = {
   'COLOR HEX (e.g. #FF5722)': 'COLOR HEX (ej. #FF5722)',
   'NAME': 'NOMBRE',
   'COLOR HEX': 'COLOR HEX',
+};
+
+/// Mapa de overrides para el modo inglés: solo se usa cuando el
+/// identificador estilizado mostrado en pantalla debe cambiar SIN tocar
+/// el string usado como key de personalización de color en DB (que sigue
+/// siendo el string original, p. ej. "SOMATIC_SPECTRUM"). Si un string no
+/// está acá, `tr()` lo devuelve tal cual.
+final Map<String, String> enTranslations = {
+  'SOMATIC_SPECTRUM': 'SMTC.SPCTRM',
 };
