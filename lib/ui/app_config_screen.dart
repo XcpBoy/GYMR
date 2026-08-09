@@ -49,7 +49,7 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
       backgroundColor: LabColors.background,
       appBar: AppBar(
         backgroundColor: LabColors.background,
-        title: Text("CONFIG.APP",
+        title: Text(tr(lang, "APP.CONFIG"),
             style: LabStyles.mono(context, fontWeight: FontWeight.bold)),
         centerTitle: true,
         iconTheme: const IconThemeData(color: LabColors.onSurfaceVariant),

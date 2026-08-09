@@ -32,7 +32,7 @@ Future<void> setLanguage(AppDatabase db, String lang) async {
 /// traducción registrada, devuelve el texto en inglés tal cual (nunca
 /// revienta ni muestra texto vacío).
 ///
-/// Los identificadores de estilo (C.WO, RTNA.ACTL, MDFCDR.TMA,
+/// Los identificadores de estilo (C.WO, CRRNT.WO, THEME.MDFYR,
 /// PURGE_SET, etc.) NO pasan por aquí a propósito - esos los renombra el
 /// usuario directamente, no son "texto en inglés" a traducir.
 String tr(String lang, String en) {
@@ -55,6 +55,19 @@ String formatLocalizedDate(String lang, DateTime d, {bool withYear = true}) {
 /// comentario indica de qué archivo vienen esas líneas para poder
 /// mantenerlo ordenado según el proyecto crece.
 final Map<String, String> esTranslations = {
+  // --- dashboard/hub identifiers (EN/ES stylized pairs) ---
+  'CRRNT.WO': 'RTNA.ACTL',
+  'KNS.INVTRY': 'INVTRO.KNS',
+  'WO.BLCKS': 'BLQS.ENTR',
+  'WO.BLKCS': 'BLQS.ENTR',
+  'ANTRPMT.DT': 'DTS.ANTRPMT',
+  'VSR.STATS': 'VSLZA.DT',
+  'THEME.MDFYR': 'MDFCDR.TMA',
+  'APP.CONFIG': 'CONFIG.APP',
+  'SOMATIC_SPECTRUM': 'SPECTRO.SOMTCO',
+  'DB.EDIT': 'INSPECTOR.DB',
+  'DB_INSPECTOR': 'INSPECTOR.DB',
+  '10 OVARCH PLAN': '10 PLAN.GENRL',
   // --- app_config_screen.dart ---
   'RESET COLORS TO DEFAULT': 'RESTAURAR COLORES POR DEFECTO',
   'This will erase every color you\'ve customized across the whole app and restore defaults. Wallpaper and toggle settings are not affected.\n\nThis cannot be undone.':
@@ -175,12 +188,12 @@ final Map<String, String> esTranslations = {
 
   // --- WO.Blocks.manager.dart ---
   'DELETE ALL BLOCKS': 'ELIMINAR TODOS LOS BLOQUES',
-  'Delete every workout block from BLQS.ENTR?':
-      '¿Eliminar todos los bloques de entrenamiento de BLQS.ENTR?',
+  'Delete every workout block from WO.BLCKS?':
+      '¿Eliminar todos los bloques de entrenamiento de WO.BLCKS?',
   'DELETE ALL': 'ELIMINAR TODO',
   'DEL PAST': 'ELIM. PASADOS',
-  'Aggressively delete stale WBs that are not currently visible in BLQS.ENTR. If the current BLQS.ENTR list is empty, this deletes all possible WBs.':
-      'Elimina agresivamente los bloques obsoletos que no están visibles actualmente en BLQS.ENTR. Si la lista actual de BLQS.ENTR está vacía, esto elimina todos los bloques posibles.',
+  'Aggressively delete stale WBs that are not currently visible in WO.BLCKS. If the current WO.BLCKS list is empty, this deletes all possible WBs.':
+      'Elimina agresivamente los bloques obsoletos que no están visibles actualmente en WO.BLCKS. Si la lista actual de WO.BLCKS está vacía, esto elimina todos los bloques posibles.',
   'DELETE PAST': 'ELIMINAR PASADOS',
   'CREATE WB': 'CREAR BLOQUE',
   'BLOCK NAME': 'NOMBRE DEL BLOQUE',

@@ -189,7 +189,7 @@ class WorkoutBlockListNotifier extends StateNotifier<List<WorkoutBlockEntry>> {
   }
 }
 
-// ─── BLQS.ENTR.MANAGER SCREEN ────────────────────────────────────────
+// ─── WO.BLCKS.MANAGER SCREEN ────────────────────────────────────────
 
 class WorkoutBlocksManagerScreen extends ConsumerStatefulWidget {
   const WorkoutBlocksManagerScreen({super.key});
@@ -216,6 +216,7 @@ class _WorkoutBlocksManagerScreenState
     final sorted = _sortedList(blocks);
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
+    final lang = ref.watch(languageProvider).value ?? 'en';
     final counterColor = tC.getColor(settings, 'UI_TAG_WO_BLOCKS_COUNTER',
         defaultColor: Colors.grey[500], nameSeed: 'WO_BLOCKS_COUNTER');
     final folderColor = tC.getColor(settings, 'UI_TAG_WO_BLOCKS_FOLDER',
@@ -237,7 +238,7 @@ class _WorkoutBlocksManagerScreenState
     });
 
     return MainScaffold(
-      title: 'BLQS.ENTR',
+      title: tr(lang, 'WO.BLCKS'),
       screenKey: 'BLUEPRINT',
       floatingActionButton: FloatingActionButton(
         backgroundColor: LabColors.primary,
@@ -390,7 +391,7 @@ class _WorkoutBlocksManagerScreenState
                 fontSize: 12,
                 color: Colors.redAccent,
                 fontWeight: FontWeight.bold)),
-        content: Text(tr(lang, 'Delete every workout block from BLQS.ENTR?'),
+        content: Text(tr(lang, 'Delete every workout block from WO.BLCKS?'),
             style: LabStyles.mono(context, fontSize: 10)),
         actions: [
           TextButton(
@@ -420,7 +421,7 @@ class _WorkoutBlocksManagerScreenState
                 color: Colors.orange,
                 fontWeight: FontWeight.bold)),
         content: Text(
-            tr(lang, 'Aggressively delete stale WBs that are not currently visible in BLQS.ENTR. If the current BLQS.ENTR list is empty, this deletes all possible WBs.'),
+            tr(lang, 'Aggressively delete stale WBs that are not currently visible in WO.BLCKS. If the current WO.BLCKS list is empty, this deletes all possible WBs.'),
             style: LabStyles.mono(context, fontSize: 10)),
         actions: [
           TextButton(

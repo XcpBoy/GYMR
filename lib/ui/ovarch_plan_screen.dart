@@ -23,9 +23,10 @@ class _OvarchPlanScreenState extends ConsumerState<OvarchPlanScreen> {
   @override
   Widget build(BuildContext context) {
     final db = ref.watch(databaseProvider);
+    final lang = ref.watch(languageProvider).value ?? 'en';
 
     return MainScaffold(
-      title: '10 PLAN.GENRL',
+      title: tr(lang, '10 OVARCH PLAN'),
       floatingActionButton: FloatingActionButton(
         backgroundColor: LabColors.primary,
         onPressed: () => _showPlanDialog(),

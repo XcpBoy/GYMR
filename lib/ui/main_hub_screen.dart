@@ -33,7 +33,7 @@ class MainHubScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildCoreModulesGrid(context, settings, tC),
+          _buildCoreModulesGrid(context, settings, tC, lang),
           const SizedBox(height: 12),
           _buildNexusModule(context, settings, tC, lang),
           const SizedBox(height: 12),
@@ -41,11 +41,11 @@ class MainHubScreen extends ConsumerWidget {
           const SizedBox(height: 12),
           _buildThemeModule(context, settings, tC, lang),
           const SizedBox(height: 12),
-          _buildPlanningModule(context, settings, tC),
+          _buildPlanningModule(context, settings, tC, lang),
           const SizedBox(height: 12),
-          _buildDBInspectorModule(context, settings, tC),
+          _buildDBInspectorModule(context, settings, tC, lang),
           const SizedBox(height: 12),
-          _buildSomaticLogsModule(context, settings, tC),
+          _buildSomaticLogsModule(context, settings, tC, lang),
           const SizedBox(height: 12),
           _buildAppConfigModule(context, settings, tC, lang),
           /* _buildPRLogicModule(context, settings, tC), — BACKGROUNDED */
@@ -54,7 +54,7 @@ class MainHubScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildPlanningModule(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC) {
+  Widget _buildPlanningModule(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC, String lang) {
     final color = tC.getColor(settings, "DASHBOARD_CARD_PLANNING", defaultColor: LabColors.primary);
     final bgColor = tC.getColor(settings, "DASHBOARD_CARD_PLANNING_BG", defaultColor: color.withValues(alpha: 0.08));
 
@@ -80,7 +80,7 @@ class MainHubScreen extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text('OVERARCHING_PROGRAM_PLN', style: LabStyles.mono(context, fontSize: 8, color: color.withValues(alpha: 0.7))),
-                    Text('10 PLAN.GENRL', style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
+                    Text(tr(lang, '10 OVARCH PLAN'), style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
                   ],
                 ),
               ),
@@ -92,9 +92,9 @@ class MainHubScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildDBInspectorModule(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC) {
-    final color = tC.getColor(settings, "DASHBOARD_CARD_INSPECTOR.DB", defaultColor: LabColors.accent);
-    final bgColor = tC.getColor(settings, "DASHBOARD_CARD_INSPECTOR.DB_BG", defaultColor: color.withValues(alpha: 0.08));
+  Widget _buildDBInspectorModule(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC, String lang) {
+    final color = tC.getColor(settings, "DASHBOARD_CARD_DB.EDIT", defaultColor: LabColors.accent);
+    final bgColor = tC.getColor(settings, "DASHBOARD_CARD_DB.EDIT_BG", defaultColor: color.withValues(alpha: 0.08));
 
     return Material(
       color: bgColor,
@@ -118,7 +118,7 @@ class MainHubScreen extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text('DATABASE_EDIT_INSPECT', style: LabStyles.mono(context, fontSize: 8, color: color.withValues(alpha: 0.7))),
-                    Text('11 INSPECTOR.DB', style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
+                    Text('11 ${tr(lang, 'DB.EDIT')}', style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
                   ],
                 ),
               ),
@@ -130,9 +130,9 @@ class MainHubScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildSomaticLogsModule(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC) {
-    final color = tC.getColor(settings, "DASHBOARD_CARD_SPECTRO.SOMTCO", defaultColor: LabColors.tertiary.withValues(alpha: 0.8));
-    final bgColor = tC.getColor(settings, "DASHBOARD_CARD_SPECTRO.SOMTCO_BG", defaultColor: color.withValues(alpha: 0.08));
+  Widget _buildSomaticLogsModule(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC, String lang) {
+    final color = tC.getColor(settings, "DASHBOARD_CARD_SOMATIC_SPECTRUM", defaultColor: LabColors.tertiary.withValues(alpha: 0.8));
+    final bgColor = tC.getColor(settings, "DASHBOARD_CARD_SOMATIC_SPECTRUM_BG", defaultColor: color.withValues(alpha: 0.08));
 
     return Material(
       color: bgColor,
@@ -156,7 +156,7 @@ class MainHubScreen extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text('SPECTRUM_FOLDERS_LOGS', style: LabStyles.mono(context, fontSize: 8, color: color.withValues(alpha: 0.7))),
-                    Text('12 SPECTRO.SOMTCO', style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
+                    Text('12 ${tr(lang, 'SOMATIC_SPECTRUM')}', style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
                   ],
                 ),
               ),
@@ -207,7 +207,7 @@ class MainHubScreen extends ConsumerWidget {
   }
   */
 
-  Widget _buildCoreModulesGrid(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC) {
+  Widget _buildCoreModulesGrid(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC, String lang) {
     return GridView.count(
       crossAxisCount: 2,
       shrinkWrap: true,
@@ -216,31 +216,31 @@ class MainHubScreen extends ConsumerWidget {
       mainAxisSpacing: 12,
       childAspectRatio: 2.2,
       children: [
-        _buildModuleButton(context, '01', 'RTNA.ACTL', Icons.fitness_center, settings, tC, defaultColor: LabColors.workoutRed, onTap: () {
+        _buildModuleButton(context, '01', 'CRRNT.WO', Icons.fitness_center, settings, tC, lang, defaultColor: LabColors.workoutRed, onTap: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => WorkoutManagerScreen()));
         }),
-        _buildModuleButton(context, '02', 'INVTRO.KNS', Icons.receipt_long, settings, tC, defaultColor: LabColors.inventoryOrange, onTap: () {
+        _buildModuleButton(context, '02', 'KNS.INVTRY', Icons.receipt_long, settings, tC, lang, defaultColor: LabColors.inventoryOrange, onTap: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const LedgerScreen()));
         }),
-        _buildModuleButton(context, '03', 'BLQS.ENTR', Icons.view_module_rounded, settings, tC, defaultColor: LabColors.blueprintBlue, onTap: () {
+        _buildModuleButton(context, '03', 'WO.BLCKS', Icons.view_module_rounded, settings, tC, lang, defaultColor: LabColors.blueprintBlue, onTap: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const BlueprintManagerScreen()));
         }),
-        _buildModuleButton(context, '04', 'TIMELINE', Icons.schedule, settings, tC, defaultColor: LabColors.timelineGrey, onTap: () {
+        _buildModuleButton(context, '04', 'TIMELINE', Icons.schedule, settings, tC, lang, defaultColor: LabColors.timelineGrey, onTap: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const TimelineScreen()));
         }),
-        _buildModuleButton(context, '05', 'DTS.ANTRPMT', Icons.straighten, settings, tC, defaultColor: LabColors.biometricYellow, onTap: () {
+        _buildModuleButton(context, '05', 'ANTRPMT.DT', Icons.straighten, settings, tC, lang, defaultColor: LabColors.biometricYellow, onTap: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const AnthropometricDataScreen()));
         }),
-        _buildModuleButton(context, '06', 'VSLZA.DT', Icons.science, settings, tC, defaultColor: LabColors.visualsNeon, onTap: () {
+        _buildModuleButton(context, '06', 'VSR.STATS', Icons.science, settings, tC, lang, defaultColor: LabColors.visualsNeon, onTap: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const PerformanceDashboard()));
         }),
       ],
     );
   }
 
-  Widget _buildModuleButton(BuildContext context, String index, String label, IconData icon, Map<String, ThemeSetting> settings, ThemeController tC, {Color? defaultColor, VoidCallback? onTap}) {
-    final aliases = label == 'BLQS.ENTR' ? ["DASHBOARD_CARD_WO.BLKCS", "DASHBOARD_CARD_SESSION.BP"] : <String>[];
-    final bgAliases = label == 'BLQS.ENTR' ? ["DASHBOARD_CARD_WO.BLKCS_BG", "DASHBOARD_CARD_SESSION.BP_BG"] : <String>[];
+  Widget _buildModuleButton(BuildContext context, String index, String label, IconData icon, Map<String, ThemeSetting> settings, ThemeController tC, String lang, {Color? defaultColor, VoidCallback? onTap}) {
+    final aliases = label == 'WO.BLCKS' ? ["DASHBOARD_CARD_WO.BLKCS", "DASHBOARD_CARD_SESSION.BP"] : <String>[];
+    final bgAliases = label == 'WO.BLCKS' ? ["DASHBOARD_CARD_WO.BLKCS_BG", "DASHBOARD_CARD_SESSION.BP_BG"] : <String>[];
     final color = tC.getColor(settings, "DASHBOARD_CARD_$label", defaultColor: defaultColor, aliases: aliases);
     final bgColor = tC.getColor(settings, "DASHBOARD_CARD_${label}_BG", defaultColor: (defaultColor ?? LabColors.surfaceContainerLow).withValues(alpha: 0.08), aliases: bgAliases);
 
@@ -264,7 +264,7 @@ class MainHubScreen extends ConsumerWidget {
                     Icon(icon, color: color, size: 26),
                     const SizedBox(height: 8),
                     Text(
-                      label.toUpperCase(), 
+                      tr(lang, label).toUpperCase(),
                       style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 11, letterSpacing: 1),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -364,8 +364,8 @@ class MainHubScreen extends ConsumerWidget {
   }
 
   Widget _buildThemeModule(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC, String lang) {
-    final color = tC.getColor(settings, "DASHBOARD_CARD_MDFCDR.TMA", defaultColor: LabColors.themeWhite);
-    final bgColor = tC.getColor(settings, "DASHBOARD_CARD_MDFCDR.TMA_BG", defaultColor: color.withValues(alpha: 0.08));
+    final color = tC.getColor(settings, "DASHBOARD_CARD_THEME.MDFYR", defaultColor: LabColors.themeWhite);
+    final bgColor = tC.getColor(settings, "DASHBOARD_CARD_THEME.MDFYR_BG", defaultColor: color.withValues(alpha: 0.08));
 
     return Material(
       color: bgColor,
@@ -389,7 +389,7 @@ class MainHubScreen extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(tr(lang, 'VISUAL_INTERFACE_CUSTOMIZATION'), style: LabStyles.mono(context, fontSize: 8, color: color.withValues(alpha: 0.7))),
-                    Text('09 MDFCDR.TMA', style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
+                    Text('09 ${tr(lang, 'THEME.MDFYR')}', style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
                   ],
                 ),
               ),
@@ -402,8 +402,8 @@ class MainHubScreen extends ConsumerWidget {
   }
 
   Widget _buildAppConfigModule(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC, String lang) {
-    final color = tC.getColor(settings, "DASHBOARD_CARD_CONFIG.APP", defaultColor: LabColors.onSurfaceVariant);
-    final bgColor = tC.getColor(settings, "DASHBOARD_CARD_CONFIG.APP_BG", defaultColor: color.withValues(alpha: 0.08));
+    final color = tC.getColor(settings, "DASHBOARD_CARD_APP.CONFIG", defaultColor: LabColors.onSurfaceVariant);
+    final bgColor = tC.getColor(settings, "DASHBOARD_CARD_APP.CONFIG_BG", defaultColor: color.withValues(alpha: 0.08));
 
     return Material(
       color: bgColor,
@@ -427,7 +427,7 @@ class MainHubScreen extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(tr(lang, 'APP_WIDE_SETTINGS'), style: LabStyles.mono(context, fontSize: 8, color: color.withValues(alpha: 0.7))),
-                    Text('CONFIG.APP', style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
+                    Text(tr(lang, 'APP.CONFIG'), style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
                   ],
                 ),
               ),

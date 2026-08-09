@@ -153,7 +153,7 @@ class _SomaticLogsScreenState extends ConsumerState<SomaticLogsScreen> {
     final lang = ref.watch(languageProvider).value ?? 'en';
 
     return MainScaffold(
-      title: 'SPECTRO.SOMTCO',
+      title: tr(lang, 'SOMATIC_SPECTRUM'),
       body: RefreshIndicator(
         onRefresh: () async => setState(() {}),
         child: FutureBuilder<Map<int, String>>(

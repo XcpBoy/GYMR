@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../database/database.dart';
 import '../providers/theme_provider.dart';
+import '../localization/strings.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'workout_manager.dart';
@@ -16,6 +17,7 @@ class DashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(themeSettingsProvider).value ?? <String, ThemeSetting>{};
     final themeController = ref.read(themeControllerProvider);
+    final lang = ref.watch(languageProvider).value ?? 'en';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -24,7 +26,7 @@ class DashboardScreen extends ConsumerWidget {
         children: [
           _buildHeader(context),
           const SizedBox(height: 32),
-          _buildStatsGrid(context, settings, themeController),
+          _buildStatsGrid(context, settings, themeController, lang),
           const SizedBox(height: 32),
           _buildActionSection(context),
         ],
@@ -80,7 +82,7 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildStatsGrid(BuildContext context, Map<String, ThemeSetting> settings, ThemeController controller) {
+  Widget _buildStatsGrid(BuildContext context, Map<String, ThemeSetting> settings, ThemeController controller, String lang) {
     // childAspectRatio is a fixed-height contract for the grid cells, but the
     // card content's height can grow (larger system font scale, narrower
     // devices) - a value with headroom plus ellipsis/Flexible text inside
@@ -96,53 +98,58 @@ class DashboardScreen extends ConsumerWidget {
       children: [
         _buildModuleCard(
           context,
-          'RTNA.ACTL',
+          'CRRNT.WO',
           Icons.fitness_center,
-          controller.getColor(settings, "DASHBOARD_CARD_RTNA.ACTL", defaultColor: LabColors.primary),
+          controller.getColor(settings, "DASHBOARD_CARD_CRRNT.WO", defaultColor: LabColors.primary),
           settings,
           controller,
+          lang,
           () {
             Navigator.push(context, MaterialPageRoute(builder: (context) => WorkoutManagerScreen()));
           },
         ),
         _buildModuleCard(
           context,
-          'INVTRO.KNS',
+          'KNS.INVTRY',
           Icons.inventory_2,
-          controller.getColor(settings, "DASHBOARD_CARD_INVTRO.KNS", defaultColor: LabColors.primary),
+          controller.getColor(settings, "DASHBOARD_CARD_KNS.INVTRY", defaultColor: LabColors.primary),
           settings,
           controller,
+          lang,
           () {
             Navigator.push(context, MaterialPageRoute(builder: (context) => const LedgerScreen()));
           },
         ),
         _buildModuleCard(
           context,
-          'BLQS.ENTR',
+          'WO.BLCKS',
            Icons.view_module_rounded,
            controller.getColor(settings, "DASHBOARD_CARD_WO.BLKCS", defaultColor: LabColors.blueprintBlue, aliases: ["DASHBOARD_CARD_SESSION.BP"]),
           settings,
           controller,
+          lang,
           () {
             Navigator.push(context, MaterialPageRoute(builder: (context) => const BlueprintManagerScreen()));
           },
         ),
         _buildModuleCard(
           context,
-          'VSLZA.DT',
+          'VSR.STATS',
           Icons.analytics,
-          controller.getColor(settings, "DASHBOARD_CARD_VSLZA.DT", defaultColor: Colors.grey[800]!),
+          controller.getColor(settings, "DASHBOARD_CARD_VSR.STATS", defaultColor: Colors.grey[800]!),
           settings,
           controller,
+          lang,
           () {},
         ),
         _buildModuleCard(
           context,
-          'DTS.ANTRPMT',
+          'ANTRPMT.DT',
           Icons.straighten,
-          controller.getColor(settings, "DASHBOARD_CARD_DTS.ANTRPMT", defaultColor: LabColors.accent),
+          controller.getColor(settings, "DASHBOARD_CARD_ANTRPMT.DT", defaultColor: LabColors.accent),
           settings,
           controller,
+          lang,
           () {
             Navigator.push(context, MaterialPageRoute(builder: (context) => const AnthropometricDataScreen()));
           },
@@ -154,14 +161,15 @@ class DashboardScreen extends ConsumerWidget {
           controller.getColor(settings, "DASHBOARD_CARD_SYS.LOGS", defaultColor: Colors.grey[800]!),
           settings,
           controller,
+          lang,
           () {},
         ),
       ],
     );
   }
 
-  Widget _buildModuleCard(BuildContext context, String label, IconData icon, Color color, Map<String, ThemeSetting> settings, ThemeController controller, VoidCallback onTap) {
-    final bgAliases = label == 'BLQS.ENTR' ? ["DASHBOARD_CARD_WO.BLKCS_BG", "DASHBOARD_CARD_SESSION.BP_BG"] : <String>[];
+  Widget _buildModuleCard(BuildContext context, String label, IconData icon, Color color, Map<String, ThemeSetting> settings, ThemeController controller, String lang, VoidCallback onTap) {
+    final bgAliases = label == 'WO.BLCKS' ? ["DASHBOARD_CARD_WO.BLKCS_BG", "DASHBOARD_CARD_SESSION.BP_BG"] : <String>[];
     final bgColor = controller.getColor(settings, "DASHBOARD_CARD_${label}_BG", defaultColor: LabColors.surfaceContainerLow, aliases: bgAliases);
     
     return Material(
@@ -198,7 +206,7 @@ class DashboardScreen extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    label,
+                    tr(lang, label),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: LabStyles.mono(context, color: color, fontSize: 10, fontWeight: FontWeight.bold),

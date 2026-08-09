@@ -256,61 +256,61 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
     ];
 
     final List<String> dashboardItems = [
-      "RTNA.ACTL",
-      "RTNA.ACTL_BG",
-      "INVTRO.KNS",
-      "INVTRO.KNS_BG",
+      "CRRNT.WO",
+      "CRRNT.WO_BG",
+      "KNS.INVTRY",
+      "KNS.INVTRY_BG",
       "WO.BLKCS",
       "WO.BLKCS_BG",
       "TIMELINE",
       "TIMELINE_BG",
-      "DTS.ANTRPMT",
-      "DTS.ANTRPMT_BG",
-      "VSLZA.DT",
-      "VSLZA.DT_BG",
+      "ANTRPMT.DT",
+      "ANTRPMT.DT_BG",
+      "VSR.STATS",
+      "VSR.STATS_BG",
       "NEXUS",
       "NEXUS_BG",
       "DATASET",
       "DATASET_BG",
-      "MDFCDR.TMA",
-      "MDFCDR.TMA_BG",
+      "THEME.MDFYR",
+      "THEME.MDFYR_BG",
       "PLANNING",
       "PLANNING_BG",
-      "INSPECTOR.DB",
-      "INSPECTOR.DB_BG",
-      "SPECTRO.SOMTCO",
-      "SPECTRO.SOMTCO_BG",
-      "CONFIG.APP",
-      "CONFIG.APP_BG",
+      "DB.EDIT",
+      "DB.EDIT_BG",
+      "SOMATIC_SPECTRUM",
+      "SOMATIC_SPECTRUM_BG",
+      "APP.CONFIG",
+      "APP.CONFIG_BG",
     ];
     final Map<String, Color> dashboardDefaults = {
-      "RTNA.ACTL": LabColors.workoutRed,
-      "RTNA.ACTL_BG": LabColors.workoutRed.withValues(alpha: 0.08),
-      "INVTRO.KNS": LabColors.inventoryOrange,
-      "INVTRO.KNS_BG": LabColors.inventoryOrange.withValues(alpha: 0.08),
+      "CRRNT.WO": LabColors.workoutRed,
+      "CRRNT.WO_BG": LabColors.workoutRed.withValues(alpha: 0.08),
+      "KNS.INVTRY": LabColors.inventoryOrange,
+      "KNS.INVTRY_BG": LabColors.inventoryOrange.withValues(alpha: 0.08),
       "WO.BLKCS": LabColors.blueprintBlue,
       "WO.BLKCS_BG": LabColors.blueprintBlue.withValues(alpha: 0.08),
       "TIMELINE": LabColors.timelineGrey,
       "TIMELINE_BG": LabColors.timelineGrey.withValues(alpha: 0.08),
-      "DTS.ANTRPMT": LabColors.biometricYellow,
-      "DTS.ANTRPMT_BG": LabColors.biometricYellow.withValues(alpha: 0.08),
-      "VSLZA.DT": LabColors.visualsNeon,
-      "VSLZA.DT_BG": LabColors.visualsNeon.withValues(alpha: 0.08),
+      "ANTRPMT.DT": LabColors.biometricYellow,
+      "ANTRPMT.DT_BG": LabColors.biometricYellow.withValues(alpha: 0.08),
+      "VSR.STATS": LabColors.visualsNeon,
+      "VSR.STATS_BG": LabColors.visualsNeon.withValues(alpha: 0.08),
       "NEXUS": LabColors.nexusPurple,
       "NEXUS_BG": LabColors.nexusPurple.withValues(alpha: 0.08),
       "DATASET": LabColors.datasetGold,
       "DATASET_BG": LabColors.datasetGold.withValues(alpha: 0.08),
-      "MDFCDR.TMA": LabColors.themeWhite,
-      "MDFCDR.TMA_BG": LabColors.themeWhite.withValues(alpha: 0.08),
+      "THEME.MDFYR": LabColors.themeWhite,
+      "THEME.MDFYR_BG": LabColors.themeWhite.withValues(alpha: 0.08),
       "PLANNING": LabColors.secondary,
       "PLANNING_BG": LabColors.secondary.withValues(alpha: 0.08),
-      "INSPECTOR.DB": LabColors.tertiary,
-      "INSPECTOR.DB_BG": LabColors.tertiary.withValues(alpha: 0.08),
-      "SPECTRO.SOMTCO": LabColors.supersetBlockDefault,
-      "SPECTRO.SOMTCO_BG":
+      "DB.EDIT": LabColors.tertiary,
+      "DB.EDIT_BG": LabColors.tertiary.withValues(alpha: 0.08),
+      "SOMATIC_SPECTRUM": LabColors.supersetBlockDefault,
+      "SOMATIC_SPECTRUM_BG":
           LabColors.supersetBlockDefault.withValues(alpha: 0.08),
-      "CONFIG.APP": LabColors.onSurfaceVariant,
-      "CONFIG.APP_BG": LabColors.onSurfaceVariant.withValues(alpha: 0.08),
+      "APP.CONFIG": LabColors.onSurfaceVariant,
+      "APP.CONFIG_BG": LabColors.onSurfaceVariant.withValues(alpha: 0.08),
     };
 
     final List<String> footerItems = [
@@ -395,7 +395,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
       backgroundColor: LabColors.background,
       appBar: AppBar(
         backgroundColor: LabColors.background,
-        title: Text("MDFCDR.TMA",
+        title: Text(tr(lang, "THEME.MDFYR"),
             style: LabStyles.mono(context, fontWeight: FontWeight.bold)),
         centerTitle: true,
         iconTheme: const IconThemeData(color: LabColors.primary),
@@ -611,7 +611,10 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
                 defaultColor: defaults?[item], nameSeed: item);
             final hexStr =
                 '#${color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
-            final label = item.replaceAll('TAG_', '').toUpperCase();
+            final isBg = item.endsWith('_BG');
+            final baseItem = isBg ? item.substring(0, item.length - 3) : item;
+            final translatedItem = tr(lang, baseItem) + (isBg ? '_BG' : '');
+            final label = translatedItem.replaceAll('TAG_', '').toUpperCase();
             return InkWell(
               onTap: () => _showColorPicker(context, key, color, lang),
               child: Column(

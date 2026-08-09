@@ -1661,8 +1661,9 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
   // ── BUILD ──
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     return MainScaffold(
-      title: 'INSPECTOR.DB',
+      title: tr(lang, 'DB.EDIT'),
       screenKey: 'DATASET',
       automaticallyImplyLeading: false,
       body: Column(
