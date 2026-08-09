@@ -340,6 +340,17 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
               return SliverToBoxAdapter(child: _buildEmptyState(context, lang));
             }
 
+            // Absolute chronological creation-order rank for the day, keyed
+            // by set id. `results` is already sorted asc by orderIndex then
+            // timestamp (see workoutSetsProvider), which reflects insertion
+            // order across the whole day regardless of which exercise a set
+            // belongs to or where that exercise renders on screen.
+            final Map<int, int> globalRankBySetId = {};
+            for (var i = 0; i < results.length; i++) {
+              globalRankBySetId[results[i].readTable(db.workoutSets).id] =
+                  i + 1;
+            }
+
             final Map<int, List<drift.TypedResult>> groupedByEx = {};
             final List<int> exerciseIdsInOrder = [];
 
@@ -454,6 +465,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                       db: db,
                       bw: bw,
                       globalSetStart: globalSetStarts[index],
+                      globalRankBySetId: globalRankBySetId,
                     );
                   }
 
@@ -470,6 +482,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                       settings: settings,
                       tC: tC,
                       interleavedItems: interleavedItems,
+                      globalRankBySetId: globalRankBySetId,
                     );
                   }
 
@@ -1000,6 +1013,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
     required Map<String, ThemeSetting> settings,
     required ThemeController tC,
     required List<Object> interleavedItems,
+    required Map<int, int> globalRankBySetId,
   }) {
     final isExpanded = _expandedUtils.contains('batch_$batchName');
     final groupStarts = <int>[];
@@ -1090,6 +1104,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
                 db: db,
                 bw: bw,
                 globalSetStart: groupStarts[batchIdx],
+                globalRankBySetId: globalRankBySetId,
               ),
               onReorder: (oldIdx, newIdx) async {
                 if (newIdx > oldIdx) newIdx--;
@@ -1138,6 +1153,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
       required AppDatabase db,
       required double bw,
       int globalSetStart = 0,
+      Map<int, int> globalRankBySetId = const {},
       bool showDragHandle = true}) {
     final firstExId = group.first;
     int runningGlobal = globalSetStart;
@@ -1190,6 +1206,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
               bodyWeight: bw,
               index: groupIdx,
               globalSetStart: runningGlobal,
+              globalRankBySetId: globalRankBySetId,
               scrollController: _scrollController,
               moduleIsIso: exIsIso,
               moduleIsJst: exIsJst,
@@ -2195,6 +2212,7 @@ class _ExerciseModule extends ConsumerStatefulWidget {
   final double bodyWeight;
   final int index;
   final int globalSetStart;
+  final Map<int, int> globalRankBySetId;
   final ScrollController scrollController;
   final bool showDragHandle;
   final bool moduleIsIso;
@@ -2210,6 +2228,7 @@ class _ExerciseModule extends ConsumerStatefulWidget {
       required this.bodyWeight,
       required this.index,
       required this.globalSetStart,
+      this.globalRankBySetId = const {},
       required this.scrollController,
       required this.moduleIsIso,
       required this.moduleIsJst,
@@ -3468,14 +3487,16 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
         if (nMeta["side"] == "LEFT") {
           items.add(_GroupedSetSlot(
             index: i,
-            globalIndex: widget.globalSetStart + i + 1,
+            globalIndex: widget.globalRankBySetId[s.id] ??
+                (widget.globalSetStart + i + 1),
             set: s,
             log: l,
             side: "RIGHT",
             leftSet: ns,
             leftLog: nl,
             leftIndex: i + 1,
-            leftGlobalIndex: widget.globalSetStart + i + 2,
+            leftGlobalIndex: widget.globalRankBySetId[ns.id] ??
+                (widget.globalSetStart + i + 2),
           ));
           i += 2;
           continue;
@@ -3485,7 +3506,8 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
       // Single set (standard or fallback)
       items.add(_GroupedSetSlot(
         index: i,
-        globalIndex: widget.globalSetStart + i + 1,
+        globalIndex: widget.globalRankBySetId[s.id] ??
+            (widget.globalSetStart + i + 1),
         set: s,
         log: l,
       ));
