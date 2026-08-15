@@ -5,6 +5,9 @@
 .packages
 build/
 
+# graphify (generated knowledge-graph artifacts, rebuild with `graphify update .`)
+graphify-out/
+
 # OS/editor
 .DS_Store
 Thumbs.db
