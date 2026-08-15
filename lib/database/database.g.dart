@@ -126,6 +126,18 @@ class $BaseExercisesTable extends BaseExercises
       defaultConstraints: GeneratedColumn.constraintIsAlways(
           'CHECK ("is_unilateral" IN (0, 1))'),
       defaultValue: const Constant(false));
+  static const VerificationMeta _assistanceTypesMeta =
+      const VerificationMeta('assistanceTypes');
+  @override
+  late final GeneratedColumn<String> assistanceTypes = GeneratedColumn<String>(
+      'assistance_types', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _nameOrderMeta =
+      const VerificationMeta('nameOrder');
+  @override
+  late final GeneratedColumn<String> nameOrder = GeneratedColumn<String>(
+      'name_order', aliasedName, true,
+      type: DriftSqlType.string, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -145,7 +157,9 @@ class $BaseExercisesTable extends BaseExercises
         intention,
         patternType,
         complexMetadata,
-        isUnilateral
+        isUnilateral,
+        assistanceTypes,
+        nameOrder
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -252,6 +266,16 @@ class $BaseExercisesTable extends BaseExercises
           isUnilateral.isAcceptableOrUnknown(
               data['is_unilateral']!, _isUnilateralMeta));
     }
+    if (data.containsKey('assistance_types')) {
+      context.handle(
+          _assistanceTypesMeta,
+          assistanceTypes.isAcceptableOrUnknown(
+              data['assistance_types']!, _assistanceTypesMeta));
+    }
+    if (data.containsKey('name_order')) {
+      context.handle(_nameOrderMeta,
+          nameOrder.isAcceptableOrUnknown(data['name_order']!, _nameOrderMeta));
+    }
     return context;
   }
 
@@ -298,6 +322,10 @@ class $BaseExercisesTable extends BaseExercises
           DriftSqlType.string, data['${effectivePrefix}complex_metadata']),
       isUnilateral: attachedDatabase.typeMapping
           .read(DriftSqlType.bool, data['${effectivePrefix}is_unilateral'])!,
+      assistanceTypes: attachedDatabase.typeMapping.read(
+          DriftSqlType.string, data['${effectivePrefix}assistance_types']),
+      nameOrder: attachedDatabase.typeMapping
+          .read(DriftSqlType.string, data['${effectivePrefix}name_order']),
     );
   }
 
@@ -326,6 +354,8 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
   final String? patternType;
   final String? complexMetadata;
   final bool isUnilateral;
+  final String? assistanceTypes;
+  final String? nameOrder;
   const BaseExercise(
       {required this.id,
       required this.name,
@@ -344,7 +374,9 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
       this.intention,
       this.patternType,
       this.complexMetadata,
-      required this.isUnilateral});
+      required this.isUnilateral,
+      this.assistanceTypes,
+      this.nameOrder});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -394,6 +426,12 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
       map['complex_metadata'] = Variable<String>(complexMetadata);
     }
     map['is_unilateral'] = Variable<bool>(isUnilateral);
+    if (!nullToAbsent || assistanceTypes != null) {
+      map['assistance_types'] = Variable<String>(assistanceTypes);
+    }
+    if (!nullToAbsent || nameOrder != null) {
+      map['name_order'] = Variable<String>(nameOrder);
+    }
     return map;
   }
 
@@ -444,6 +482,12 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
           ? const Value.absent()
           : Value(complexMetadata),
       isUnilateral: Value(isUnilateral),
+      assistanceTypes: assistanceTypes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(assistanceTypes),
+      nameOrder: nameOrder == null && nullToAbsent
+          ? const Value.absent()
+          : Value(nameOrder),
     );
   }
 
@@ -472,6 +516,8 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
       patternType: serializer.fromJson<String?>(json['patternType']),
       complexMetadata: serializer.fromJson<String?>(json['complexMetadata']),
       isUnilateral: serializer.fromJson<bool>(json['isUnilateral']),
+      assistanceTypes: serializer.fromJson<String?>(json['assistanceTypes']),
+      nameOrder: serializer.fromJson<String?>(json['nameOrder']),
     );
   }
   @override
@@ -496,6 +542,8 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
       'patternType': serializer.toJson<String?>(patternType),
       'complexMetadata': serializer.toJson<String?>(complexMetadata),
       'isUnilateral': serializer.toJson<bool>(isUnilateral),
+      'assistanceTypes': serializer.toJson<String?>(assistanceTypes),
+      'nameOrder': serializer.toJson<String?>(nameOrder),
     };
   }
 
@@ -517,7 +565,9 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
           Value<String?> intention = const Value.absent(),
           Value<String?> patternType = const Value.absent(),
           Value<String?> complexMetadata = const Value.absent(),
-          bool? isUnilateral}) =>
+          bool? isUnilateral,
+          Value<String?> assistanceTypes = const Value.absent(),
+          Value<String?> nameOrder = const Value.absent()}) =>
       BaseExercise(
         id: id ?? this.id,
         name: name ?? this.name,
@@ -546,6 +596,10 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
             ? complexMetadata.value
             : this.complexMetadata,
         isUnilateral: isUnilateral ?? this.isUnilateral,
+        assistanceTypes: assistanceTypes.present
+            ? assistanceTypes.value
+            : this.assistanceTypes,
+        nameOrder: nameOrder.present ? nameOrder.value : this.nameOrder,
       );
   BaseExercise copyWithCompanion(BaseExercisesCompanion data) {
     return BaseExercise(
@@ -584,6 +638,10 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
       isUnilateral: data.isUnilateral.present
           ? data.isUnilateral.value
           : this.isUnilateral,
+      assistanceTypes: data.assistanceTypes.present
+          ? data.assistanceTypes.value
+          : this.assistanceTypes,
+      nameOrder: data.nameOrder.present ? data.nameOrder.value : this.nameOrder,
     );
   }
 
@@ -607,7 +665,9 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
           ..write('intention: $intention, ')
           ..write('patternType: $patternType, ')
           ..write('complexMetadata: $complexMetadata, ')
-          ..write('isUnilateral: $isUnilateral')
+          ..write('isUnilateral: $isUnilateral, ')
+          ..write('assistanceTypes: $assistanceTypes, ')
+          ..write('nameOrder: $nameOrder')
           ..write(')'))
         .toString();
   }
@@ -631,7 +691,9 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
       intention,
       patternType,
       complexMetadata,
-      isUnilateral);
+      isUnilateral,
+      assistanceTypes,
+      nameOrder);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -653,7 +715,9 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
           other.intention == this.intention &&
           other.patternType == this.patternType &&
           other.complexMetadata == this.complexMetadata &&
-          other.isUnilateral == this.isUnilateral);
+          other.isUnilateral == this.isUnilateral &&
+          other.assistanceTypes == this.assistanceTypes &&
+          other.nameOrder == this.nameOrder);
 }
 
 class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
@@ -675,6 +739,8 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
   final Value<String?> patternType;
   final Value<String?> complexMetadata;
   final Value<bool> isUnilateral;
+  final Value<String?> assistanceTypes;
+  final Value<String?> nameOrder;
   const BaseExercisesCompanion({
     this.id = const Value.absent(),
     this.name = const Value.absent(),
@@ -694,6 +760,8 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
     this.patternType = const Value.absent(),
     this.complexMetadata = const Value.absent(),
     this.isUnilateral = const Value.absent(),
+    this.assistanceTypes = const Value.absent(),
+    this.nameOrder = const Value.absent(),
   });
   BaseExercisesCompanion.insert({
     this.id = const Value.absent(),
@@ -714,6 +782,8 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
     this.patternType = const Value.absent(),
     this.complexMetadata = const Value.absent(),
     this.isUnilateral = const Value.absent(),
+    this.assistanceTypes = const Value.absent(),
+    this.nameOrder = const Value.absent(),
   }) : name = Value(name);
   static Insertable<BaseExercise> custom({
     Expression<int>? id,
@@ -734,6 +804,8 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
     Expression<String>? patternType,
     Expression<String>? complexMetadata,
     Expression<bool>? isUnilateral,
+    Expression<String>? assistanceTypes,
+    Expression<String>? nameOrder,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -756,6 +828,8 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
       if (patternType != null) 'pattern_type': patternType,
       if (complexMetadata != null) 'complex_metadata': complexMetadata,
       if (isUnilateral != null) 'is_unilateral': isUnilateral,
+      if (assistanceTypes != null) 'assistance_types': assistanceTypes,
+      if (nameOrder != null) 'name_order': nameOrder,
     });
   }
 
@@ -777,7 +851,9 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
       Value<String?>? intention,
       Value<String?>? patternType,
       Value<String?>? complexMetadata,
-      Value<bool>? isUnilateral}) {
+      Value<bool>? isUnilateral,
+      Value<String?>? assistanceTypes,
+      Value<String?>? nameOrder}) {
     return BaseExercisesCompanion(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -797,6 +873,8 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
       patternType: patternType ?? this.patternType,
       complexMetadata: complexMetadata ?? this.complexMetadata,
       isUnilateral: isUnilateral ?? this.isUnilateral,
+      assistanceTypes: assistanceTypes ?? this.assistanceTypes,
+      nameOrder: nameOrder ?? this.nameOrder,
     );
   }
 
@@ -858,6 +936,12 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
     if (isUnilateral.present) {
       map['is_unilateral'] = Variable<bool>(isUnilateral.value);
     }
+    if (assistanceTypes.present) {
+      map['assistance_types'] = Variable<String>(assistanceTypes.value);
+    }
+    if (nameOrder.present) {
+      map['name_order'] = Variable<String>(nameOrder.value);
+    }
     return map;
   }
 
@@ -881,7 +965,9 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
           ..write('intention: $intention, ')
           ..write('patternType: $patternType, ')
           ..write('complexMetadata: $complexMetadata, ')
-          ..write('isUnilateral: $isUnilateral')
+          ..write('isUnilateral: $isUnilateral, ')
+          ..write('assistanceTypes: $assistanceTypes, ')
+          ..write('nameOrder: $nameOrder')
           ..write(')'))
         .toString();
   }
@@ -7790,6 +7876,8 @@ typedef $$BaseExercisesTableCreateCompanionBuilder = BaseExercisesCompanion
   Value<String?> patternType,
   Value<String?> complexMetadata,
   Value<bool> isUnilateral,
+  Value<String?> assistanceTypes,
+  Value<String?> nameOrder,
 });
 typedef $$BaseExercisesTableUpdateCompanionBuilder = BaseExercisesCompanion
     Function({
@@ -7811,6 +7899,8 @@ typedef $$BaseExercisesTableUpdateCompanionBuilder = BaseExercisesCompanion
   Value<String?> patternType,
   Value<String?> complexMetadata,
   Value<bool> isUnilateral,
+  Value<String?> assistanceTypes,
+  Value<String?> nameOrder,
 });
 
 final class $$BaseExercisesTableReferences
@@ -7951,6 +8041,13 @@ class $$BaseExercisesTableFilterComposer
 
   ColumnFilters<bool> get isUnilateral => $composableBuilder(
       column: $table.isUnilateral, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get assistanceTypes => $composableBuilder(
+      column: $table.assistanceTypes,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get nameOrder => $composableBuilder(
+      column: $table.nameOrder, builder: (column) => ColumnFilters(column));
 
   Expression<bool> exerciseVariantsRefs(
       Expression<bool> Function($$ExerciseVariantsTableFilterComposer f) f) {
@@ -8105,6 +8202,13 @@ class $$BaseExercisesTableOrderingComposer
   ColumnOrderings<bool> get isUnilateral => $composableBuilder(
       column: $table.isUnilateral,
       builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get assistanceTypes => $composableBuilder(
+      column: $table.assistanceTypes,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get nameOrder => $composableBuilder(
+      column: $table.nameOrder, builder: (column) => ColumnOrderings(column));
 }
 
 class $$BaseExercisesTableAnnotationComposer
@@ -8169,6 +8273,12 @@ class $$BaseExercisesTableAnnotationComposer
 
   GeneratedColumn<bool> get isUnilateral => $composableBuilder(
       column: $table.isUnilateral, builder: (column) => column);
+
+  GeneratedColumn<String> get assistanceTypes => $composableBuilder(
+      column: $table.assistanceTypes, builder: (column) => column);
+
+  GeneratedColumn<String> get nameOrder =>
+      $composableBuilder(column: $table.nameOrder, builder: (column) => column);
 
   Expression<T> exerciseVariantsRefs<T extends Object>(
       Expression<T> Function($$ExerciseVariantsTableAnnotationComposer a) f) {
@@ -8301,6 +8411,8 @@ class $$BaseExercisesTableTableManager extends RootTableManager<
             Value<String?> patternType = const Value.absent(),
             Value<String?> complexMetadata = const Value.absent(),
             Value<bool> isUnilateral = const Value.absent(),
+            Value<String?> assistanceTypes = const Value.absent(),
+            Value<String?> nameOrder = const Value.absent(),
           }) =>
               BaseExercisesCompanion(
             id: id,
@@ -8321,6 +8433,8 @@ class $$BaseExercisesTableTableManager extends RootTableManager<
             patternType: patternType,
             complexMetadata: complexMetadata,
             isUnilateral: isUnilateral,
+            assistanceTypes: assistanceTypes,
+            nameOrder: nameOrder,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -8341,6 +8455,8 @@ class $$BaseExercisesTableTableManager extends RootTableManager<
             Value<String?> patternType = const Value.absent(),
             Value<String?> complexMetadata = const Value.absent(),
             Value<bool> isUnilateral = const Value.absent(),
+            Value<String?> assistanceTypes = const Value.absent(),
+            Value<String?> nameOrder = const Value.absent(),
           }) =>
               BaseExercisesCompanion.insert(
             id: id,
@@ -8361,6 +8477,8 @@ class $$BaseExercisesTableTableManager extends RootTableManager<
             patternType: patternType,
             complexMetadata: complexMetadata,
             isUnilateral: isUnilateral,
+            assistanceTypes: assistanceTypes,
+            nameOrder: nameOrder,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (

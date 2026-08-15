@@ -40,11 +40,62 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
   String _classification = 'COMPOUND';
 
   final List<TextEditingController> _implementControllers = [];
+  final List<bool> _implementShowInName = [];
   final List<TextEditingController> _bodyPositionControllers = [];
   final List<bool> _bodyPositionShowInName = [];
   final List<TextEditingController> _prefixControllers = [];
+  final List<bool> _prefixShowInName = [];
   final List<TextEditingController> _suffixControllers = [];
+  final List<bool> _suffixShowInName = [];
+  final List<TextEditingController> _assistanceControllers = [];
+  final List<bool> _assistanceShowInName = [];
+  List<String> _nameOrder = List<String>.from(kDefaultNamePieceOrder);
   List<TextEditingController> _phaseDescriptionControllers = [];
+
+  // Parses a nomenclature-piece column (JSON [{"v":...,"s":...}], falling
+  // back to legacy comma-text as all-shown) into a controller + show-flag
+  // pair, same shape bodyPositions already used before this feature existed
+  // for every piece.
+  void _loadPieceInto(String? raw, List<TextEditingController> controllers,
+      List<bool> showFlags) {
+    controllers.clear();
+    showFlags.clear();
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final List<dynamic> decoded = jsonDecode(raw);
+      for (var item in decoded) {
+        controllers.add(TextEditingController(text: item['v']));
+        showFlags.add(item['s'] ?? true);
+      }
+    } catch (_) {
+      for (var v in raw.split(',')) {
+        if (v.isNotEmpty) {
+          controllers.add(TextEditingController(text: v));
+          showFlags.add(true);
+        }
+      }
+    }
+  }
+
+  String? _encodePieceList(
+      List<TextEditingController> controllers, List<bool> showFlags) {
+    final List<Map<String, dynamic>> data = [];
+    for (int i = 0; i < controllers.length; i++) {
+      final val = controllers[i].text.trim();
+      if (val.isNotEmpty) data.add({"v": val.toUpperCase(), "s": showFlags[i]});
+    }
+    return data.isEmpty ? null : jsonEncode(data);
+  }
+
+  List<String> _extractPieceValues(String? raw) {
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final List<dynamic> decoded = jsonDecode(raw);
+      return decoded.map((item) => item['v'].toString()).toList();
+    } catch (_) {
+      return raw.split(',');
+    }
+  }
   
   // RELATIONS
   Map<String, dynamic> _complexMetadata = {"regressions": [], "progressions": [], "alters": [], "particular_toggles": []};
@@ -79,38 +130,12 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
     _vpMultiplierController = TextEditingController(
         text: (e.parsedComplexMetadata["vpMultiplier"] as num?)?.toString() ?? "1.0");
 
-    final rawImplements = e.implements?.split(',') ?? [];
-    for (var i in rawImplements) {
-      if (i.isNotEmpty) _implementControllers.add(TextEditingController(text: i));
-    }
-
-    if (e.bodyPositions != null && e.bodyPositions!.isNotEmpty) {
-      try {
-        final List<dynamic> decoded = jsonDecode(e.bodyPositions!);
-        for (var item in decoded) {
-           _bodyPositionControllers.add(TextEditingController(text: item['v']));
-           _bodyPositionShowInName.add(item['s'] ?? true);
-        }
-      } catch (_) {
-        final rawBodyPositions = e.bodyPositions!.split(',');
-        for (var b in rawBodyPositions) {
-          if (b.isNotEmpty) {
-            _bodyPositionControllers.add(TextEditingController(text: b));
-            _bodyPositionShowInName.add(true);
-          }
-        }
-      }
-    }
-
-    final rawPrefixes = e.prefixes?.split(',') ?? [];
-    for (var p in rawPrefixes) {
-      if (p.isNotEmpty) _prefixControllers.add(TextEditingController(text: p));
-    }
-
-    final rawSuffixes = e.suffixes?.split(',') ?? [];
-    for (var s in rawSuffixes) {
-      if (s.isNotEmpty) _suffixControllers.add(TextEditingController(text: s));
-    }
+    _loadPieceInto(e.bodyPositions, _bodyPositionControllers, _bodyPositionShowInName);
+    _loadPieceInto(e.implements, _implementControllers, _implementShowInName);
+    _loadPieceInto(e.prefixes, _prefixControllers, _prefixShowInName);
+    _loadPieceInto(e.suffixes, _suffixControllers, _suffixShowInName);
+    _loadPieceInto(e.assistanceTypes, _assistanceControllers, _assistanceShowInName);
+    _nameOrder = List<String>.from(e.nameOrderResolved);
 
     try {
       if (e.phaseDescriptions != null) {
@@ -131,7 +156,7 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
     _fieldController.dispose(); _intentionController.dispose(); _patternTypeController.dispose();
     _tissueTypeController.dispose(); _tissueNameController.dispose(); _numPhasesController.dispose();
     _vpMultiplierController.dispose();
-    for (var c in [..._prefixControllers, ..._suffixControllers, ..._implementControllers, ..._bodyPositionControllers, ..._phaseDescriptionControllers]) {
+    for (var c in [..._prefixControllers, ..._suffixControllers, ..._implementControllers, ..._bodyPositionControllers, ..._assistanceControllers, ..._phaseDescriptionControllers]) {
       c.dispose();
     }
     super.dispose();
@@ -141,20 +166,12 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
     if (_formKey.currentState!.validate()) {
       final db = ref.read(databaseProvider);
       
-      final imps = _implementControllers.map((c) => c.text.trim()).where((t) => t.isNotEmpty).join(',');
-      
-      final List<Map<String, dynamic>> posData = [];
-      for (int i = 0; i < _bodyPositionControllers.length; i++) {
-        final val = _bodyPositionControllers[i].text.trim();
-        if (val.isNotEmpty) {
-          posData.add({"v": val.toUpperCase(), "s": _bodyPositionShowInName[i]});
-        }
-      }
-      final posJson = posData.isEmpty ? null : jsonEncode(posData);
+      final posJson = _encodePieceList(_bodyPositionControllers, _bodyPositionShowInName);
+      final impJson = _encodePieceList(_implementControllers, _implementShowInName);
+      final preJson = _encodePieceList(_prefixControllers, _prefixShowInName);
+      final sufJson = _encodePieceList(_suffixControllers, _suffixShowInName);
+      final assistJson = _encodePieceList(_assistanceControllers, _assistanceShowInName);
 
-      final standardPrefixes = _prefixControllers.map((c) => c.text.trim()).where((t) => t.isNotEmpty).join(',');
-      final suffixes = _suffixControllers.map((c) => c.text.trim()).where((t) => t.isNotEmpty).join(',');
-      
       final Map<String, dynamic> metadata = {
         "phases": {},
         "graph": {"progresiones": [], "regresiones": [], "nivelados": []}
@@ -176,10 +193,12 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
           patternType: drift.Value(_patternTypeController.text.trim().toUpperCase()),
           tissueType: drift.Value(_tissueTypeController.text.trim().toUpperCase()),
           tissueName: drift.Value(_tissueNameController.text.trim().toUpperCase()),
-          implements: drift.Value(imps.isEmpty ? null : imps.toUpperCase()),
+          implements: drift.Value(impJson),
           bodyPositions: drift.Value(posJson),
-          prefixes: drift.Value(standardPrefixes.isEmpty ? null : standardPrefixes.toUpperCase()),
-          suffixes: drift.Value(suffixes.isEmpty ? null : suffixes.toUpperCase()),
+          prefixes: drift.Value(preJson),
+          suffixes: drift.Value(sufJson),
+          assistanceTypes: drift.Value(assistJson),
+          nameOrder: drift.Value(jsonEncode(_nameOrder)),
           numPhases: drift.Value(int.tryParse(_numPhasesController.text) ?? 1),
           phaseDescriptions: drift.Value(jsonEncode(metadata)),
           complexMetadata: drift.Value(jsonEncode({..._complexMetadata, "classification": _classification, "description": _descriptionController.text.trim(), "vpMultiplier": double.tryParse(_vpMultiplierController.text) ?? 1.0})),
@@ -232,45 +251,12 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
       _intentionController.text = intentionText;
     }
 
-    _implementControllers.clear();
-    if (e.implements != null && e.implements!.isNotEmpty) {
-      for (var imp in e.implements!.split(',')) {
-        if (imp.isNotEmpty) _implementControllers.add(TextEditingController(text: imp));
-      }
-    }
-
-    _bodyPositionControllers.clear();
-    _bodyPositionShowInName.clear();
-    if (e.bodyPositions != null && e.bodyPositions!.isNotEmpty) {
-      try {
-        final List<dynamic> decoded = jsonDecode(e.bodyPositions!);
-        for (var item in decoded) {
-          _bodyPositionControllers.add(TextEditingController(text: item['v']));
-          _bodyPositionShowInName.add(item['s'] ?? true);
-        }
-      } catch (_) {
-        for (var pos in e.bodyPositions!.split(',')) {
-          if (pos.isNotEmpty) {
-            _bodyPositionControllers.add(TextEditingController(text: pos));
-            _bodyPositionShowInName.add(true);
-          }
-        }
-      }
-    }
-
-    _prefixControllers.clear();
-    if (e.prefixes != null && e.prefixes!.isNotEmpty) {
-      for (var pre in e.prefixes!.split(',')) {
-        if (pre.isNotEmpty) _prefixControllers.add(TextEditingController(text: pre));
-      }
-    }
-
-    _suffixControllers.clear();
-    if (e.suffixes != null && e.suffixes!.isNotEmpty) {
-      for (var suf in e.suffixes!.split(',')) {
-        if (suf.isNotEmpty) _suffixControllers.add(TextEditingController(text: suf));
-      }
-    }
+    _loadPieceInto(e.bodyPositions, _bodyPositionControllers, _bodyPositionShowInName);
+    _loadPieceInto(e.implements, _implementControllers, _implementShowInName);
+    _loadPieceInto(e.prefixes, _prefixControllers, _prefixShowInName);
+    _loadPieceInto(e.suffixes, _suffixControllers, _suffixShowInName);
+    _loadPieceInto(e.assistanceTypes, _assistanceControllers, _assistanceShowInName);
+    _nameOrder = List<String>.from(e.nameOrderResolved);
 
     _phaseDescriptionControllers.clear();
     if (e.phaseDescriptions != null) {
@@ -303,20 +289,15 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
       } else if (type == 'pattern') {
         found = [e.patternType ?? ''];
       } else if (type == 'bodyPosition') {
-        if (e.bodyPositions != null) {
-          try {
-            final List<dynamic> decoded = jsonDecode(e.bodyPositions!);
-            found = decoded.map((item) => item['v'].toString()).toList();
-          } catch (_) {
-            found = e.bodyPositions!.split(',');
-          }
-        }
+        found = _extractPieceValues(e.bodyPositions);
       } else if (type == 'implement') {
-        found = (e.implements ?? '').split(',');
+        found = _extractPieceValues(e.implements);
       } else if (type == 'prefix') {
-        found = (e.prefixes ?? '').split(',');
+        found = _extractPieceValues(e.prefixes);
       } else if (type == 'suffix') {
-        found = (e.suffixes ?? '').split(',');
+        found = _extractPieceValues(e.suffixes);
+      } else if (type == 'assistance') {
+        found = _extractPieceValues(e.assistanceTypes);
       } else if (type == 'tissueType') {
         found = [e.tissueType ?? ''];
       } else if (type == 'tissueName') {
@@ -438,13 +419,30 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
               const SizedBox(height: 24),
               _buildSectionTitle('QUALITIES'),
               const SizedBox(height: 16),
-              _buildBodyPositionList(),
+              _buildToggleableList('BODY_POSITION', _bodyPositionControllers, _bodyPositionShowInName,
+                  () => setState(() { _bodyPositionControllers.add(TextEditingController()); _bodyPositionShowInName.add(true); }),
+                  type: 'bodyPosition', color: Colors.blueAccent),
               const SizedBox(height: 16),
-              _buildDynamicList('IMPLEMENTS', _implementControllers, () => setState(() => _implementControllers.add(TextEditingController())), type: 'implement', color: Colors.orangeAccent),
+              _buildToggleableList('IMPLEMENTS', _implementControllers, _implementShowInName,
+                  () => setState(() { _implementControllers.add(TextEditingController()); _implementShowInName.add(true); }),
+                  type: 'implement', color: Colors.orangeAccent),
               const SizedBox(height: 16),
-              _buildDynamicList('PREFIXES', _prefixControllers, () => setState(() => _prefixControllers.add(TextEditingController())), type: 'prefix'),
+              _buildToggleableList('PREFIXES', _prefixControllers, _prefixShowInName,
+                  () => setState(() { _prefixControllers.add(TextEditingController()); _prefixShowInName.add(true); }),
+                  type: 'prefix', color: LabColors.primary),
               const SizedBox(height: 16),
-              _buildDynamicList('SUFFIXES', _suffixControllers, () => setState(() => _suffixControllers.add(TextEditingController())), type: 'suffix'),
+              _buildToggleableList('SUFFIXES', _suffixControllers, _suffixShowInName,
+                  () => setState(() { _suffixControllers.add(TextEditingController()); _suffixShowInName.add(true); }),
+                  type: 'suffix', color: LabColors.primary),
+              const SizedBox(height: 16),
+              _buildToggleableList('ASSISTANCE_TYPE', _assistanceControllers, _assistanceShowInName,
+                  () => setState(() { _assistanceControllers.add(TextEditingController()); _assistanceShowInName.add(true); }),
+                  type: 'assistance', color: Colors.tealAccent),
+
+              const SizedBox(height: 32),
+              _buildSectionTitle('NOMENCLATURE_CONTROL'),
+              const SizedBox(height: 16),
+              _buildNomenclatureControl(),
 
               const SizedBox(height: 32),
               _buildSectionTitle('LOAD_METRICS'),
@@ -533,64 +531,94 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
     }).toList());
   }
 
-  Widget _buildBodyPositionList() {
-    const color = Colors.blueAccent;
+  // Generalized version of the old body-position-only list: an "add via
+  // search" + "add blank" header, and a per-item NAME switch that controls
+  // whether that piece is included when fullName is assembled (see
+  // BaseExercise.fullName in database.dart). Used for BODY_POSITION,
+  // IMPLEMENTS, PREFIXES, SUFFIXES and ASSISTANCE_TYPE alike.
+  Widget _buildToggleableList(String title, List<TextEditingController> controllers,
+      List<bool> showInName, VoidCallback onAdd,
+      {required String type, Color color = LabColors.primary}) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text('BODY_POSITION', style: LabStyles.mono(context, color: color.withValues(alpha: 0.7), fontSize: 9)), 
+        Text(title, style: LabStyles.mono(context, color: color.withValues(alpha: 0.7), fontSize: 9)),
         Row(
           children: [
             IconButton(
-              icon: const Icon(Icons.manage_search, color: color, size: 18), 
-              onPressed: () => _showQualityOverlay(null, 'bodyPosition', onSelect: (v) => setState(() {
-                _bodyPositionControllers.add(TextEditingController(text: v));
-                _bodyPositionShowInName.add(true);
-              }))
-            ),
-            IconButton(icon: const Icon(Icons.add_circle_outline, color: color, size: 18), onPressed: () => setState(() {
-              _bodyPositionControllers.add(TextEditingController());
-              _bodyPositionShowInName.add(true); 
-            })),
-          ],
-        )
-      ]),
-      ..._bodyPositionControllers.asMap().entries.map((entry) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [
-        Expanded(child: LabTextField(controller: entry.value, label: 'BODY_POSITION #${entry.key + 1}')),
-        const SizedBox(width: 8),
-        Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('NAME', style: LabStyles.mono(context, fontSize: 6, color: _bodyPositionShowInName[entry.key] ? LabColors.primary : Colors.grey)),
-          Switch.adaptive(
-            value: _bodyPositionShowInName[entry.key], 
-            activeColor: LabColors.primary,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            onChanged: (v) => setState(() => _bodyPositionShowInName[entry.key] = v)
-          ),
-        ]),
-        IconButton(icon: const Icon(Icons.close, color: Colors.redAccent, size: 18), onPressed: () => setState(() {
-          _bodyPositionControllers.removeAt(entry.key).dispose();
-          _bodyPositionShowInName.removeAt(entry.key);
-        }))
-      ])))
-    ]);
-  }
-
-  Widget _buildDynamicList(String title, List<TextEditingController> controllers, VoidCallback onAdd, {required String type, Color color = LabColors.primary}) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text(title, style: LabStyles.mono(context, color: color.withValues(alpha: 0.7), fontSize: 9)), 
-        Row(
-          children: [
-            IconButton(
-              icon: Icon(Icons.manage_search, color: color, size: 18), 
+              icon: Icon(Icons.manage_search, color: color, size: 18),
               onPressed: () => _showQualityOverlay(null, type, onSelect: (v) => setState(() {
                 controllers.add(TextEditingController(text: v));
+                showInName.add(true);
               }))
             ),
             IconButton(icon: Icon(Icons.add_circle_outline, color: color, size: 18), onPressed: onAdd),
           ],
         )
       ]),
-      ...controllers.asMap().entries.map((entry) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [Expanded(child: LabTextField(controller: entry.value, label: '$title #${entry.key + 1}')), IconButton(icon: const Icon(Icons.close, color: Colors.redAccent, size: 18), onPressed: () => setState(() => controllers.removeAt(entry.key).dispose()))])))
+      ...controllers.asMap().entries.map((entry) => Padding(padding: const EdgeInsets.only(bottom: 8), child: Row(children: [
+        Expanded(child: LabTextField(controller: entry.value, label: '$title #${entry.key + 1}')),
+        const SizedBox(width: 8),
+        Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('NAME', style: LabStyles.mono(context, fontSize: 6, color: showInName[entry.key] ? LabColors.primary : Colors.grey)),
+          Switch.adaptive(
+            value: showInName[entry.key],
+            activeColor: LabColors.primary,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            onChanged: (v) => setState(() => showInName[entry.key] = v)
+          ),
+        ]),
+        IconButton(icon: const Icon(Icons.close, color: Colors.redAccent, size: 18), onPressed: () => setState(() {
+          controllers.removeAt(entry.key).dispose();
+          showInName.removeAt(entry.key);
+        }))
+      ])))
+    ]);
+  }
+
+  // Lets the user drag-reorder the pieces fullName assembles from, per
+  // exercise. Defaults to kDefaultNamePieceOrder (see database.dart) until
+  // touched.
+  Widget _buildNomenclatureControl() {
+    const color = Colors.purpleAccent;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text('DRAG_TO_REORDER_NAME_PIECES', style: LabStyles.mono(context, fontSize: 7, color: Colors.grey[600])),
+        IconButton(
+          icon: const Icon(Icons.restart_alt, color: color, size: 18),
+          tooltip: 'RESET_DEFAULT_ORDER',
+          onPressed: () => setState(() => _nameOrder = List<String>.from(kDefaultNamePieceOrder)),
+        ),
+      ]),
+      const SizedBox(height: 4),
+      ReorderableListView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        buildDefaultDragHandles: false,
+        itemCount: _nameOrder.length,
+        itemBuilder: (context, index) {
+          final piece = _nameOrder[index];
+          return Container(
+            key: ValueKey('nameorder_$piece'),
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.06),
+              border: Border.all(color: color.withValues(alpha: 0.3), width: 0.5),
+            ),
+            child: Row(children: [
+              Text('${index + 1}.', style: LabStyles.mono(context, fontSize: 10, color: color, fontWeight: FontWeight.bold)),
+              const SizedBox(width: 8),
+              Expanded(child: Text(piece, style: LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold))),
+              ReorderableDragStartListener(index: index, child: Icon(Icons.drag_handle, color: color.withValues(alpha: 0.6), size: 18)),
+            ]),
+          );
+        },
+        onReorder: (oldIndex, newIndex) => setState(() {
+          if (newIndex > oldIndex) newIndex--;
+          final item = _nameOrder.removeAt(oldIndex);
+          _nameOrder.insert(newIndex, item);
+        }),
+      ),
     ]);
   }
 }

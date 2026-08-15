@@ -31,6 +31,14 @@ class BaseExercises extends Table {
   TextColumn get patternType => text().nullable()();
   TextColumn get complexMetadata => text().nullable()();
   BoolColumn get isUnilateral => boolean().withDefault(const Constant(false))();
+  // JSON [{"v":<value>,"s":<bool>}], same shape as bodyPositions - list of
+  // assistance types (BAND, MACHINE ASSIST, PARTNER, etc.) with a per-item
+  // "show in name" flag.
+  TextColumn get assistanceTypes => text().nullable()();
+  // JSON list of piece keys (BODY_POSITION/IMPLEMENTS/PREFIXES/NAME/
+  // SUFFIXES/ASSISTANCE) controlling the order fullName assembles them in.
+  // Null means "use the default order" (see kDefaultNamePieceOrder).
+  TextColumn get nameOrder => text().nullable()();
 
   @override
   List<String> get customConstraints =>
@@ -295,7 +303,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 29;
+  int get schemaVersion => 30;
 
   // --- Bidirectional Relational Integrity ---
 
@@ -569,6 +577,22 @@ class AppDatabase extends _$AppDatabase {
           await customStatement('DROP TABLE IF EXISTS discomfort_logs');
         }
 
+        if (from < 30) {
+          // KNS Nomenclature Overhaul v30: per-item toggles for
+          // implements/prefixes/suffixes (converted to the bodyPositions
+          // JSON shape by the app, no data migration needed here since the
+          // fullName parser falls back to comma-text for un-migrated rows)
+          // + a new assistance-type piece + a per-exercise name-piece order.
+          try {
+            await customStatement(
+                'ALTER TABLE base_exercises ADD COLUMN assistance_types TEXT');
+          } catch (_) {}
+          try {
+            await customStatement(
+                'ALTER TABLE base_exercises ADD COLUMN name_order TEXT');
+          } catch (_) {}
+        }
+
         // Ejecutar alterTable al final si venimos de una versión donde se necesitaba (v18)
         if (from < 18) {
           try {
@@ -840,6 +864,37 @@ final Map<String, dynamic> _defaultComplexMetadata = {
 // the codebase mutates the result, it's read-only lookups everywhere.
 final Map<String, Map<String, dynamic>> _complexMetadataCache = {};
 
+// Default assembly order for fullName's pieces - matches the order the
+// feature always used before per-exercise reordering existed. A null/blank
+// nameOrder column means "use this".
+const List<String> kDefaultNamePieceOrder = [
+  'BODY_POSITION',
+  'IMPLEMENTS',
+  'PREFIXES',
+  'NAME',
+  'SUFFIXES',
+  'ASSISTANCE',
+];
+
+// Shared parser for the nomenclature-piece columns (bodyPositions,
+// implements, prefixes, suffixes, assistanceTypes): JSON
+// [{"v":<value>,"s":<bool>}] when present, falling back to legacy
+// comma-separated text (treated as all-shown) for rows written before that
+// column adopted the JSON shape.
+List<Map<String, dynamic>> _parseNomenclaturePiece(String? raw) {
+  if (raw == null || raw.isEmpty) return [];
+  try {
+    final List<dynamic> decoded = jsonDecode(raw);
+    return decoded.map((e) => Map<String, dynamic>.from(e)).toList();
+  } catch (_) {
+    return raw
+        .split(',')
+        .where((s) => s.isNotEmpty)
+        .map((e) => {"v": e, "s": true})
+        .toList();
+  }
+}
+
 extension BaseExerciseExtension on BaseExercise {
   Map<String, dynamic> get parsedComplexMetadata {
     final raw = complexMetadata;
@@ -863,19 +918,16 @@ extension BaseExerciseExtension on BaseExercise {
     return result;
   }
 
-  List<Map<String, dynamic>> get _parsedBodyPositions {
-    if (bodyPositions == null || bodyPositions!.isEmpty) return [];
-    try {
-      final List<dynamic> decoded = jsonDecode(bodyPositions!);
-      return decoded.map((e) => Map<String, dynamic>.from(e)).toList();
-    } catch (_) {
-      return bodyPositions!
-          .split(',')
-          .where((s) => s.isNotEmpty)
-          .map((e) => {"v": e, "s": true})
-          .toList();
-    }
-  }
+  List<Map<String, dynamic>> get _parsedBodyPositions =>
+      _parseNomenclaturePiece(bodyPositions);
+  List<Map<String, dynamic>> get parsedImplements =>
+      _parseNomenclaturePiece(implements);
+  List<Map<String, dynamic>> get parsedPrefixes =>
+      _parseNomenclaturePiece(prefixes);
+  List<Map<String, dynamic>> get parsedSuffixes =>
+      _parseNomenclaturePiece(suffixes);
+  List<Map<String, dynamic>> get parsedAssistanceTypes =>
+      _parseNomenclaturePiece(assistanceTypes);
 
   List<String> get bodyPositionTags {
     return _parsedBodyPositions
@@ -884,19 +936,46 @@ extension BaseExerciseExtension on BaseExercise {
         .toList();
   }
 
-  String get fullName {
-    final List<String> parts = [];
-    final activePositions = _parsedBodyPositions
+  // Custom per-exercise assembly order for fullName's pieces. Falls back to
+  // kDefaultNamePieceOrder when nameOrder is null/blank/malformed, or when
+  // it doesn't contain exactly the known piece keys (e.g. an older build's
+  // data, or a future piece added after this exercise saved its order).
+  List<String> get nameOrderResolved {
+    if (nameOrder == null || nameOrder!.isEmpty) return kDefaultNamePieceOrder;
+    try {
+      final List<dynamic> decoded = jsonDecode(nameOrder!);
+      final list = decoded.map((e) => e.toString()).toList();
+      if (list.length == kDefaultNamePieceOrder.length &&
+          list.toSet().containsAll(kDefaultNamePieceOrder)) {
+        return list;
+      }
+      return kDefaultNamePieceOrder;
+    } catch (_) {
+      return kDefaultNamePieceOrder;
+    }
+  }
+
+  static String _activeText(List<Map<String, dynamic>> pieces) {
+    return pieces
         .where((p) => p["s"] == true)
-        .map((p) => p["v"] as String);
-    if (activePositions.isNotEmpty) parts.add(activePositions.join(' '));
-    if (implements != null && implements!.isNotEmpty)
-      parts.add(implements!.replaceAll(',', ' '));
-    if (prefixes != null && prefixes!.isNotEmpty)
-      parts.add(prefixes!.replaceAll(',', ' '));
-    parts.add(name);
-    if (suffixes != null && suffixes!.isNotEmpty)
-      parts.add(suffixes!.replaceAll(',', ' '));
+        .map((p) => p["v"] as String)
+        .join(' ');
+  }
+
+  String get fullName {
+    final Map<String, String> pieceText = {
+      'BODY_POSITION': _activeText(_parsedBodyPositions),
+      'IMPLEMENTS': _activeText(parsedImplements),
+      'PREFIXES': _activeText(parsedPrefixes),
+      'NAME': name,
+      'SUFFIXES': _activeText(parsedSuffixes),
+      'ASSISTANCE': _activeText(parsedAssistanceTypes),
+    };
+    final parts = <String>[];
+    for (final key in nameOrderResolved) {
+      final text = pieceText[key];
+      if (text != null && text.isNotEmpty) parts.add(text);
+    }
     return parts.join(' ').trim().toUpperCase();
   }
 }
