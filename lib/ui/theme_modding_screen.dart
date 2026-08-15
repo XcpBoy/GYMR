@@ -196,6 +196,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
       "TAG_LASTRE",
       "TAG_JSTBW",
       "TAG_EXTLOAD",
+      "TAG_BANDED",
       "TAG_ISO",
       "TAG_BODYPOSITION",
       "TAG_PRIMARY_MUSCLE",

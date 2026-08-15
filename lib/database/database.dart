@@ -114,6 +114,9 @@ class WorkoutSets extends Table {
   TextColumn get priority => text().nullable()();
   TextColumn get supersetGroupId => text().nullable()();
   TextColumn get supersetName => text().nullable()();
+  // Assisted-training input (e.g. assisted pull-up/dip machine or band):
+  // amount subtracted from bodyweight on JST.BW sets. Null = not assisted.
+  RealColumn get assistanceValue => real().nullable()();
 }
 
 // --- Somatic Feedback ---
@@ -303,7 +306,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 30;
+  int get schemaVersion => 31;
 
   // --- Bidirectional Relational Integrity ---
 
@@ -590,6 +593,15 @@ class AppDatabase extends _$AppDatabase {
           try {
             await customStatement(
                 'ALTER TABLE base_exercises ADD COLUMN name_order TEXT');
+          } catch (_) {}
+        }
+
+        if (from < 31) {
+          // PNDEV: Assisted KNS Input - amount subtracted from bodyweight
+          // on JST.BW sets (assisted pull-up/dip machine, band, etc.)
+          try {
+            await customStatement(
+                'ALTER TABLE workout_sets ADD COLUMN assistance_value REAL');
           } catch (_) {}
         }
 

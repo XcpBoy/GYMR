@@ -2384,6 +2384,12 @@ class $WorkoutSetsTable extends WorkoutSets
   late final GeneratedColumn<String> supersetName = GeneratedColumn<String>(
       'superset_name', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _assistanceValueMeta =
+      const VerificationMeta('assistanceValue');
+  @override
+  late final GeneratedColumn<double> assistanceValue = GeneratedColumn<double>(
+      'assistance_value', aliasedName, true,
+      type: DriftSqlType.double, requiredDuringInsert: false);
   @override
   List<GeneratedColumn> get $columns => [
         id,
@@ -2407,7 +2413,8 @@ class $WorkoutSetsTable extends WorkoutSets
         complexMetadata,
         priority,
         supersetGroupId,
-        supersetName
+        supersetName,
+        assistanceValue
       ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2530,6 +2537,12 @@ class $WorkoutSetsTable extends WorkoutSets
           supersetName.isAcceptableOrUnknown(
               data['superset_name']!, _supersetNameMeta));
     }
+    if (data.containsKey('assistance_value')) {
+      context.handle(
+          _assistanceValueMeta,
+          assistanceValue.isAcceptableOrUnknown(
+              data['assistance_value']!, _assistanceValueMeta));
+    }
     return context;
   }
 
@@ -2583,6 +2596,8 @@ class $WorkoutSetsTable extends WorkoutSets
           DriftSqlType.string, data['${effectivePrefix}superset_group_id']),
       supersetName: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}superset_name']),
+      assistanceValue: attachedDatabase.typeMapping.read(
+          DriftSqlType.double, data['${effectivePrefix}assistance_value']),
     );
   }
 
@@ -2615,6 +2630,7 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
   final String? priority;
   final String? supersetGroupId;
   final String? supersetName;
+  final double? assistanceValue;
   const WorkoutSet(
       {required this.id,
       required this.logId,
@@ -2637,7 +2653,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       this.complexMetadata,
       this.priority,
       this.supersetGroupId,
-      this.supersetName});
+      this.supersetName,
+      this.assistanceValue});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
@@ -2687,6 +2704,9 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
     if (!nullToAbsent || supersetName != null) {
       map['superset_name'] = Variable<String>(supersetName);
     }
+    if (!nullToAbsent || assistanceValue != null) {
+      map['assistance_value'] = Variable<double>(assistanceValue);
+    }
     return map;
   }
 
@@ -2733,6 +2753,9 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       supersetName: supersetName == null && nullToAbsent
           ? const Value.absent()
           : Value(supersetName),
+      assistanceValue: assistanceValue == null && nullToAbsent
+          ? const Value.absent()
+          : Value(assistanceValue),
     );
   }
 
@@ -2762,6 +2785,7 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       priority: serializer.fromJson<String?>(json['priority']),
       supersetGroupId: serializer.fromJson<String?>(json['supersetGroupId']),
       supersetName: serializer.fromJson<String?>(json['supersetName']),
+      assistanceValue: serializer.fromJson<double?>(json['assistanceValue']),
     );
   }
   @override
@@ -2790,6 +2814,7 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       'priority': serializer.toJson<String?>(priority),
       'supersetGroupId': serializer.toJson<String?>(supersetGroupId),
       'supersetName': serializer.toJson<String?>(supersetName),
+      'assistanceValue': serializer.toJson<double?>(assistanceValue),
     };
   }
 
@@ -2815,7 +2840,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
           Value<String?> complexMetadata = const Value.absent(),
           Value<String?> priority = const Value.absent(),
           Value<String?> supersetGroupId = const Value.absent(),
-          Value<String?> supersetName = const Value.absent()}) =>
+          Value<String?> supersetName = const Value.absent(),
+          Value<double?> assistanceValue = const Value.absent()}) =>
       WorkoutSet(
         id: id ?? this.id,
         logId: logId ?? this.logId,
@@ -2847,6 +2873,9 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
             : this.supersetGroupId,
         supersetName:
             supersetName.present ? supersetName.value : this.supersetName,
+        assistanceValue: assistanceValue.present
+            ? assistanceValue.value
+            : this.assistanceValue,
       );
   WorkoutSet copyWithCompanion(WorkoutSetsCompanion data) {
     return WorkoutSet(
@@ -2886,6 +2915,9 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
       supersetName: data.supersetName.present
           ? data.supersetName.value
           : this.supersetName,
+      assistanceValue: data.assistanceValue.present
+          ? data.assistanceValue.value
+          : this.assistanceValue,
     );
   }
 
@@ -2913,7 +2945,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
           ..write('complexMetadata: $complexMetadata, ')
           ..write('priority: $priority, ')
           ..write('supersetGroupId: $supersetGroupId, ')
-          ..write('supersetName: $supersetName')
+          ..write('supersetName: $supersetName, ')
+          ..write('assistanceValue: $assistanceValue')
           ..write(')'))
         .toString();
   }
@@ -2941,7 +2974,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
         complexMetadata,
         priority,
         supersetGroupId,
-        supersetName
+        supersetName,
+        assistanceValue
       ]);
   @override
   bool operator ==(Object other) =>
@@ -2968,7 +3002,8 @@ class WorkoutSet extends DataClass implements Insertable<WorkoutSet> {
           other.complexMetadata == this.complexMetadata &&
           other.priority == this.priority &&
           other.supersetGroupId == this.supersetGroupId &&
-          other.supersetName == this.supersetName);
+          other.supersetName == this.supersetName &&
+          other.assistanceValue == this.assistanceValue);
 }
 
 class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
@@ -2994,6 +3029,7 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
   final Value<String?> priority;
   final Value<String?> supersetGroupId;
   final Value<String?> supersetName;
+  final Value<double?> assistanceValue;
   const WorkoutSetsCompanion({
     this.id = const Value.absent(),
     this.logId = const Value.absent(),
@@ -3017,6 +3053,7 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
     this.priority = const Value.absent(),
     this.supersetGroupId = const Value.absent(),
     this.supersetName = const Value.absent(),
+    this.assistanceValue = const Value.absent(),
   });
   WorkoutSetsCompanion.insert({
     this.id = const Value.absent(),
@@ -3041,6 +3078,7 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
     this.priority = const Value.absent(),
     this.supersetGroupId = const Value.absent(),
     this.supersetName = const Value.absent(),
+    this.assistanceValue = const Value.absent(),
   })  : logId = Value(logId),
         baseExerciseId = Value(baseExerciseId),
         weight = Value(weight),
@@ -3068,6 +3106,7 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
     Expression<String>? priority,
     Expression<String>? supersetGroupId,
     Expression<String>? supersetName,
+    Expression<double>? assistanceValue,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -3092,6 +3131,7 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
       if (priority != null) 'priority': priority,
       if (supersetGroupId != null) 'superset_group_id': supersetGroupId,
       if (supersetName != null) 'superset_name': supersetName,
+      if (assistanceValue != null) 'assistance_value': assistanceValue,
     });
   }
 
@@ -3117,7 +3157,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
       Value<String?>? complexMetadata,
       Value<String?>? priority,
       Value<String?>? supersetGroupId,
-      Value<String?>? supersetName}) {
+      Value<String?>? supersetName,
+      Value<double?>? assistanceValue}) {
     return WorkoutSetsCompanion(
       id: id ?? this.id,
       logId: logId ?? this.logId,
@@ -3141,6 +3182,7 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
       priority: priority ?? this.priority,
       supersetGroupId: supersetGroupId ?? this.supersetGroupId,
       supersetName: supersetName ?? this.supersetName,
+      assistanceValue: assistanceValue ?? this.assistanceValue,
     );
   }
 
@@ -3213,6 +3255,9 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
     if (supersetName.present) {
       map['superset_name'] = Variable<String>(supersetName.value);
     }
+    if (assistanceValue.present) {
+      map['assistance_value'] = Variable<double>(assistanceValue.value);
+    }
     return map;
   }
 
@@ -3240,7 +3285,8 @@ class WorkoutSetsCompanion extends UpdateCompanion<WorkoutSet> {
           ..write('complexMetadata: $complexMetadata, ')
           ..write('priority: $priority, ')
           ..write('supersetGroupId: $supersetGroupId, ')
-          ..write('supersetName: $supersetName')
+          ..write('supersetName: $supersetName, ')
+          ..write('assistanceValue: $assistanceValue')
           ..write(')'))
         .toString();
   }
@@ -10026,6 +10072,7 @@ typedef $$WorkoutSetsTableCreateCompanionBuilder = WorkoutSetsCompanion
   Value<String?> priority,
   Value<String?> supersetGroupId,
   Value<String?> supersetName,
+  Value<double?> assistanceValue,
 });
 typedef $$WorkoutSetsTableUpdateCompanionBuilder = WorkoutSetsCompanion
     Function({
@@ -10051,6 +10098,7 @@ typedef $$WorkoutSetsTableUpdateCompanionBuilder = WorkoutSetsCompanion
   Value<String?> priority,
   Value<String?> supersetGroupId,
   Value<String?> supersetName,
+  Value<double?> assistanceValue,
 });
 
 final class $$WorkoutSetsTableReferences
@@ -10174,6 +10222,10 @@ class $$WorkoutSetsTableFilterComposer
 
   ColumnFilters<String> get supersetName => $composableBuilder(
       column: $table.supersetName, builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get assistanceValue => $composableBuilder(
+      column: $table.assistanceValue,
+      builder: (column) => ColumnFilters(column));
 
   $$WorkoutLogsTableFilterComposer get logId {
     final $$WorkoutLogsTableFilterComposer composer = $composerBuilder(
@@ -10311,6 +10363,10 @@ class $$WorkoutSetsTableOrderingComposer
       column: $table.supersetName,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<double> get assistanceValue => $composableBuilder(
+      column: $table.assistanceValue,
+      builder: (column) => ColumnOrderings(column));
+
   $$WorkoutLogsTableOrderingComposer get logId {
     final $$WorkoutLogsTableOrderingComposer composer = $composerBuilder(
         composer: this,
@@ -10421,6 +10477,9 @@ class $$WorkoutSetsTableAnnotationComposer
   GeneratedColumn<String> get supersetName => $composableBuilder(
       column: $table.supersetName, builder: (column) => column);
 
+  GeneratedColumn<double> get assistanceValue => $composableBuilder(
+      column: $table.assistanceValue, builder: (column) => column);
+
   $$WorkoutLogsTableAnnotationComposer get logId {
     final $$WorkoutLogsTableAnnotationComposer composer = $composerBuilder(
         composer: this,
@@ -10529,6 +10588,7 @@ class $$WorkoutSetsTableTableManager extends RootTableManager<
             Value<String?> priority = const Value.absent(),
             Value<String?> supersetGroupId = const Value.absent(),
             Value<String?> supersetName = const Value.absent(),
+            Value<double?> assistanceValue = const Value.absent(),
           }) =>
               WorkoutSetsCompanion(
             id: id,
@@ -10553,6 +10613,7 @@ class $$WorkoutSetsTableTableManager extends RootTableManager<
             priority: priority,
             supersetGroupId: supersetGroupId,
             supersetName: supersetName,
+            assistanceValue: assistanceValue,
           ),
           createCompanionCallback: ({
             Value<int> id = const Value.absent(),
@@ -10577,6 +10638,7 @@ class $$WorkoutSetsTableTableManager extends RootTableManager<
             Value<String?> priority = const Value.absent(),
             Value<String?> supersetGroupId = const Value.absent(),
             Value<String?> supersetName = const Value.absent(),
+            Value<double?> assistanceValue = const Value.absent(),
           }) =>
               WorkoutSetsCompanion.insert(
             id: id,
@@ -10601,6 +10663,7 @@ class $$WorkoutSetsTableTableManager extends RootTableManager<
             priority: priority,
             supersetGroupId: supersetGroupId,
             supersetName: supersetName,
+            assistanceValue: assistanceValue,
           ),
           withReferenceMapper: (p0) => p0
               .map((e) => (

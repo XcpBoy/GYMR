@@ -2054,7 +2054,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     if (metaMatch != null) {
       loadType = metaMatch.group(1) ?? 'EXT.LOAD';
       isIso = metaMatch.group(2) == 'true';
-    } else if (['LASTRE', 'EXT.LOAD', 'JST.BW', 'UNMOVABLE'].contains(e.field)) {
+    } else if (['LASTRE', 'EXT.LOAD', 'JST.BW', 'BANDED', 'UNMOVABLE'].contains(e.field)) {
       loadType = e.field!;
     }
 
@@ -2076,9 +2076,15 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
       utilities = [firstSet.priority!];
     }
     final bool hasUtility = utilities.isNotEmpty;
+    // Same key the header UTIL chips and THEME.MDFYR's UTILS section use
+    // (UI_TAG_<name>), so a customization there shows up here too instead
+    // of only on one surface. The old PRIORITY_<name> key is kept as an
+    // alias so colors customized before this fix aren't lost.
     final utilityColor = hasUtility
-        ? tC.getColor(settings, "PRIORITY_${utilities.first}",
-            nameSeed: utilities.first)
+        ? tC.getColor(settings,
+            "UI_TAG_${utilities.first.replaceAll(' ', '_')}",
+            nameSeed: utilities.first,
+            aliases: ["PRIORITY_${utilities.first}"])
         : Colors.transparent;
 
     // Resolve tag colors from theme
@@ -2087,6 +2093,8 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     final uiTagJstbw = tC.getColor(settings, "UI_TAG_JSTBW", nameSeed: "JSTBW");
     final uiTagExtload =
         tC.getColor(settings, "UI_TAG_EXTLOAD", nameSeed: "EXTLOAD");
+    final uiTagBanded =
+        tC.getColor(settings, "UI_TAG_BANDED", nameSeed: "BANDED");
     final uiTagUnmovable =
         tC.getColor(settings, "UI_TAG_UNMOVABLE", nameSeed: "UNMOVABLE");
     final uiTagIso = tC.getColor(settings, "UI_TAG_ISO", nameSeed: "ISO");
@@ -2105,6 +2113,9 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
         break;
       case 'EXT.LOAD':
         typeColor = uiTagExtload;
+        break;
+      case 'BANDED':
+        typeColor = uiTagBanded;
         break;
       case 'UNMOVABLE':
         typeColor = uiTagUnmovable;

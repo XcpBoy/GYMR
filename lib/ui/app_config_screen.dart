@@ -81,7 +81,7 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildGeneralTab(context),
+          _buildGeneralTab(context, settings, tC),
           _buildVisualsTab(context, settings, tC, lang),
         ],
       ),
@@ -89,7 +89,8 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
     );
   }
 
-  Widget _buildGeneralTab(BuildContext context) {
+  Widget _buildGeneralTab(BuildContext context,
+      Map<String, ThemeSetting> settings, ThemeController tC) {
     final lang = ref.watch(languageProvider).value ?? 'en';
     final db = ref.read(databaseProvider);
     return ListView(
@@ -109,6 +110,13 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
               ),
             ],
           ),
+        ]),
+        const SizedBox(height: 12),
+        _buildSectionCard(context, "BOTTOM_RIBBON", [
+          for (int i = 0; i < 4; i++) ...[
+            _buildRibbonSlotPicker(context, settings, tC, i),
+            if (i != 3) const SizedBox(height: 12),
+          ],
         ]),
         const SizedBox(height: 12),
         _buildSectionCard(context, tr(lang, "RESET"), [
@@ -145,6 +153,70 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
           ],
         ]),
       ],
+    );
+  }
+
+  Widget _buildRibbonSlotPicker(BuildContext context,
+      Map<String, ThemeSetting> settings, ThemeController tC, int slot) {
+    final currentId = tC.getValue(settings, 'APPCFG_RIBBON_SLOT_$slot') ??
+        kDefaultRibbonSlots[slot];
+    final dest = ribbonDestinationById(currentId);
+    return InkWell(
+      onTap: () => _showRibbonSlotSheet(context, tC, slot),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              Icon(dest.icon, color: LabColors.onSurfaceVariant, size: 16),
+              const SizedBox(width: 8),
+              Text('SLOT ${slot + 1}',
+                  style: LabStyles.mono(context, fontSize: 10, color: Colors.grey[500])),
+            ],
+          ),
+          Row(
+            children: [
+              Text(dest.label,
+                  style: LabStyles.mono(context,
+                      fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right, color: Colors.grey, size: 16),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showRibbonSlotSheet(BuildContext context, ThemeController tC, int slot) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: LabColors.background,
+      isScrollControlled: true,
+      builder: (c) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('SLOT ${slot + 1} DESTINATION',
+                  style: LabStyles.headline(context).copyWith(fontSize: 14)),
+              const SizedBox(height: 16),
+              for (final dest in kRibbonDestinations)
+                ListTile(
+                  leading: Icon(dest.icon, color: dest.defaultColor),
+                  title: Text(dest.label,
+                      style: LabStyles.mono(context, fontSize: 12, color: Colors.white)),
+                  onTap: () {
+                    tC.setValue('APPCFG_RIBBON_SLOT_$slot', dest.id);
+                    Navigator.pop(c);
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

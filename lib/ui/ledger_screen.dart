@@ -12,6 +12,7 @@ import 'main_scaffold.dart';
 import 'exercise_form_screen.dart';
 import 'exercise_history_screen.dart';
 import 'kinisi_tree_screen.dart';
+import 'kns_standardization_screen.dart';
 
 enum _SortMode { alphaAsc, alphaDesc, mostUsed, leastUsed, mostRecent, leastRecent, unusedFirst }
 
@@ -162,6 +163,14 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
     return MainScaffold(
       title: 'KINISI INVENTORY',
       screenKey: 'LEDGER',
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.fact_check_outlined, color: LabColors.accent),
+          tooltip: 'KNS.BACKLOG',
+          onPressed: () => Navigator.push(context,
+              MaterialPageRoute(builder: (c) => const KnsStandardizationScreen())),
+        ),
+      ],
       body: Column(
         children: [
           Padding(

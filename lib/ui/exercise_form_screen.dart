@@ -52,6 +52,8 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
   late final TextEditingController _tissueNameController;
   late final TextEditingController _numPhasesController;
   late final TextEditingController _descriptionController;
+  late final TextEditingController _bandTypeController;
+  late final TextEditingController _bandTensionController;
 
   String _loadType = 'EXT.LOAD';
   bool _isIsometric = false;
@@ -170,6 +172,8 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
 
     _numPhasesController = TextEditingController(text: (e?.numPhases ?? 1).toString());
     _descriptionController = TextEditingController(text: e?.parsedComplexMetadata["description"] ?? "");
+    _bandTypeController = TextEditingController(text: e?.parsedComplexMetadata["bandType"] ?? "");
+    _bandTensionController = TextEditingController(text: e?.parsedComplexMetadata["bandTension"] ?? "");
 
     _loadPieceInto(e?.bodyPositions, _bodyPositionControllers, _bodyPositionShowInName);
     _loadPieceInto(e?.implements, _implementControllers, _implementShowInName);
@@ -224,6 +228,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     _fieldController.dispose(); _intentionController.dispose(); _patternTypeController.dispose();
     _tissueTypeController.dispose(); _tissueNameController.dispose(); _numPhasesController.dispose();
     _descriptionController.dispose();
+    _bandTypeController.dispose(); _bandTensionController.dispose();
     for (var c in [..._prefixControllers, ..._suffixControllers, ..._implementControllers, ..._bodyPositionControllers, ..._assistanceControllers, ..._phaseDescriptionControllers]) {
       c.dispose();
     }
@@ -261,6 +266,8 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
       ..._complexMetadata,
       "classification": _classification,
       "description": _descriptionController.text.trim(),
+      if (_loadType == 'BANDED') "bandType": _bandTypeController.text.trim(),
+      if (_loadType == 'BANDED') "bandTension": _bandTensionController.text.trim(),
     });
 
     try {
@@ -638,11 +645,64 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     return Row(children: [Container(width: 4, height: 24, color: LabColors.accent), const SizedBox(width: 8), Text(title, style: LabStyles.mono(context, color: LabColors.onSurface, fontWeight: FontWeight.bold).copyWith(fontSize: 14))]);
   }
 
+  static const List<String> _loadTypes = ['LASTRE', 'EXT.LOAD', 'JST.BW', 'BANDED', 'UNMOVABLE'];
+
   Widget _buildLoadTypeSelector() {
-    return Row(children: ['LASTRE', 'EXT.LOAD', 'JST.BW', 'UNMOVABLE'].map((type) {
-      final sel = _loadType == type;
-      return Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: InkWell(onTap: () => setState(() => _loadType = type), child: Container(padding: const EdgeInsets.symmetric(vertical: 12), alignment: Alignment.center, decoration: BoxDecoration(color: sel ? LabColors.primary : Colors.transparent, border: Border.all(color: LabColors.primary, width: 0.5)), child: Text(type, style: LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold, color: sel ? Colors.black : LabColors.primary))))));
-    }).toList());
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('NAT.LOAD', style: LabStyles.mono(context, color: LabColors.primary.withValues(alpha: 0.7), fontSize: 9)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: _loadTypes.map((type) {
+            final sel = _loadType == type;
+            return InkWell(
+              onTap: () => setState(() => _loadType = type),
+              child: Container(
+                constraints: const BoxConstraints(minWidth: 92),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: sel ? LabColors.primary : Colors.transparent,
+                  border: Border.all(color: LabColors.primary, width: 0.5),
+                ),
+                child: Text(type,
+                    style: LabStyles.mono(context,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: sel ? Colors.black : LabColors.primary)),
+              ),
+            );
+          }).toList(),
+        ),
+        if (_loadType == 'BANDED') ...[
+          const SizedBox(height: 16),
+          _buildBandConfigFields(),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildBandConfigFields() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: LabColors.surfaceDim,
+        border: Border.all(color: LabColors.primary.withValues(alpha: 0.3), width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('BAND_CONFIG', style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
+          const SizedBox(height: 8),
+          LabTextField(controller: _bandTypeController, label: 'BAND_TYPE (E.G: LOOP, TUBE)'),
+          const SizedBox(height: 12),
+          LabTextField(controller: _bandTensionController, label: 'TENSION_NOTES (E.G: LIGHT/MEDIUM/HEAVY)'),
+        ],
+      ),
+    );
   }
 
   Widget _buildIsometricToggle() {

@@ -1198,7 +1198,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
               exLoadType = exMetaMatch.group(1) ?? 'EXT.LOAD';
               exIsIso = exMetaMatch.group(2) == 'true';
               exIsJst = exLoadType == 'JST.BW';
-            } else if (['LASTRE', 'EXT.LOAD', 'JST.BW'].contains(ex.field)) {
+            } else if (['LASTRE', 'EXT.LOAD', 'JST.BW', 'BANDED'].contains(ex.field)) {
               exLoadType = ex.field!;
               exIsJst = exLoadType == 'JST.BW';
             }
@@ -2195,9 +2195,15 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
       utilities = [firstSet.priority!];
     }
     final bool hasUtility = utilities.isNotEmpty;
+    // Same key the header UTIL chips and THEME.MDFYR's UTILS section use
+    // (UI_TAG_<name>), so a customization there shows up here too instead
+    // of only on one surface. The old PRIORITY_<name> key is kept as an
+    // alias so colors customized before this fix aren't lost.
     final utilityColor = hasUtility
-        ? tC.getColor(settings, "PRIORITY_${utilities.first}",
-            nameSeed: utilities.first)
+        ? tC.getColor(settings,
+            "UI_TAG_${utilities.first.replaceAll(' ', '_')}",
+            nameSeed: utilities.first,
+            aliases: ["PRIORITY_${utilities.first}"])
         : Colors.transparent;
 
     // Resolve tag colors from theme
@@ -2206,6 +2212,8 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
     final uiTagJstbw = tC.getColor(settings, "UI_TAG_JSTBW", nameSeed: "JSTBW");
     final uiTagExtload =
         tC.getColor(settings, "UI_TAG_EXTLOAD", nameSeed: "EXTLOAD");
+    final uiTagBanded =
+        tC.getColor(settings, "UI_TAG_BANDED", nameSeed: "BANDED");
     final uiTagIso = tC.getColor(settings, "UI_TAG_ISO", nameSeed: "ISO");
     final uiTagBodyposition =
         tC.getColor(settings, "UI_TAG_BODYPOSITION", nameSeed: "BODYPOSITION");
@@ -2229,6 +2237,9 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
         break;
       case 'EXT.LOAD':
         typeColor = uiTagExtload;
+        break;
+      case 'BANDED':
+        typeColor = uiTagBanded;
         break;
       default:
         typeColor = LabColors.primary;
@@ -3583,11 +3594,13 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
       _rC,
       _rpeC,
       _rirC,
-      _techC;
+      _techC,
+      _assistC;
   Timer? _db;
   Timer? _prDb;
   bool _exp = false;
   bool _isIso = false;
+  bool _isAssisted = false;
   bool _hasVpPr = false;
   double _vpValue = 0;
   Timer? _vpTimer;
@@ -3600,10 +3613,19 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     return value.toString();
   }
 
+  // Effective bodyweight for a JST.BW set, after subtracting the assisted
+  // amount (assisted pull-up/dip machine, band, etc.). Never negative.
+  double _effectiveBodyWeight() {
+    if (!_isAssisted) return widget.bodyWeight;
+    final assist = double.tryParse(_assistC.text) ?? 0;
+    final eff = widget.bodyWeight - assist;
+    return eff < 0 ? 0 : eff;
+  }
+
   double _computeVp() {
     final isJst = widget.isJst;
     final isL = widget.loadType == 'LASTRE';
-    final w = isJst ? widget.bodyWeight : (double.tryParse(_lC.text) ?? 0);
+    final w = isJst ? _effectiveBodyWeight() : (double.tryParse(_lC.text) ?? 0);
     final tL = w + (isL ? widget.bodyWeight : 0);
     final reps = double.tryParse(_rC.text) ?? 0;
     final tonnage = tL * reps;
@@ -3623,6 +3645,11 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     _rirC = TextEditingController(text: widget.set.rir?.toString() ?? '');
     _techC =
         TextEditingController(text: widget.set.technique?.toString() ?? '');
+    _isAssisted = widget.set.assistanceValue != null;
+    _assistC = TextEditingController(
+        text: widget.set.assistanceValue != null
+            ? _formatInputValue(widget.set.assistanceValue!)
+            : '');
 
     if (widget.isJst) {
       _lC.text = _formatInputValue(widget.bodyWeight);
@@ -3650,6 +3677,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     _rpeC.dispose();
     _rirC.dispose();
     _techC.dispose();
+    _assistC.dispose();
     super.dispose();
   }
 
@@ -3699,9 +3727,11 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     final te = int.tryParse(_techC.text);
     final isJst = widget.isJst;
 
-    final actualWeight = isJst ? widget.bodyWeight : w;
+    final actualWeight = isJst ? _effectiveBodyWeight() : w;
     final rest = widget.set.restTimeSeconds ?? 120;
     final track = (widget.set.trackName ?? '').replaceFirst('[RED_PR]', '').trim();
+    final assistValue =
+        _isAssisted ? (double.tryParse(_assistC.text) ?? 0) : null;
 
     await (db.update(db.workoutSets)..where((t) => t.id.equals(widget.set.id)))
         .write(WorkoutSetsCompanion(
@@ -3712,6 +3742,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
       restTimeSeconds: drift.Value(rest),
       technique: drift.Value(te),
       trackName: drift.Value(track.isEmpty ? null : track),
+      assistanceValue: drift.Value(assistValue),
       // notes intentionally omitted — GeneralNotesModule now owns writes to
       // this column independently (multi-note, its own debounce).
     ));
@@ -3732,7 +3763,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
 
     final today = DateTime(widget.set.timestamp.year,
         widget.set.timestamp.month, widget.set.timestamp.day);
-    final actualWeight = isJst ? widget.bodyWeight : w;
+    final actualWeight = isJst ? _effectiveBodyWeight() : w;
 
     final histBefore = await (db.select(db.workoutSets).join([
       drift.innerJoin(
@@ -4094,6 +4125,10 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                 ),
               ),
             ),
+            if (widget.isJst) ...[
+              const SizedBox(height: 8),
+              _buildAssistedRow(),
+            ],
             const SizedBox(height: 12),
             _buildSomaticCard(),
             const SizedBox(height: 8),
@@ -4394,6 +4429,47 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                               color: Colors.white,
                               fontWeight: FontWeight.bold)))
                 ])));
+  }
+
+  Widget _buildAssistedRow() {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[700]!, width: 0.5),
+        color: LabColors.surfaceContainerLow,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: Row(
+        children: [
+          Text('ASSISTED', style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
+          const Spacer(),
+          Switch.adaptive(
+            value: _isAssisted,
+            activeColor: LabColors.primary,
+            onChanged: (v) => setState(() {
+              _isAssisted = v;
+              if (!v) _assistC.clear();
+              _onChanged();
+            }),
+          ),
+          if (_isAssisted) ...[
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 60,
+              height: 36,
+              child: TextField(
+                controller: _assistC,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                textAlign: TextAlign.center,
+                style: LabStyles.mono(context, fontSize: 14, color: Colors.white),
+                decoration: const InputDecoration(
+                    border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6)),
+                onChanged: (_) => _onChanged(),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildGridInput(String l, TextEditingController c,

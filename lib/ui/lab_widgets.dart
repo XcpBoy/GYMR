@@ -7,6 +7,88 @@ import 'home_screen.dart';
 import 'workout_manager.dart';
 import 'ledger_screen.dart';
 import 'charts/performance_dashboard.dart';
+import 'blueprint_manager.dart';
+import 'timeline_screen.dart';
+import 'nexus_screen.dart';
+import 'full_dataset_screen.dart';
+
+// A single selectable destination for a customizable ribbon slot: icon,
+// label, default theme color (keyed off the label so existing FOOTER_*
+// customizations keep working), and how to navigate there.
+class RibbonDestination {
+  final String id;
+  final IconData icon;
+  final String label;
+  final Color defaultColor;
+  final Widget Function() screenBuilder;
+  const RibbonDestination(
+      {required this.id,
+      required this.icon,
+      required this.label,
+      required this.defaultColor,
+      required this.screenBuilder});
+}
+
+// Every destination a ribbon slot can point to. Adding one here makes it
+// selectable in APP.CONFIG > GENERAL > BOTTOM_RIBBON without touching
+// LabFooter itself.
+final List<RibbonDestination> kRibbonDestinations = [
+  RibbonDestination(
+      id: 'DSHBRD',
+      icon: Icons.dashboard,
+      label: 'DSHBRD',
+      defaultColor: LabColors.primary,
+      screenBuilder: () => const HomeScreen()),
+  RibbonDestination(
+      id: 'WORKOUT',
+      icon: Icons.fitness_center,
+      label: 'WORKOUT',
+      defaultColor: LabColors.workoutRed,
+      screenBuilder: () => WorkoutManagerScreen()),
+  RibbonDestination(
+      id: 'INVENTORY',
+      icon: Icons.receipt_long,
+      label: 'INVENTORY',
+      defaultColor: LabColors.inventoryOrange,
+      screenBuilder: () => const LedgerScreen()),
+  RibbonDestination(
+      id: 'VISUALS',
+      icon: Icons.analytics,
+      label: 'VISUALS',
+      defaultColor: LabColors.visualsNeon,
+      screenBuilder: () => const PerformanceDashboard()),
+  RibbonDestination(
+      id: 'BLUEPRINT',
+      icon: Icons.view_module_rounded,
+      label: 'WO.BLCKS',
+      defaultColor: LabColors.blueprintBlue,
+      screenBuilder: () => const BlueprintManagerScreen()),
+  RibbonDestination(
+      id: 'TIMELINE',
+      icon: Icons.schedule,
+      label: 'TIMELINE',
+      defaultColor: LabColors.timelineGrey,
+      screenBuilder: () => const TimelineScreen()),
+  RibbonDestination(
+      id: 'NEXUS',
+      icon: Icons.hub,
+      label: 'NEXUS',
+      defaultColor: LabColors.nexusPurple,
+      screenBuilder: () => const NexusScreen()),
+  RibbonDestination(
+      id: 'DATASET',
+      icon: Icons.storage,
+      label: 'DATASET',
+      defaultColor: LabColors.datasetGold,
+      screenBuilder: () => const FullDatasetScreen()),
+];
+
+RibbonDestination ribbonDestinationById(String id) => kRibbonDestinations
+    .firstWhere((d) => d.id == id, orElse: () => kRibbonDestinations.first);
+
+// Default slot -> destination id, matching the ribbon's original 4 fixed
+// buttons so existing users see no change until they customize it.
+const List<String> kDefaultRibbonSlots = ['DSHBRD', 'WORKOUT', 'INVENTORY', 'VISUALS'];
 
 class LabUtilitySelector extends ConsumerStatefulWidget {
   final List<String> selected; // current utilities (up to 4)
@@ -629,6 +711,11 @@ class LabFooter extends ConsumerWidget {
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final controller = ref.read(themeControllerProvider);
 
+    final slotIds = List<String>.generate(4, (i) {
+      return controller.getValue(settings, 'APPCFG_RIBBON_SLOT_$i') ??
+          kDefaultRibbonSlots[i];
+    });
+
     return Container(
       height: 70,
       decoration: const BoxDecoration(
@@ -637,36 +724,19 @@ class LabFooter extends ConsumerWidget {
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildFooterButton(
+        children: slotIds.map((id) {
+          final dest = ribbonDestinationById(id);
+          return _buildFooterButton(
             context,
-            Icons.dashboard,
-            "DSHBRD",
-            controller.getColor(settings, "FOOTER_DSHBRD", defaultColor: LabColors.primary),
-            () => Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (c) => const HomeScreen()), (r) => false),
-          ),
-          _buildFooterButton(
-            context,
-            Icons.fitness_center,
-            "WORKOUT",
-            controller.getColor(settings, "FOOTER_WORKOUT", defaultColor: LabColors.workoutRed),
-            () => Navigator.of(context).push(MaterialPageRoute(builder: (c) => WorkoutManagerScreen())),
-          ),
-          _buildFooterButton(
-            context,
-            Icons.receipt_long,
-            "INVENTORY",
-            controller.getColor(settings, "FOOTER_INVENTORY", defaultColor: LabColors.inventoryOrange),
-            () => Navigator.of(context).push(MaterialPageRoute(builder: (c) => const LedgerScreen())),
-          ),
-          _buildFooterButton(
-            context,
-            Icons.analytics,
-            "VISUALS",
-            controller.getColor(settings, "FOOTER_VISUALS", defaultColor: LabColors.visualsNeon),
-            () => Navigator.of(context).push(MaterialPageRoute(builder: (c) => const PerformanceDashboard())),
-          ),
-        ],
+            dest.icon,
+            dest.label,
+            controller.getColor(settings, "FOOTER_${dest.id}", defaultColor: dest.defaultColor),
+            () => dest.id == 'DSHBRD'
+                ? Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (c) => dest.screenBuilder()), (r) => false)
+                : Navigator.of(context).push(MaterialPageRoute(builder: (c) => dest.screenBuilder())),
+          );
+        }).toList(),
       ),
     );
   }
