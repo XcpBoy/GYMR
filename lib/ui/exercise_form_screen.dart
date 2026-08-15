@@ -8,8 +8,8 @@ import '../database/database.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
-import 'complex_metadata_screen.dart'; // NEW
 import 'wb_shared/wb_shared_widgets.dart';
+import 'complex_metadata_screen.dart'; // NEW
 import '../localization/strings.dart';
 
 // Default color per nomenclature piece, used when the user hasn't
@@ -23,39 +23,41 @@ const Map<String, Color> kNomenclaturePieceDefaults = {
   'ASSISTANCE': Colors.tealAccent,
 };
 
-class AddExerciseScreen extends ConsumerStatefulWidget {
-  const AddExerciseScreen({super.key});
+// Single screen for both creating and editing a BaseExercise. `exercise ==
+// null` means create mode (INSERT); a non-null exercise means edit mode
+// (UPDATE on that row). EDIT_EXERCISE and EXERCISE_CREATOR used to be two
+// near-identical files (same fields, same nomenclature-piece logic) that
+// had to be edited in lockstep any time either changed - merged into one
+// widget so there's a single place to touch.
+class ExerciseFormScreen extends ConsumerStatefulWidget {
+  final BaseExercise? exercise;
+  const ExerciseFormScreen({super.key, this.exercise});
 
   @override
-  ConsumerState<AddExerciseScreen> createState() => _AddExerciseScreenState();
+  ConsumerState<ExerciseFormScreen> createState() => _ExerciseFormScreenState();
 }
 
-class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
+class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
   final _formKey = GlobalKey<FormState>();
-  
-  // CORE IDENTIFICATION
-  late final TextEditingController _nameController;
-  final _fieldController = TextEditingController();
-  
-  // TARGETING
-  final _primaryMuscleController = TextEditingController();
-  final _secondaryMuscleController = TextEditingController();
-  
-  // MOVEMENT METADATA
-  final _patternTypeController = TextEditingController();
-  final _intentionController = TextEditingController(); 
-  
-  // BIOMECHANICAL TISSUE
-  final _tissueTypeController = TextEditingController();
-  final _tissueNameController = TextEditingController();
 
-  // LOAD CATEGORIZATION
-  String _loadType = 'EXT.LOAD'; 
+  bool get _isEditing => widget.exercise != null;
+
+  late final TextEditingController _nameController;
+  late final TextEditingController _primaryMuscleController;
+  late final TextEditingController _secondaryMuscleController;
+  late final TextEditingController _fieldController;
+  late final TextEditingController _intentionController;
+  late final TextEditingController _patternTypeController;
+  late final TextEditingController _tissueTypeController;
+  late final TextEditingController _tissueNameController;
+  late final TextEditingController _numPhasesController;
+  late final TextEditingController _descriptionController;
+
+  String _loadType = 'EXT.LOAD';
   bool _isIsometric = false;
   bool _isUnilateral = false;
-  String _classification = 'COMPOUND'; // COMPOUND or ISOLATION
+  String _classification = 'COMPOUND';
 
-  // QUALITIES
   final List<TextEditingController> _implementControllers = [];
   final List<bool> _implementShowInName = [];
   final List<TextEditingController> _bodyPositionControllers = [];
@@ -67,7 +69,21 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
   final List<TextEditingController> _assistanceControllers = [];
   final List<bool> _assistanceShowInName = [];
   List<String> _nameOrder = List<String>.from(kDefaultNamePieceOrder);
+  List<TextEditingController> _phaseDescriptionControllers = [];
 
+  // RELATIONS
+  Map<String, dynamic> _complexMetadata = {
+    "regressions": [],
+    "progressions": [],
+    "alters": [],
+    "particular_toggles": [],
+    "description": ""
+  };
+
+  // Parses a nomenclature-piece column (JSON [{"v":...,"s":...}], falling
+  // back to legacy comma-text as all-shown) into a controller + show-flag
+  // pair, same shape bodyPositions already used before this feature existed
+  // for every piece.
   void _loadPieceInto(String? raw, List<TextEditingController> controllers,
       List<bool> showFlags) {
     controllers.clear();
@@ -120,21 +136,70 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     }
   }
 
-  // RELATIONS
-  Map<String, dynamic> _complexMetadata = {"regressions": [], "progressions": [], "alters": [], "particular_toggles": [], "description": ""};
-  final _descriptionController = TextEditingController();
-
-  // PHASES
-  final _numPhasesController = TextEditingController(text: '1');
-  List<TextEditingController> _phaseDescriptionControllers = [TextEditingController()];
+  drift.Value<String?> _toValue(String text) {
+    final trimmed = text.trim();
+    return drift.Value(trimmed.isEmpty ? null : trimmed);
+  }
 
   @override
   void initState() {
     super.initState();
-    _nameController = _newPieceController();
+    final e = widget.exercise;
+    _isUnilateral = e?.isUnilateral ?? false;
+    _nameController = _newPieceController(e?.name);
+    _primaryMuscleController = TextEditingController(text: e?.primaryMuscleGroup);
+    _secondaryMuscleController = TextEditingController(text: e?.secondaryMuscleGroup);
+    _fieldController = TextEditingController(text: e?.field);
+    _patternTypeController = TextEditingController(text: e?.patternType);
+    _tissueTypeController = TextEditingController(text: e?.tissueType);
+    _tissueNameController = TextEditingController(text: e?.tissueName);
+    if (e != null) {
+      _complexMetadata = Map<String, dynamic>.from(e.parsedComplexMetadata);
+    }
+    _classification = _complexMetadata["classification"] ?? "COMPOUND";
+
+    final intentionText = e?.intention ?? '';
+    final metaMatch = RegExp(r'\[NT:(.*)\|ISO:(.*)\]').firstMatch(intentionText);
+    if (metaMatch != null) {
+      _loadType = metaMatch.group(1) ?? 'EXT.LOAD';
+      _isIsometric = metaMatch.group(2) == 'true';
+      _intentionController = TextEditingController(text: intentionText.replaceFirst(RegExp(r'\[.*\]'), '').trim());
+    } else {
+      _intentionController = TextEditingController(text: intentionText);
+    }
+
+    _numPhasesController = TextEditingController(text: (e?.numPhases ?? 1).toString());
+    _descriptionController = TextEditingController(text: e?.parsedComplexMetadata["description"] ?? "");
+
+    _loadPieceInto(e?.bodyPositions, _bodyPositionControllers, _bodyPositionShowInName);
+    _loadPieceInto(e?.implements, _implementControllers, _implementShowInName);
+    _loadPieceInto(e?.prefixes, _prefixControllers, _prefixShowInName);
+    _loadPieceInto(e?.suffixes, _suffixControllers, _suffixShowInName);
+    _loadPieceInto(e?.assistanceTypes, _assistanceControllers, _assistanceShowInName);
+    _nameOrder = e != null ? List<String>.from(e.nameOrderResolved) : [];
+
+    if (e != null) {
+      try {
+        if (e.phaseDescriptions != null) {
+          final Map<String, dynamic> metadata = jsonDecode(e.phaseDescriptions!);
+          final phases = metadata["phases"] as Map<String, dynamic>? ?? {};
+          for (int i = 0; i < (e.numPhases ?? 1); i++) {
+            _phaseDescriptionControllers.add(TextEditingController(text: phases[(i + 1).toString()] ?? ''));
+          }
+        }
+      } catch (_) {
+        _phaseDescriptionControllers = List.generate(e.numPhases ?? 1, (index) => TextEditingController());
+      }
+    } else {
+      _phaseDescriptionControllers = [TextEditingController()];
+    }
+
     _numPhasesController.addListener(_updatePhaseControllers);
   }
 
+  // Keeps _phaseDescriptionControllers in sync as "Number of Phases" is
+  // typed, so the matching count of phase-description fields appears
+  // immediately instead of only after a save/reload round-trip.
   void _updatePhaseControllers() {
     final count = int.tryParse(_numPhasesController.text) ?? 0;
     if (count < 0) return;
@@ -155,50 +220,79 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
 
   @override
   void dispose() {
-    _nameController.dispose(); _fieldController.dispose();
-    _primaryMuscleController.dispose(); _secondaryMuscleController.dispose();
-    _patternTypeController.dispose(); _intentionController.dispose();
-    _tissueTypeController.dispose(); _tissueNameController.dispose();
-    _numPhasesController.dispose();
+    _nameController.dispose(); _primaryMuscleController.dispose(); _secondaryMuscleController.dispose();
+    _fieldController.dispose(); _intentionController.dispose(); _patternTypeController.dispose();
+    _tissueTypeController.dispose(); _tissueNameController.dispose(); _numPhasesController.dispose();
+    _descriptionController.dispose();
     for (var c in [..._prefixControllers, ..._suffixControllers, ..._implementControllers, ..._bodyPositionControllers, ..._assistanceControllers, ..._phaseDescriptionControllers]) {
       c.dispose();
     }
     super.dispose();
   }
 
-  drift.Value<String?> _toValue(String text) {
-    final trimmed = text.trim();
-    return drift.Value(trimmed.isEmpty ? null : trimmed);
-  }
-
   Future<void> _saveExercise() async {
-    if (_formKey.currentState!.validate()) {
-      if (_nameController.text.trim().isEmpty) {
-         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("BASE_NAME_REQUIRED")));
-         return;
-      }
-      try {
-        final db = ref.read(databaseProvider);
-        final posJson = _encodePieceList(_bodyPositionControllers, _bodyPositionShowInName);
-        final impJson = _encodePieceList(_implementControllers, _implementShowInName);
-        final preJson = _encodePieceList(_prefixControllers, _prefixShowInName);
-        final sufJson = _encodePieceList(_suffixControllers, _suffixShowInName);
-        final assistJson = _encodePieceList(_assistanceControllers, _assistanceShowInName);
+    if (!_formKey.currentState!.validate()) return;
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("BASE_NAME_REQUIRED")));
+      return;
+    }
 
-        final Map<String, dynamic> metadata = {
-          "phases": {},
-          "graph": {"progresiones": [], "regresiones": [], "nivelados": []}
-        };
-        for (int i = 0; i < _phaseDescriptionControllers.length; i++) {
-          final desc = _phaseDescriptionControllers[i].text.trim();
-          if (desc.isNotEmpty) metadata["phases"][(i + 1).toString()] = desc;
-        }
+    final db = ref.read(databaseProvider);
+    final posJson = _encodePieceList(_bodyPositionControllers, _bodyPositionShowInName);
+    final impJson = _encodePieceList(_implementControllers, _implementShowInName);
+    final preJson = _encodePieceList(_prefixControllers, _prefixShowInName);
+    final sufJson = _encodePieceList(_suffixControllers, _suffixShowInName);
+    final assistJson = _encodePieceList(_assistanceControllers, _assistanceShowInName);
+    final nameOrderJson = jsonEncode(_reconcileNameOrder(_nameOrder, _liveNameTokens()));
 
-        final purposeText = _intentionController.text.trim();
-        final finalIntention = "[NT:$_loadType|ISO:$_isIsometric] ${purposeText.isEmpty ? '' : purposeText}";
+    final Map<String, dynamic> phaseMetadata = {
+      "phases": {},
+      "graph": {"progresiones": [], "regresiones": [], "nivelados": []}
+    };
+    for (int i = 0; i < _phaseDescriptionControllers.length; i++) {
+      final desc = _phaseDescriptionControllers[i].text.trim();
+      if (desc.isNotEmpty) phaseMetadata["phases"][(i + 1).toString()] = desc;
+    }
 
-        // Get next orderIndex for display ordering
-        final maxOrder = await (db.select(db.baseExercises)..orderBy([(t) => drift.OrderingTerm(expression: t.orderIndex, mode: drift.OrderingMode.desc)])).get().then((r) => r.isEmpty ? 0 : (r.first.orderIndex + 1));
+    final purposeText = _intentionController.text.trim();
+    final finalIntention = "[NT:$_loadType|ISO:$_isIsometric] $purposeText";
+
+    final complexMetadataJson = jsonEncode({
+      ..._complexMetadata,
+      "classification": _classification,
+      "description": _descriptionController.text.trim(),
+    });
+
+    try {
+      if (_isEditing) {
+        await (db.update(db.baseExercises)..where((t) => t.id.equals(widget.exercise!.id))).write(
+          BaseExercisesCompanion(
+            name: drift.Value(_nameController.text.trim().toUpperCase()),
+            primaryMuscleGroup: drift.Value(_primaryMuscleController.text.trim().toUpperCase()),
+            secondaryMuscleGroup: drift.Value(_secondaryMuscleController.text.trim().toUpperCase()),
+            field: drift.Value(_fieldController.text.trim().toUpperCase()),
+            intention: drift.Value(finalIntention),
+            patternType: drift.Value(_patternTypeController.text.trim().toUpperCase()),
+            tissueType: drift.Value(_tissueTypeController.text.trim().toUpperCase()),
+            tissueName: drift.Value(_tissueNameController.text.trim().toUpperCase()),
+            implements: drift.Value(impJson),
+            bodyPositions: drift.Value(posJson),
+            prefixes: drift.Value(preJson),
+            suffixes: drift.Value(sufJson),
+            assistanceTypes: drift.Value(assistJson),
+            nameOrder: drift.Value(nameOrderJson),
+            numPhases: drift.Value(int.tryParse(_numPhasesController.text) ?? 1),
+            phaseDescriptions: drift.Value(jsonEncode(phaseMetadata)),
+            complexMetadata: drift.Value(complexMetadataJson),
+            isUnilateral: drift.Value(_isUnilateral),
+          ),
+        );
+        await db.syncBidirectionalRelations(widget.exercise!.id, _complexMetadata);
+      } else {
+        final maxOrder = await (db.select(db.baseExercises)
+              ..orderBy([(t) => drift.OrderingTerm(expression: t.orderIndex, mode: drift.OrderingMode.desc)]))
+            .get()
+            .then((r) => r.isEmpty ? 0 : (r.first.orderIndex + 1));
 
         final insertedId = await db.into(db.baseExercises).insert(
           BaseExercisesCompanion.insert(
@@ -215,23 +309,22 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
             prefixes: drift.Value(preJson),
             suffixes: drift.Value(sufJson),
             assistanceTypes: drift.Value(assistJson),
-            nameOrder: drift.Value(jsonEncode(_reconcileNameOrder(_nameOrder, _liveNameTokens()))),
+            nameOrder: drift.Value(nameOrderJson),
             numPhases: drift.Value(int.tryParse(_numPhasesController.text) ?? 1),
-            phaseDescriptions: drift.Value(jsonEncode(metadata)),
-            complexMetadata: drift.Value(jsonEncode({..._complexMetadata, "classification": _classification, "description": _descriptionController.text.trim()})),
+            phaseDescriptions: drift.Value(jsonEncode(phaseMetadata)),
+            complexMetadata: drift.Value(complexMetadataJson),
             isUnilateral: drift.Value(_isUnilateral),
             orderIndex: drift.Value(maxOrder),
           ),
         );
-
         await db.syncBidirectionalRelations(insertedId, _complexMetadata);
+      }
 
-        if (mounted) Navigator.pop(context);
-      } catch (e) {
-        debugPrint("Save Failed: $e");
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("SAVE_FAILED: $e")));
-        }
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      debugPrint("Save Failed: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("SAVE_FAILED: $e")));
       }
     }
   }
@@ -240,13 +333,13 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     final db = ref.read(databaseProvider);
     final all = await db.select(db.baseExercises).get();
     if (!mounted) return;
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: LabColors.background,
       isScrollControlled: true,
       builder: (c) => ExerciseSearchPicker(
-        exercises: all, 
+        exercises: all,
         onSelected: (e) => setState(() => _applyCopy(e)),
       ),
     );
@@ -264,7 +357,7 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     _complexMetadata = jsonDecode(jsonEncode(e.parsedComplexMetadata));
     _classification = _complexMetadata["classification"] ?? "COMPOUND";
     _isUnilateral = e.isUnilateral;
-    
+
     final intentionText = e.intention ?? '';
     final metaMatch = RegExp(r'\[NT:(.*)\|ISO:(.*)\]').firstMatch(intentionText);
     if (metaMatch != null) {
@@ -302,7 +395,7 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
   void _showQualityOverlay(TextEditingController? controller, String type, {Function(String)? onSelect}) async {
     final db = ref.read(databaseProvider);
     final exercises = await db.select(db.baseExercises).get();
-    
+
     Set<String> values = {};
     for (var e in exercises) {
       List<String> found = [];
@@ -332,8 +425,7 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
         final intentionText = e.intention ?? '';
         final stripped = intentionText.replaceFirst(RegExp(r'\[.*\]'), '').trim();
         found = [stripped];
-      }
-      else if (type == 'phase') {
+      } else if (type == 'phase') {
         if (e.phaseDescriptions != null) {
           try {
             final Map<String, dynamic> meta = jsonDecode(e.phaseDescriptions!);
@@ -342,7 +434,7 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
           } catch (_) {}
         }
       }
-      
+
       for (var v in found) {
         if (v.trim().isNotEmpty) values.add(v.trim());
       }
@@ -385,6 +477,20 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     }
   }
 
+  Widget _buildSearchableField(String label, TextEditingController controller, String type) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(child: LabTextField(controller: controller, label: label)),
+        const SizedBox(width: 8),
+        IconButton(
+          icon: const Icon(Icons.manage_search, color: LabColors.primary),
+          onPressed: () => _showQualityOverlay(controller, type),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final lang = ref.watch(languageProvider).value ?? 'en';
@@ -396,7 +502,7 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     final showTissueName = tC.getBool(settings, 'APPCFG_SHOW_TISSUE_NAME', defaultValue: true);
     final showPhases = tC.getBool(settings, 'APPCFG_SHOW_PHASES', defaultValue: true);
     return MainScaffold(
-      title: 'EXERCISE_CREATOR',
+      title: _isEditing ? 'EDIT_EXERCISE' : 'EXERCISE_CREATOR',
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Form(
@@ -406,7 +512,7 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
             children: [
               _buildSectionTitle('CORE_IDENTIFICATION'),
               const SizedBox(height: 16),
-              _buildSearchableField('BASE NAME (E.G : VERTICAL PULL)', _nameController, 'name'),
+              _buildSearchableField(tr(lang, 'BASE NAME (E.G : VERTICAL PULL)'), _nameController, 'name'),
               const SizedBox(height: 12),
               LabButton(
                 label: tr(lang, 'Copy Existing Movement'),
@@ -432,7 +538,7 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
                 maxLines: 3,
                 keyboardType: TextInputType.multiline,
               ),
-              
+
               const SizedBox(height: 24),
               _buildSectionTitle('QUALITIES'),
               const SizedBox(height: 16),
@@ -510,7 +616,15 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
               ],
 
               const SizedBox(height: 40),
-              LabButton(label: tr(lang, 'Add Movement'), onPressed: _saveExercise, color: LabColors.accent),
+              LabButton(
+                label: tr(lang, _isEditing ? 'Update Movement' : 'Add Movement'),
+                onPressed: _saveExercise,
+                color: LabColors.accent,
+              ),
+              if (_isEditing) ...[
+                const SizedBox(height: 12),
+                LabButton(label: tr(lang, 'Abort'), onPressed: () => Navigator.pop(context), isOutlined: true, color: Colors.redAccent),
+              ],
               const SizedBox(height: 40),
             ],
           ),
@@ -521,20 +635,6 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
 
   Widget _buildSectionTitle(String title) {
     return Row(children: [Container(width: 4, height: 24, color: LabColors.accent), const SizedBox(width: 8), Text(title, style: LabStyles.mono(context, color: LabColors.onSurface, fontWeight: FontWeight.bold).copyWith(fontSize: 14))]);
-  }
-
-  Widget _buildSearchableField(String label, TextEditingController controller, String type) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        Expanded(child: LabTextField(controller: controller, label: label)),
-        const SizedBox(width: 8),
-        IconButton(
-          icon: const Icon(Icons.manage_search, color: LabColors.primary),
-          onPressed: () => _showQualityOverlay(controller, type),
-        ),
-      ],
-    );
   }
 
   Widget _buildLoadTypeSelector() {
@@ -559,6 +659,11 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     }).toList());
   }
 
+  // Generalized version of the old body-position-only list: an "add via
+  // search" + "add blank" header, and a per-item NAME switch that controls
+  // whether that piece is included when fullName is assembled (see
+  // BaseExercise.fullName in database.dart). Used for BODY_POSITION,
+  // IMPLEMENTS, PREFIXES, SUFFIXES and ASSISTANCE_TYPE alike.
   Widget _buildToggleableList(String title, List<TextEditingController> controllers,
       List<bool> showInName, VoidCallback onAdd,
       {required String type, Color color = LabColors.primary}) {
@@ -598,6 +703,11 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     ]);
   }
 
+  // Every individual string across every piece gets its own reorder token
+  // "<PIECE>::<indexWithinThatPiece'sControllerList>" - mirrors
+  // BaseExerciseExtension._liveNameTokens in database.dart exactly, but
+  // reads live controller/switch state instead of saved JSON, since this
+  // runs while the user is still editing.
   List<String> _liveNameTokens() {
     final tokens = <String>[];
     void addTokens(String piece, List<TextEditingController> ctrls, List<bool> show) {
@@ -632,6 +742,10 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     return tokens;
   }
 
+  // Reconciles a stored token order against the current live token set:
+  // stale tokens (removed/toggled off since saved) are dropped, new tokens
+  // (added since) are appended in default order. Mirrors
+  // BaseExerciseExtension.nameOrderResolved.
   List<String> _reconcileNameOrder(List<String> stored, List<String> live) {
     final liveSet = live.toSet();
     final storedSet = stored.toSet();
@@ -733,4 +847,3 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     ]);
   }
 }
-

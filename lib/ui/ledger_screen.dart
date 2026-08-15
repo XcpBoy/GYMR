@@ -9,8 +9,7 @@ import '../localization/strings.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
-import 'add_exercise_screen.dart';
-import 'edit_exercise_screen.dart';
+import 'exercise_form_screen.dart';
 import 'exercise_history_screen.dart';
 import 'kinisi_tree_screen.dart';
 
@@ -218,7 +217,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.black,
         shape: const RoundedRectangleBorder(side: BorderSide(color: LabColors.accent, width: 0.5)),
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const AddExerciseScreen())),
+        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ExerciseFormScreen())),
         child: const Icon(Icons.add, color: LabColors.accent, size: 32),
       ),
       bottomNavigationBar: const LabFooter(),
@@ -731,7 +730,7 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
                   icon: const Icon(Icons.edit, color: LabColors.primary, size: 16),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
-                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => EditExerciseScreen(exercise: e))),
+                  onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => ExerciseFormScreen(exercise: e))),
                 ),
                 const SizedBox(width: 4),
                 IconButton(

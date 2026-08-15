@@ -148,7 +148,7 @@ final Map<String, String> esTranslations = {
   // --- charts/chart_widgets.dart ---
   'OTHER': 'OTRO',
 
-  // --- exercise_history_screen.dart / anthropometric_data_screen.dart / main_hub_screen.dart / add_exercise_screen.dart ---
+  // --- exercise_history_screen.dart / anthropometric_data_screen.dart / main_hub_screen.dart / exercise_form_screen.dart ---
   'JUMP TO GRFCL HISTORY': 'IR AL HISTORIAL GRÁFICO',
   'LOADING...': 'CARGANDO...',
   'Save Weight': 'Guardar Peso',
@@ -156,7 +156,7 @@ final Map<String, String> esTranslations = {
   'IMPORT & EXPORT DATA': 'IMPORTAR Y EXPORTAR DATOS',
   'Add Movement': 'Agregar Movimiento',
 
-  // --- shared across add_exercise_screen.dart / edit_exercise_screen.dart / kinisi_tree_screen.dart / complex_metadata_screen.dart ---
+  // --- shared across exercise_form_screen.dart / kinisi_tree_screen.dart / complex_metadata_screen.dart ---
   'Copy Existing Movement': 'Copiar Movimiento Existente',
   'Complex Metadata Input': 'Ingreso de Metadatos Complejos',
   'Field / Discipline': 'Campo / Disciplina',
