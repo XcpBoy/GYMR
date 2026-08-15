@@ -203,7 +203,6 @@ class _WorkoutBlocksManagerScreenState
     extends ConsumerState<WorkoutBlocksManagerScreen> {
   String _sortMode = 'newest'; // newest, alpha, folder
   final Set<String> _expandedFolders = {};
-  bool _loaded = false;
 
   @override
   void initState() {

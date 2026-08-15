@@ -31,7 +31,6 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
   final _searchCtrl = TextEditingController();
-  String _searchQuery = '';
   final Map<String, String> _perTableSearch = {};
   bool _isProcessing = false;
   // Global display toggle — cleans up JSON-blob columns (e.g. body_positions)
@@ -77,7 +76,6 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       _searchDebounce = Timer(const Duration(milliseconds: 300), () {
         if (!mounted) return;
         setState(() {
-          _searchQuery = _searchCtrl.text;
           _perTableSearch[_tableConfigs[_tabCtrl.index].key] = _searchCtrl.text;
         });
       });
@@ -297,42 +295,6 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
       }
     }
     return val.toString();
-  }
-
-  // ── SANITY CHECK ──
-  Future<String> _sanityCheck(_TableCfg cfg) async {
-    final db = ref.read(databaseProvider);
-    final buf = StringBuffer();
-    buf.writeln('SANITY CHECK: ${cfg.label}');
-
-    try {
-      // Count rows
-      final count = await db.customSelect(
-        'SELECT COUNT(*) as cnt FROM ${cfg.table}',
-        readsFrom: {
-          db.baseExercises
-        }, // minimal, we just need a table reference
-      ).getSingle();
-      buf.writeln('Total rows: ${count.data['cnt']}');
-
-      // Check for null PKs
-      final nullPks = await db.customSelect(
-        'SELECT COUNT(*) as cnt FROM ${cfg.table} WHERE ${cfg.pkCol} IS NULL',
-        readsFrom: {db.baseExercises},
-      ).getSingle();
-      if ((nullPks.data['cnt'] as int) > 0) {
-        buf.writeln('WARNING: ${nullPks.data['cnt']} rows with NULL PK');
-      }
-
-      // Check for orphaned FK references (basic)
-      buf.writeln('FK checks: see merge for cross-table validation');
-
-      buf.writeln('Status: OK');
-    } catch (e) {
-      debugPrint('DB.EDIT ERROR: $e');
-      buf.writeln('ERROR: $e');
-    }
-    return buf.toString();
   }
 
   // ── DOUBLE CONFIRM DIALOG ──
@@ -1264,7 +1226,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
             'UPDATE ${cfg.table} SET order_index = 0 WHERE order_index IS NULL');
         try {
           await db.customStatement(
-              'UPDATE ${cfg.table} SET timestamp = CAST(strftime(\"%s\", \"now\") * 1000 AS INTEGER) WHERE timestamp IS NULL');
+              'UPDATE ${cfg.table} SET timestamp = CAST(strftime("%s", "now") * 1000 AS INTEGER) WHERE timestamp IS NULL');
         } catch (_) {
           final now = DateTime.now().millisecondsSinceEpoch;
           await db.customStatement(
@@ -1374,7 +1336,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         // (We reconstruct via raw SQL since we have the column names)
         final nonIdCols = cols.where((c) => c != 'id').toList();
         final colDefs = <String>[];
-        for (final row in rows.take(1)) {
+        if (rows.isNotEmpty) {
           for (final col in nonIdCols) {
             // Determine type from PRAGMA table_info (reliable, not data-inferred)
             final pragmaTypes = _reindexPragmaTypes[cfg.table] ?? {};
@@ -1436,7 +1398,7 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
             'UPDATE ${cfg.table} SET order_index = 0 WHERE order_index IS NULL');
         try {
           await db.customStatement(
-              'UPDATE ${cfg.table} SET timestamp = CAST(strftime(\"%s\", \"now\") * 1000 AS INTEGER) WHERE timestamp IS NULL');
+              'UPDATE ${cfg.table} SET timestamp = CAST(strftime("%s", "now") * 1000 AS INTEGER) WHERE timestamp IS NULL');
         } catch (_) {
           // Fallback: set to current unix time in ms
           final now = DateTime.now().millisecondsSinceEpoch;

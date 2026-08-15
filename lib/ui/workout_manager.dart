@@ -272,8 +272,6 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
 
     final db = ref.watch(databaseProvider);
     final workoutAsync = ref.watch(workoutSetsProvider(widget.date));
-    final isToday = DateFormat('yyyy-MM-dd').format(widget.date) ==
-        DateFormat('yyyy-MM-dd').format(DateTime.now());
     final bw = ref.watch(bodyWeightAtDateProvider(widget.date)).value ?? 0.0;
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
@@ -1265,12 +1263,6 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
   // Each slice is self-contained (label, icon, color, action).
   // ═══════════════════════════════════════════════════════════════
 
-  Widget _buildSessionTimer(BuildContext context, WidgetRef ref) {
-    return EditableSessionTimer(
-        logProvider: currentWorkoutLogProvider,
-        tickProvider: timerTickProvider);
-  }
-
   Widget _buildEmptyState(BuildContext context, String lang) {
     return Center(
         child: Padding(
@@ -1622,94 +1614,6 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
     }
   }
 
-  Future<void> _injectBlueprint(WidgetRef ref, DateTime d, Blueprint b) async {
-    final db = ref.read(databaseProvider);
-    try {
-      final todayStart = DateTime(d.year, d.month, d.day);
-      final todayEnd = DateTime(d.year, d.month, d.day, 23, 59, 59);
-
-      final exs = await (db.select(db.blueprintExercises)
-            ..where((t) => t.blueprintId.equals(b.id))
-            ..orderBy([(t) => drift.OrderingTerm(expression: t.orderIndex)]))
-          .get();
-      if (exs.isEmpty) return;
-      final logs = await (db.select(db.workoutLogs)
-            ..where((t) => t.date.isBetweenValues(todayStart, todayEnd)))
-          .get();
-      int logId = logs.isEmpty
-          ? await db
-              .into(db.workoutLogs)
-              .insert(WorkoutLogsCompanion.insert(date: d))
-          : logs.first.id;
-
-      // Find current max orderIndex
-      final allSetsToday = await (db.select(db.workoutSets).join([
-        drift.innerJoin(
-            db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId))
-      ])
-            ..where(db.workoutLogs.date.isBetweenValues(todayStart, todayEnd)))
-          .get();
-
-      int currentMaxOrder = -1;
-      for (var row in allSetsToday) {
-        final s = row.readTable(db.workoutSets);
-        if (s.orderIndex > currentMaxOrder) currentMaxOrder = s.orderIndex;
-      }
-
-      for (var be in exs) {
-        currentMaxOrder++;
-        int sc = 1;
-        if (be.targetSetsReps != null) {
-          final pts = be.targetSetsReps!.toLowerCase().split('x');
-          if (pts.isNotEmpty) sc = int.tryParse(pts[0].trim()) ?? 1;
-        }
-
-        // Find exercise to get default toggles
-        final exerciseRows = await (db.select(db.baseExercises)
-              ..where((t) => t.id.equals(be.baseExerciseId)))
-            .get();
-        String? initialMetadata;
-        if (exerciseRows.isNotEmpty) {
-          final Map<String, dynamic> exerciseMeta =
-              exerciseRows.first.parsedComplexMetadata;
-          final List<dynamic> rawToggles =
-              exerciseMeta["particular_toggles"] ?? [];
-          final Map<String, bool> defaultToggles = {};
-          for (var t in rawToggles) {
-            if (t is Map && t["default"] == true) {
-              defaultToggles[t["name"] as String] = true;
-            }
-          }
-          if (defaultToggles.isNotEmpty)
-            initialMetadata = jsonEncode(defaultToggles);
-        }
-
-        for (int i = 0; i < sc; i++) {
-          await db.into(db.workoutSets).insert(WorkoutSetsCompanion.insert(
-              logId: logId,
-              baseExerciseId: be.baseExerciseId,
-              weight: 0,
-              reps: 0,
-              orderIndex: drift.Value(currentMaxOrder),
-              priority: drift.Value(be.priority),
-              complexMetadata: drift.Value(initialMetadata),
-              supersetGroupId: drift.Value(be.supersetGroupId),
-              supersetName: drift.Value(be.supersetName),
-              timestamp: drift.Value(DateTime(
-                      d.year,
-                      d.month,
-                      d.day,
-                      DateTime.now().hour,
-                      DateTime.now().minute,
-                      DateTime.now().second)
-                  .add(Duration(milliseconds: i)))));
-        }
-      }
-    } catch (e) {
-      debugPrint('$e');
-    }
-  }
-
   // ─── WORKOUT BLOCK INJECTION ─────────────────────────────────
   Future<void> _showWbPicker(WidgetRef ref, DateTime date) async {
     final lang = ref.read(languageProvider).value ?? 'en';
@@ -1717,7 +1621,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
     final wbList = await OvarchPlanInjectionService.activeWorkoutBlocks(db);
     if (wbList.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(this.context)
+        ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text('NO_WBS_CREATED')));
       }
       return;
@@ -1734,7 +1638,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
     }).toList();
 
     final picked = await showModalBottomSheet<String>(
-      context: this.context,
+      context: context,
       backgroundColor: LabColors.background,
       isScrollControlled: true,
       builder: (c) => QualitySearchPicker(
@@ -1748,7 +1652,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
 
     final selectedWb = labelToWb[picked];
     if (selectedWb == null) {
-      ScaffoldMessenger.of(this.context).showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('INVALID_WORKOUT_BLOCK_SELECTION')));
       return;
     }
@@ -1769,12 +1673,12 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
         .map((row) => (row.data['id'] as num).toInt())
         .toList(growable: false);
     if (knsIds.isEmpty) {
-      ScaffoldMessenger.of(this.context)
+      ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('WB_HAS_NO_KNS')));
       return;
     }
 
-    _showInjectConfig(this.context, ref, date, wbData, knsIds: knsIds);
+    _showInjectConfig(context, ref, date, wbData, knsIds: knsIds);
   }
 
   Future<_InjectOptions?> _showPlanDayInjectConfig(BuildContext context,
@@ -1955,7 +1859,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
       );
       _finishInjectionProgress();
       if (mounted) {
-        ScaffoldMessenger.of(this.context).showSnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('INJECTED: ${wbData['name']}')));
       }
     } catch (e, stackTrace) {
@@ -1963,7 +1867,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
       debugPrint('[INJECT_WB] $e');
       debugPrint('[INJECT_WB] STACK $stackTrace');
       if (mounted) {
-        ScaffoldMessenger.of(this.context)
+        ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('WB_INJECT_ERROR: $e')));
       }
     }
@@ -3644,61 +3548,6 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                 ]));
   }
 
-  Future<void> _copyPreviousWorkoutData() async {
-    final db = ref.read(databaseProvider);
-    final today =
-        DateTime(widget.date.year, widget.date.month, widget.date.day);
-
-    // 1. Find the most recent date before today for this exercise
-    final previousSessionRows = await (db.select(db.workoutSets).join([
-      drift.innerJoin(
-          db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId))
-    ])
-          ..where(db.workoutSets.baseExerciseId.equals(widget.exercise.id) &
-              db.workoutLogs.date.isSmallerThanValue(today))
-          ..orderBy([
-            drift.OrderingTerm.desc(db.workoutLogs.date),
-            drift.OrderingTerm.asc(db.workoutSets.orderIndex),
-            drift.OrderingTerm.asc(db.workoutSets.timestamp)
-          ]))
-        .get();
-
-    if (previousSessionRows.isEmpty) {
-      if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("NO_PREVIOUS_SESSION_FOUND")));
-      return;
-    }
-
-    // Group previous sets by their date to get ONLY the most recent one
-    final lastDate = previousSessionRows.first.readTable(db.workoutLogs).date;
-    final lastSets = previousSessionRows
-        .where((r) => r.readTable(db.workoutLogs).date == lastDate)
-        .toList();
-
-    // 2. Map current sets
-    final currentSets =
-        widget.results.map((r) => r.readTable(db.workoutSets)).toList();
-
-    // 3. Update today's sets with previous values
-    await db.transaction(() async {
-      for (int i = 0; i < currentSets.length; i++) {
-        if (i < lastSets.length) {
-          final prevSet = lastSets[i].readTable(db.workoutSets);
-          await (db.update(db.workoutSets)
-                ..where((t) => t.id.equals(currentSets[i].id)))
-              .write(WorkoutSetsCompanion(
-            weight: drift.Value(prevSet.weight),
-            reps: drift.Value(prevSet.reps),
-          ));
-        }
-      }
-    });
-
-    if (mounted)
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text("PREVIOUS_DATA_COPIED")));
-  }
 }
 
 class _WorkoutSetInstance extends ConsumerStatefulWidget {
@@ -3754,7 +3603,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   double _computeVp() {
     final isJst = widget.isJst;
     final isL = widget.loadType == 'LASTRE';
-    final isU = widget.loadType == 'UNMOVABLE';
     final w = isJst ? widget.bodyWeight : (double.tryParse(_lC.text) ?? 0);
     final tL = w + (isL ? widget.bodyWeight : 0);
     final reps = double.tryParse(_rC.text) ?? 0;
@@ -4099,38 +3947,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     );
   }
 
-  Widget _buildModalGridInput(
-      BuildContext context, String l, TextEditingController c) {
-    return Container(
-        decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey[800]!, width: 0.5)),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              color: LabColors.surfaceContainerHigh,
-              child: Text(l,
-                  textAlign: TextAlign.center,
-                  style: LabStyles.mono(context,
-                      fontSize: 8, color: Colors.grey))),
-          Container(
-              height: 44,
-              alignment: Alignment.center,
-              child: TextField(
-                  controller: c,
-                  keyboardType: TextInputType.number,
-                  textAlign: TextAlign.center,
-                  style: LabStyles.mono(context,
-                      fontSize: 20, color: Colors.white),
-                  decoration: const InputDecoration(
-                      border: InputBorder.none, isDense: true),
-                  textInputAction: TextInputAction.next,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  onChanged: (_) => _onChanged()))
-        ]));
-  }
-
   Widget _buildModCard(BuildContext context, String label, IconData icon,
       Color color, VoidCallback onTap) {
     return Material(
@@ -4151,40 +3967,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
         ),
       ),
     );
-  }
-
-  Future<void> _moveSetToExtreme(bool toTop) async {
-    final db = ref.read(databaseProvider);
-    final today = DateTime(widget.set.timestamp.year,
-        widget.set.timestamp.month, widget.set.timestamp.day);
-    final nextDay = today.add(const Duration(days: 1));
-    final sets = await (db.select(db.workoutSets)
-          ..where((t) =>
-              t.baseExerciseId.equals(widget.exercise.id) &
-              t.timestamp.isBetweenValues(today, nextDay))
-          ..orderBy([
-            (t) => drift.OrderingTerm.asc(t.orderIndex),
-            (t) => drift.OrderingTerm.asc(t.timestamp)
-          ]))
-        .get();
-
-    final currentIndex = sets.indexWhere((s) => s.id == widget.set.id);
-    if (currentIndex == -1) return;
-
-    final List<int> ids = sets.map((s) => s.id).toList();
-    final targetId = ids.removeAt(currentIndex);
-    if (toTop) {
-      ids.insert(0, targetId);
-    } else {
-      ids.add(targetId);
-    }
-
-    await db.transaction(() async {
-      for (int i = 0; i < ids.length; i++) {
-        await (db.update(db.workoutSets)..where((t) => t.id.equals(ids[i])))
-            .write(WorkoutSetsCompanion(orderIndex: drift.Value(i)));
-      }
-    });
   }
 
   @override
@@ -4512,70 +4294,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
         .write(WorkoutSetsCompanion(isCompleted: drift.Value(completed))));
   }
 
-  Widget _buildReorderColumn() {
-    return Container(
-      width: 32,
-      decoration: BoxDecoration(
-        border: Border(left: BorderSide(color: Colors.grey[800]!, width: 0.5)),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _buildReorderArrow(Icons.arrow_drop_up, -1),
-          _buildReorderArrow(Icons.arrow_drop_down, 1),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReorderArrow(IconData icon, int offset) {
-    return Expanded(
-      child: InkWell(
-        onTap: () => _moveSet(offset),
-        child: Icon(icon,
-            size: 16, color: LabColors.primary.withValues(alpha: 0.5)),
-      ),
-    );
-  }
-
-  Future<void> _moveSet(int direction) async {
-    final db = ref.read(databaseProvider);
-    final today = DateTime(widget.set.timestamp.year,
-        widget.set.timestamp.month, widget.set.timestamp.day);
-    final nextDay = today.add(const Duration(days: 1));
-    final sets = await (db.select(db.workoutSets)
-          ..where((t) =>
-              t.baseExerciseId.equals(widget.exercise.id) &
-              t.timestamp.isBetweenValues(today, nextDay))
-          ..orderBy([
-            (t) => drift.OrderingTerm.asc(t.orderIndex),
-            (t) => drift.OrderingTerm.asc(t.timestamp)
-          ]))
-        .get();
-
-    final currentIndex = sets.indexWhere((s) => s.id == widget.set.id);
-    if (currentIndex == -1) return;
-    final targetIndex = currentIndex + direction;
-    if (targetIndex < 0 || targetIndex >= sets.length) return;
-
-    final currentSet = sets[currentIndex];
-    final otherSet = sets[targetIndex];
-
-    int currentOrder =
-        currentSet.orderIndex == 0 ? currentIndex : currentSet.orderIndex;
-    int otherOrder =
-        otherSet.orderIndex == 0 ? targetIndex : otherSet.orderIndex;
-    if (currentOrder == otherOrder) {
-      currentOrder = currentIndex;
-      otherOrder = targetIndex;
-    }
-
-    await (db.update(db.workoutSets)..where((t) => t.id.equals(currentSet.id)))
-        .write(WorkoutSetsCompanion(orderIndex: drift.Value(otherOrder)));
-    await (db.update(db.workoutSets)..where((t) => t.id.equals(otherSet.id)))
-        .write(WorkoutSetsCompanion(orderIndex: drift.Value(currentOrder)));
-  }
-
   Widget _buildPRBox({int flex = 1, bool isRed = false}) {
     final hasPr = widget.set.isPr;
     final settings = ref.watch(themeSettingsProvider).value ?? {};
@@ -4585,7 +4303,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     final prColor = ref.read(themeControllerProvider).getColor(
         settings, 'UI_TAG_PR_HIGHLIGHT',
         defaultColor: const Color(0xFFE0242F));
-    const completedColor = Colors.greenAccent;
 
     return Expanded(
         flex: flex,
@@ -5891,7 +5608,7 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
                                                             width: 0.5),
                                                       ),
                                                       child: Text(
-                                                          '${setIntention}',
+                                                          setIntention as String,
                                                           style: LabStyles.mono(
                                                               context,
                                                               fontSize: 9,
@@ -5912,7 +5629,7 @@ class _WorkoutOptsSheetState extends ConsumerState<_WorkoutOptsSheet> {
                                                       const EdgeInsets.only(
                                                           bottom: 4),
                                                   child: Text(
-                                                      'P.LOAD: ${pload}',
+                                                      'P.LOAD: $pload',
                                                       style: LabStyles.mono(
                                                           context,
                                                           fontSize: 10,

@@ -227,7 +227,7 @@ class ExportService {
     final a = DateFormat('ddMMyy').format(sorted.first);
     final b = DateFormat('ddMMyy').format(sorted.last);
     if (a == b) return "WOLOG_$a.$extension";
-    return "WOLOG_${a}_${b}.$extension";
+    return "WOLOG_${a}_$b.$extension";
   }
 
   static Future<Map<String, double>> _batchFetchBodyweights(

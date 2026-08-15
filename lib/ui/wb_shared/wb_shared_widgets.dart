@@ -808,11 +808,6 @@ class _ExerciseSearchPickerState extends ConsumerState<ExerciseSearchPicker> {
     required VoidCallback onClear,
   }) {
     final isActive = currentValue != null;
-    // Autocomplete options
-    final options = suggestions
-        .where((s) => s.toLowerCase().contains(controller.text.toLowerCase()))
-        .toList()
-      ..sort();
 
     return Expanded(
       child: Container(

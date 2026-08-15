@@ -456,7 +456,6 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
           details.when(
             data: (rows) {
               if (rows.isEmpty) return Center(child: Padding(padding: const EdgeInsets.all(16), child: Text("NO_REPORTS_FOUND", style: LabStyles.mono(context, color: Colors.grey, fontSize: 10))));
-              final db = ref.read(databaseProvider);
               return Column(
                 children: rows.map((row) {
                   final description = row.data['description'] as String? ?? '';

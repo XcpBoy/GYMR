@@ -206,7 +206,6 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
 
         final eORM = WorkoutCalculator.calculateEpley1RM(totalLoad, set.reps);
         final fullName = ex.fullName;
-        final fatigue = set.restTimeSeconds != null ? (set.restTimeSeconds! / 10).toStringAsFixed(1) : "-";
         final tech = set.technique?.toString() ?? "-";
         final isRed = (set.trackName ?? "").contains('[RED_PR]');
 
