@@ -29,6 +29,7 @@ const List<_ConfigToggle> _cwoToggles = [
 const List<_ConfigToggle> _editExerciseToggles = [
   _ConfigToggle("SECONDARY MUSCLE", "APPCFG_SHOW_SECONDARY_MUSCLE"),
   _ConfigToggle("PATTERN TYPE", "APPCFG_SHOW_PATTERN_TYPE"),
+  _ConfigToggle("PURPOSE / INTENTION", "APPCFG_SHOW_PURPOSE"),
   _ConfigToggle("TYPE OF TISSUE", "APPCFG_SHOW_TISSUE_TYPE"),
   _ConfigToggle("NAME OF TISSUE", "APPCFG_SHOW_TISSUE_NAME"),
   _ConfigToggle("PHASES", "APPCFG_SHOW_PHASES"),

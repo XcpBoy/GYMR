@@ -498,6 +498,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     final tC = ref.read(themeControllerProvider);
     final showSecondaryMuscle = tC.getBool(settings, 'APPCFG_SHOW_SECONDARY_MUSCLE', defaultValue: true);
     final showPatternType = tC.getBool(settings, 'APPCFG_SHOW_PATTERN_TYPE', defaultValue: true);
+    final showPurpose = tC.getBool(settings, 'APPCFG_SHOW_PURPOSE', defaultValue: true);
     final showTissueType = tC.getBool(settings, 'APPCFG_SHOW_TISSUE_TYPE', defaultValue: true);
     final showTissueName = tC.getBool(settings, 'APPCFG_SHOW_TISSUE_NAME', defaultValue: true);
     final showPhases = tC.getBool(settings, 'APPCFG_SHOW_PHASES', defaultValue: true);
@@ -587,12 +588,12 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
                 _buildSearchableField(tr(lang, 'Secondary Muscle'), _secondaryMuscleController, 'muscle'),
               ],
 
-              const SizedBox(height: 32),
-              if (showPatternType) ...[
-                _buildSearchableField(tr(lang, 'Pattern Type'), _patternTypeController, 'pattern'),
-                const SizedBox(height: 16),
+              if (showPatternType || showPurpose) ...[
+                const SizedBox(height: 32),
+                if (showPatternType) _buildSearchableField(tr(lang, 'Pattern Type'), _patternTypeController, 'pattern'),
+                if (showPatternType && showPurpose) const SizedBox(height: 16),
+                if (showPurpose) _buildSearchableField(tr(lang, 'Purpose / Intention'), _intentionController, 'purpose'),
               ],
-              _buildSearchableField(tr(lang, 'Purpose / Intention'), _intentionController, 'purpose'),
 
               if (showTissueType || showTissueName) ...[
                 const SizedBox(height: 32),
