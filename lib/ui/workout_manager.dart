@@ -3595,7 +3595,8 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
       _rpeC,
       _rirC,
       _techC,
-      _assistC;
+      _assistC,
+      _assistTypeC;
   Timer? _db;
   Timer? _prDb;
   bool _exp = false;
@@ -3613,19 +3614,23 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     return value.toString();
   }
 
-  // Effective bodyweight for a JST.BW set, after subtracting the assisted
-  // amount (assisted pull-up/dip machine, band, etc.). Never negative.
-  double _effectiveBodyWeight() {
-    if (!_isAssisted) return widget.bodyWeight;
+  // Subtracts the assisted amount (assisted pull-up/dip machine, band,
+  // etc.) from a raw load value. Works for any NAT.LOAD type: for JST.BW
+  // pass bodyweight, for everything else pass the typed weight - the
+  // subtraction happens before LASTRE/UNMOVABLE add bodyweight back in
+  // elsewhere, so it still nets out correctly. Never negative.
+  double _applyAssistance(double raw) {
+    if (!_isAssisted) return raw;
     final assist = double.tryParse(_assistC.text) ?? 0;
-    final eff = widget.bodyWeight - assist;
+    final eff = raw - assist;
     return eff < 0 ? 0 : eff;
   }
 
   double _computeVp() {
     final isJst = widget.isJst;
     final isL = widget.loadType == 'LASTRE';
-    final w = isJst ? _effectiveBodyWeight() : (double.tryParse(_lC.text) ?? 0);
+    final w = _applyAssistance(
+        isJst ? widget.bodyWeight : (double.tryParse(_lC.text) ?? 0));
     final tL = w + (isL ? widget.bodyWeight : 0);
     final reps = double.tryParse(_rC.text) ?? 0;
     final tonnage = tL * reps;
@@ -3650,6 +3655,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
         text: widget.set.assistanceValue != null
             ? _formatInputValue(widget.set.assistanceValue!)
             : '');
+    _assistTypeC = TextEditingController(text: widget.set.assistanceType ?? '');
 
     if (widget.isJst) {
       _lC.text = _formatInputValue(widget.bodyWeight);
@@ -3678,6 +3684,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     _rirC.dispose();
     _techC.dispose();
     _assistC.dispose();
+    _assistTypeC.dispose();
     super.dispose();
   }
 
@@ -3727,11 +3734,14 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     final te = int.tryParse(_techC.text);
     final isJst = widget.isJst;
 
-    final actualWeight = isJst ? _effectiveBodyWeight() : w;
+    final actualWeight = _applyAssistance(isJst ? widget.bodyWeight : w);
     final rest = widget.set.restTimeSeconds ?? 120;
     final track = (widget.set.trackName ?? '').replaceFirst('[RED_PR]', '').trim();
     final assistValue =
         _isAssisted ? (double.tryParse(_assistC.text) ?? 0) : null;
+    final assistType = _isAssisted && _assistTypeC.text.trim().isNotEmpty
+        ? _assistTypeC.text.trim().toUpperCase()
+        : null;
 
     await (db.update(db.workoutSets)..where((t) => t.id.equals(widget.set.id)))
         .write(WorkoutSetsCompanion(
@@ -3743,6 +3753,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
       technique: drift.Value(te),
       trackName: drift.Value(track.isEmpty ? null : track),
       assistanceValue: drift.Value(assistValue),
+      assistanceType: drift.Value(assistType),
       // notes intentionally omitted — GeneralNotesModule now owns writes to
       // this column independently (multi-note, its own debounce).
     ));
@@ -3763,7 +3774,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
 
     final today = DateTime(widget.set.timestamp.year,
         widget.set.timestamp.month, widget.set.timestamp.day);
-    final actualWeight = isJst ? _effectiveBodyWeight() : w;
+    final actualWeight = _applyAssistance(isJst ? widget.bodyWeight : w);
 
     final histBefore = await (db.select(db.workoutSets).join([
       drift.innerJoin(
@@ -4125,10 +4136,8 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                 ),
               ),
             ),
-            if (widget.isJst) ...[
-              const SizedBox(height: 8),
-              _buildAssistedRow(),
-            ],
+            const SizedBox(height: 8),
+            _buildAssistedRow(),
             const SizedBox(height: 12),
             _buildSomaticCard(),
             const SizedBox(height: 8),
@@ -4438,36 +4447,89 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
         color: LabColors.surfaceContainerLow,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text('ASSISTED', style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
-          const Spacer(),
-          Switch.adaptive(
-            value: _isAssisted,
-            activeColor: LabColors.primary,
-            onChanged: (v) => setState(() {
-              _isAssisted = v;
-              if (!v) _assistC.clear();
-              _onChanged();
-            }),
+          Row(
+            children: [
+              Text('ASSISTED', style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
+              const Spacer(),
+              Switch.adaptive(
+                value: _isAssisted,
+                activeColor: LabColors.primary,
+                onChanged: (v) => setState(() {
+                  _isAssisted = v;
+                  if (!v) {
+                    _assistC.clear();
+                    _assistTypeC.clear();
+                  }
+                  _onChanged();
+                }),
+              ),
+              if (_isAssisted) ...[
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 60,
+                  height: 36,
+                  child: TextField(
+                    controller: _assistC,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    textAlign: TextAlign.center,
+                    style: LabStyles.mono(context, fontSize: 14, color: Colors.white),
+                    decoration: const InputDecoration(
+                        border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6)),
+                    onChanged: (_) => _onChanged(),
+                  ),
+                ),
+              ],
+            ],
           ),
           if (_isAssisted) ...[
-            const SizedBox(width: 8),
-            SizedBox(
-              width: 60,
-              height: 36,
-              child: TextField(
-                controller: _assistC,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                textAlign: TextAlign.center,
-                style: LabStyles.mono(context, fontSize: 14, color: Colors.white),
-                decoration: const InputDecoration(
-                    border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(vertical: 6)),
-                onChanged: (_) => _onChanged(),
-              ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _assistTypeC,
+                    textAlign: TextAlign.start,
+                    style: LabStyles.mono(context, fontSize: 11, color: Colors.white),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                      hintText: 'ASSISTANCE_TYPE (E.G: BAND, MACHINE)',
+                      hintStyle: LabStyles.mono(context, fontSize: 8, color: Colors.grey[600]),
+                    ),
+                    onChanged: (_) => _onChanged(),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.manage_search, color: LabColors.primary, size: 20),
+                  onPressed: () => _showAssistanceTypeOverlay(context),
+                ),
+              ],
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  void _showAssistanceTypeOverlay(BuildContext context) async {
+    final db = ref.read(databaseProvider);
+    final rows = await db.customSelect(
+      'SELECT DISTINCT assistance_type FROM workout_sets WHERE assistance_type IS NOT NULL AND assistance_type != \'\'',
+    ).get();
+    final values = rows.map((r) => r.data['assistance_type'] as String).toList()..sort();
+    if (!mounted || !context.mounted) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: LabColors.background,
+      isScrollControlled: true,
+      builder: (c) => QualitySearchPicker(
+        title: "EXISTING_ASSISTANCE_TYPES",
+        values: values,
+        onSelected: (val) => setState(() => _assistTypeC.text = val),
       ),
     );
   }

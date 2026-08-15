@@ -115,8 +115,12 @@ class WorkoutSets extends Table {
   TextColumn get supersetGroupId => text().nullable()();
   TextColumn get supersetName => text().nullable()();
   // Assisted-training input (e.g. assisted pull-up/dip machine or band):
-  // amount subtracted from bodyweight on JST.BW sets. Null = not assisted.
+  // amount subtracted from the set's effective load, for any NAT.LOAD
+  // type. Null = not assisted.
   RealColumn get assistanceValue => real().nullable()();
+  // Free-text, searchable-across-past-sets label for what kind of
+  // assistance was used (e.g. "BAND", "MACHINE", "PARTNER").
+  TextColumn get assistanceType => text().nullable()();
 }
 
 // --- Somatic Feedback ---
@@ -306,7 +310,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 31;
+  int get schemaVersion => 32;
 
   // --- Bidirectional Relational Integrity ---
 
@@ -602,6 +606,15 @@ class AppDatabase extends _$AppDatabase {
           try {
             await customStatement(
                 'ALTER TABLE workout_sets ADD COLUMN assistance_value REAL');
+          } catch (_) {}
+        }
+
+        if (from < 32) {
+          // PNDEV: Assisted KNS Input v2 - available on every NAT.LOAD type
+          // now (not just JST.BW) + a searchable assistance-type label.
+          try {
+            await customStatement(
+                'ALTER TABLE workout_sets ADD COLUMN assistance_type TEXT');
           } catch (_) {}
         }
 
