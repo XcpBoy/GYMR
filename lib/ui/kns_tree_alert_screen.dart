@@ -7,26 +7,23 @@ import 'styles.dart';
 import 'main_scaffold.dart';
 import 'exercise_form_screen.dart';
 
-// One flagged problem for one exercise: either an incomplete field or a
-// broken relational link (progressions/regressions/alters pointing at a
-// name that doesn't exist, or missing the reciprocal entry on the other
-// side).
+// One broken relational link for one exercise: progressions/regressions/
+// alters pointing at a name that doesn't exist, or missing the reciprocal
+// entry on the other side.
 class _Issue {
   final BaseExercise exercise;
   final String label;
   const _Issue(this.exercise, this.label);
 }
 
-class KnsStandardizationScreen extends ConsumerStatefulWidget {
-  const KnsStandardizationScreen({super.key});
+class KnsTreeAlertScreen extends ConsumerStatefulWidget {
+  const KnsTreeAlertScreen({super.key});
 
   @override
-  ConsumerState<KnsStandardizationScreen> createState() =>
-      _KnsStandardizationScreenState();
+  ConsumerState<KnsTreeAlertScreen> createState() => _KnsTreeAlertScreenState();
 }
 
-class _KnsStandardizationScreenState
-    extends ConsumerState<KnsStandardizationScreen> {
+class _KnsTreeAlertScreenState extends ConsumerState<KnsTreeAlertScreen> {
   static const Map<String, String> _reciprocal = {
     "progressions": "regressions",
     "regressions": "progressions",
@@ -38,24 +35,6 @@ class _KnsStandardizationScreenState
     final issues = <_Issue>[];
 
     for (final e in exercises) {
-      // ── Incomplete fields ──
-      if ((e.primaryMuscleGroup ?? '').trim().isEmpty) {
-        issues.add(_Issue(e, 'MISSING_PRIMARY_MUSCLE'));
-      }
-      if ((e.field ?? '').trim().isEmpty) {
-        issues.add(_Issue(e, 'MISSING_FIELD'));
-      }
-      if ((e.patternType ?? '').trim().isEmpty) {
-        issues.add(_Issue(e, 'MISSING_PATTERN_TYPE'));
-      }
-      final intentionText = e.intention ?? '';
-      final hasLoadNature =
-          RegExp(r'\[NT:(.*)\|ISO:(.*)\]').hasMatch(intentionText);
-      if (!hasLoadNature) {
-        issues.add(_Issue(e, 'MISSING_LOAD_NATURE'));
-      }
-
-      // ── Relational integrity ──
       final meta = e.parsedComplexMetadata;
       for (final category in _reciprocal.keys) {
         final targets = List<String>.from(meta[category] ?? []);
@@ -88,7 +67,7 @@ class _KnsStandardizationScreenState
     final db = ref.watch(databaseProvider);
 
     return MainScaffold(
-      title: 'KNS.BACKLOG',
+      title: 'KNS.TREE.ALERT',
       body: StreamBuilder<List<BaseExercise>>(
         stream: db.select(db.baseExercises).watch(),
         builder: (context, snap) {
@@ -110,7 +89,7 @@ class _KnsStandardizationScreenState
                   children: [
                     const Icon(Icons.check_circle, color: Colors.greenAccent, size: 40),
                     const SizedBox(height: 12),
-                    Text('NO_ISSUES_FOUND',
+                    Text('NO_TREE_ISSUES_FOUND',
                         style: LabStyles.mono(context, color: Colors.grey, fontSize: 11)),
                   ],
                 ),
@@ -125,7 +104,7 @@ class _KnsStandardizationScreenState
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 color: Colors.redAccent.withValues(alpha: 0.08),
                 child: Text(
-                    '${issues.length} ISSUES ACROSS $flaggedCount MOVEMENTS',
+                    '${issues.length} BROKEN LINKS ACROSS $flaggedCount MOVEMENTS',
                     style: LabStyles.mono(context,
                         fontSize: 10, color: Colors.redAccent, fontWeight: FontWeight.bold)),
               ),

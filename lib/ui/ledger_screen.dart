@@ -12,7 +12,7 @@ import 'main_scaffold.dart';
 import 'exercise_form_screen.dart';
 import 'exercise_history_screen.dart';
 import 'kinisi_tree_screen.dart';
-import 'kns_standardization_screen.dart';
+import 'kns_tree_alert_screen.dart';
 
 enum _SortMode { alphaAsc, alphaDesc, mostUsed, leastUsed, mostRecent, leastRecent, unusedFirst }
 
@@ -163,14 +163,6 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
     return MainScaffold(
       title: 'KINISI INVENTORY',
       screenKey: 'LEDGER',
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.fact_check_outlined, color: LabColors.accent),
-          tooltip: 'KNS.BACKLOG',
-          onPressed: () => Navigator.push(context,
-              MaterialPageRoute(builder: (c) => const KnsStandardizationScreen())),
-        ),
-      ],
       body: Column(
         children: [
           Padding(
@@ -223,13 +215,63 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.black,
-        shape: const RoundedRectangleBorder(side: BorderSide(color: LabColors.accent, width: 0.5)),
-        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ExerciseFormScreen())),
-        child: const Icon(Icons.add, color: LabColors.accent, size: 32),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton(
+            heroTag: 'kns_config_data_fab',
+            mini: true,
+            backgroundColor: Colors.black,
+            shape: const RoundedRectangleBorder(side: BorderSide(color: LabColors.accent, width: 0.5)),
+            tooltip: 'KNS.CONFIG / DATA',
+            onPressed: () => _showKnsConfigMenu(context),
+            child: const Icon(Icons.tune, color: LabColors.accent, size: 20),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton(
+            heroTag: 'add_exercise_fab',
+            backgroundColor: Colors.black,
+            shape: const RoundedRectangleBorder(side: BorderSide(color: LabColors.accent, width: 0.5)),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const ExerciseFormScreen())),
+            child: const Icon(Icons.add, color: LabColors.accent, size: 32),
+          ),
+        ],
       ),
       bottomNavigationBar: const LabFooter(),
+    );
+  }
+
+  void _showKnsConfigMenu(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: LabColors.background,
+      isScrollControlled: true,
+      builder: (c) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('KNS.CONFIG / DATA',
+                  style: LabStyles.headline(context).copyWith(fontSize: 14)),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.account_tree_outlined, color: LabColors.accent),
+                title: Text('TREE.ALERT',
+                    style: LabStyles.mono(context, fontSize: 12, color: Colors.white)),
+                subtitle: Text('Broken progression/regression/alter links',
+                    style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
+                onTap: () {
+                  Navigator.pop(c);
+                  Navigator.push(context,
+                      MaterialPageRoute(builder: (ctx) => const KnsTreeAlertScreen()));
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
