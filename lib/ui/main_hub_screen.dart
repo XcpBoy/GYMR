@@ -12,7 +12,6 @@ import 'charts/performance_dashboard.dart';
 import 'timeline_screen.dart';
 import 'theme_modding_screen.dart';
 import 'nexus_screen.dart';
-import 'pr_logic_screen.dart';
 import 'db_inspector_screen.dart';
 import 'ovarch_plan_screen.dart';
 import 'somatic_spectrum_screen.dart' as somatic;

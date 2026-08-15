@@ -1,9 +1,6 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:drift/drift.dart' as drift;
-import '../providers/database_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/charts_provider.dart';
 import '../logic/chart_models.dart';

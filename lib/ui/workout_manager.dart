@@ -14,7 +14,6 @@ import '../services/ovarch_plan_injection_service.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
-import 'complex_metadata_screen.dart';
 import 'exercise_history_screen.dart';
 import 'exercise_form_screen.dart';
 import 'wb_shared/wb_shared_widgets.dart';

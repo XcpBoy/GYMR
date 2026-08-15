@@ -9,7 +9,6 @@ import '../providers/theme_provider.dart';
 import '../database/database.dart';
 import '../localization/strings.dart';
 import 'styles.dart';
-import 'lab_widgets.dart';
 import 'main_scaffold.dart';
 
 // ═══════════════════════════════════════════════════════════════

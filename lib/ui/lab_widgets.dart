@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/theme_provider.dart';
-import '../database/database.dart';
 import '../localization/strings.dart';
 import 'styles.dart';
 import 'home_screen.dart';

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' as drift;
 
 import '../providers/database_provider.dart';
-import '../database/database.dart';
 import 'styles.dart';
 import 'main_scaffold.dart';
 
