@@ -603,9 +603,11 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
   // Lets the user drag-reorder the pieces fullName assembles from, per
   // exercise. Defaults to kDefaultNamePieceOrder (see database.dart) until
   // touched.
-  // Space-joined text of the "shown in name" items in [controllers], same
-  // rule fullName uses at save time (BaseExerciseExtension._activeText).
-  String _activePieceText(List<TextEditingController> controllers, List<bool> showFlags) {
+  // Individual "shown in name" item values in [controllers] (one entry per
+  // item, NOT joined into a single string - a piece can hold an arbitrary
+  // number of strings, e.g. BODY_POSITION "HIGH" + "WIDE GRIP", and each
+  // should render as its own line).
+  List<String> _activePieceValues(List<TextEditingController> controllers, List<bool> showFlags) {
     final parts = <String>[];
     for (int i = 0; i < controllers.length; i++) {
       if (i < showFlags.length && showFlags[i]) {
@@ -613,32 +615,33 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
         if (t.isNotEmpty) parts.add(t);
       }
     }
-    return parts.join(' ');
+    return parts;
   }
 
-  String _pieceDisplayText(String key) {
+  List<String> _pieceDisplayValues(String key) {
     switch (key) {
       case 'NAME':
-        return _nameController.text.trim();
+        final t = _nameController.text.trim();
+        return t.isEmpty ? const [] : [t];
       case 'BODY_POSITION':
-        return _activePieceText(_bodyPositionControllers, _bodyPositionShowInName);
+        return _activePieceValues(_bodyPositionControllers, _bodyPositionShowInName);
       case 'IMPLEMENTS':
-        return _activePieceText(_implementControllers, _implementShowInName);
+        return _activePieceValues(_implementControllers, _implementShowInName);
       case 'PREFIXES':
-        return _activePieceText(_prefixControllers, _prefixShowInName);
+        return _activePieceValues(_prefixControllers, _prefixShowInName);
       case 'SUFFIXES':
-        return _activePieceText(_suffixControllers, _suffixShowInName);
+        return _activePieceValues(_suffixControllers, _suffixShowInName);
       case 'ASSISTANCE':
-        return _activePieceText(_assistanceControllers, _assistanceShowInName);
+        return _activePieceValues(_assistanceControllers, _assistanceShowInName);
       default:
-        return '';
+        return const [];
     }
   }
 
   Widget _buildNomenclatureControl(Map<String, ThemeSetting> settings, ThemeController tC) {
     // Only pieces that actually have something to show in the assembled
     // name are worth reordering - an empty piece has nothing to move.
-    final visiblePieces = _nameOrder.where((k) => _pieceDisplayText(k).isNotEmpty).toList();
+    final visiblePieces = _nameOrder.where((k) => _pieceDisplayValues(k).isNotEmpty).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Text('DRAG_TO_REORDER_NAME_PIECES', style: LabStyles.mono(context, fontSize: 7, color: Colors.grey[600])),
@@ -669,14 +672,23 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
               color: color.withValues(alpha: 0.08),
               border: Border.all(color: color.withValues(alpha: 0.4), width: 0.5),
             ),
-            child: Row(children: [
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('${index + 1}.', style: LabStyles.mono(context, fontSize: 10, color: color, fontWeight: FontWeight.bold)),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(_pieceDisplayText(piece).toUpperCase(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: LabStyles.mono(context, fontSize: 10, color: color, fontWeight: FontWeight.bold)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: _pieceDisplayValues(piece)
+                      .map((v) => Padding(
+                            padding: const EdgeInsets.only(bottom: 2),
+                            child: Text(v.toUpperCase(),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: LabStyles.mono(context, fontSize: 10, color: color, fontWeight: FontWeight.bold)),
+                          ))
+                      .toList(),
+                ),
               ),
               ReorderableDragStartListener(index: index, child: Icon(Icons.drag_handle, color: color.withValues(alpha: 0.6), size: 18)),
             ]),
@@ -686,7 +698,7 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
           final draggedKey = visiblePieces[oldIndex];
           if (newIndex > oldIndex) newIndex--;
           _nameOrder.remove(draggedKey);
-          final remainingVisible = _nameOrder.where((k) => _pieceDisplayText(k).isNotEmpty).toList();
+          final remainingVisible = _nameOrder.where((k) => _pieceDisplayValues(k).isNotEmpty).toList();
           if (newIndex >= remainingVisible.length) {
             _nameOrder.add(draggedKey);
           } else {
