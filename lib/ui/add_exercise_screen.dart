@@ -217,7 +217,7 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
             prefixes: drift.Value(preJson),
             suffixes: drift.Value(sufJson),
             assistanceTypes: drift.Value(assistJson),
-            nameOrder: drift.Value(jsonEncode(_nameOrder)),
+            nameOrder: drift.Value(jsonEncode(_reconcileNameOrder(_nameOrder, _liveNameTokens()))),
             numPhases: drift.Value(int.tryParse(_numPhasesController.text) ?? 1),
             phaseDescriptions: drift.Value(jsonEncode(metadata)),
             complexMetadata: drift.Value(jsonEncode({..._complexMetadata, "classification": _classification, "description": _descriptionController.text.trim(), "vpMultiplier": double.tryParse(_vpMultiplierController.text) ?? 1.0})),
@@ -596,106 +596,136 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     ]);
   }
 
-  // Individual "shown in name" item values in [controllers] (one entry per
-  // item, NOT joined into a single string - a piece can hold an arbitrary
-  // number of strings, e.g. BODY_POSITION "HIGH" + "WIDE GRIP", and each
-  // should render as its own line).
-  List<String> _activePieceValues(List<TextEditingController> controllers, List<bool> showFlags) {
-    final parts = <String>[];
-    for (int i = 0; i < controllers.length; i++) {
-      if (i < showFlags.length && showFlags[i]) {
-        final t = controllers[i].text.trim();
-        if (t.isNotEmpty) parts.add(t);
+  List<String> _liveNameTokens() {
+    final tokens = <String>[];
+    void addTokens(String piece, List<TextEditingController> ctrls, List<bool> show) {
+      for (int i = 0; i < ctrls.length; i++) {
+        if (i < show.length && show[i] && ctrls[i].text.trim().isNotEmpty) {
+          tokens.add('$piece::$i');
+        }
       }
     }
-    return parts;
+    for (final piece in kDefaultNamePieceOrder) {
+      switch (piece) {
+        case 'NAME':
+          if (_nameController.text.trim().isNotEmpty) tokens.add('NAME::0');
+          break;
+        case 'BODY_POSITION':
+          addTokens('BODY_POSITION', _bodyPositionControllers, _bodyPositionShowInName);
+          break;
+        case 'IMPLEMENTS':
+          addTokens('IMPLEMENTS', _implementControllers, _implementShowInName);
+          break;
+        case 'PREFIXES':
+          addTokens('PREFIXES', _prefixControllers, _prefixShowInName);
+          break;
+        case 'SUFFIXES':
+          addTokens('SUFFIXES', _suffixControllers, _suffixShowInName);
+          break;
+        case 'ASSISTANCE':
+          addTokens('ASSISTANCE', _assistanceControllers, _assistanceShowInName);
+          break;
+      }
+    }
+    return tokens;
   }
 
-  List<String> _pieceDisplayValues(String key) {
-    switch (key) {
-      case 'NAME':
-        final t = _nameController.text.trim();
-        return t.isEmpty ? const [] : [t];
-      case 'BODY_POSITION':
-        return _activePieceValues(_bodyPositionControllers, _bodyPositionShowInName);
-      case 'IMPLEMENTS':
-        return _activePieceValues(_implementControllers, _implementShowInName);
-      case 'PREFIXES':
-        return _activePieceValues(_prefixControllers, _prefixShowInName);
-      case 'SUFFIXES':
-        return _activePieceValues(_suffixControllers, _suffixShowInName);
-      case 'ASSISTANCE':
-        return _activePieceValues(_assistanceControllers, _assistanceShowInName);
-      default:
-        return const [];
+  List<String> _reconcileNameOrder(List<String> stored, List<String> live) {
+    final liveSet = live.toSet();
+    final storedSet = stored.toSet();
+    final result = <String>[];
+    for (final t in stored) {
+      if (liveSet.contains(t)) result.add(t);
     }
+    for (final t in live) {
+      if (!storedSet.contains(t)) result.add(t);
+    }
+    return result;
+  }
+
+  String _tokenPiece(String token) => token.split('::')[0];
+  int _tokenIndex(String token) => int.parse(token.split('::')[1]);
+
+  String _tokenText(String token) {
+    final piece = _tokenPiece(token);
+    final idx = _tokenIndex(token);
+    List<TextEditingController>? ctrls;
+    switch (piece) {
+      case 'NAME':
+        return _nameController.text.trim();
+      case 'BODY_POSITION':
+        ctrls = _bodyPositionControllers;
+        break;
+      case 'IMPLEMENTS':
+        ctrls = _implementControllers;
+        break;
+      case 'PREFIXES':
+        ctrls = _prefixControllers;
+        break;
+      case 'SUFFIXES':
+        ctrls = _suffixControllers;
+        break;
+      case 'ASSISTANCE':
+        ctrls = _assistanceControllers;
+        break;
+    }
+    if (ctrls == null || idx >= ctrls.length) return '';
+    return ctrls[idx].text.trim();
   }
 
   Widget _buildNomenclatureControl(Map<String, ThemeSetting> settings, ThemeController tC) {
-    final visiblePieces = _nameOrder.where((k) => _pieceDisplayValues(k).isNotEmpty).toList();
+    final order = _reconcileNameOrder(_nameOrder, _liveNameTokens());
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Text('DRAG_TO_REORDER_NAME_PIECES', style: LabStyles.mono(context, fontSize: 7, color: Colors.grey[600])),
+        Text('DRAG_TO_REORDER_NAME_STRINGS', style: LabStyles.mono(context, fontSize: 7, color: Colors.grey[600])),
         IconButton(
           icon: Icon(Icons.restart_alt, color: Colors.grey[400], size: 18),
           tooltip: 'RESET_DEFAULT_ORDER',
-          onPressed: () => setState(() => _nameOrder = List<String>.from(kDefaultNamePieceOrder)),
+          onPressed: () => setState(() => _nameOrder = []),
         ),
       ]),
       const SizedBox(height: 4),
-      if (visiblePieces.isEmpty)
+      if (order.isEmpty)
         Text('NOTHING_TO_REORDER_YET', style: LabStyles.mono(context, fontSize: 8, color: Colors.grey[700])),
       ReorderableListView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         buildDefaultDragHandles: false,
-        itemCount: visiblePieces.length,
+        itemCount: order.length,
         itemBuilder: (context, index) {
-          final piece = visiblePieces[index];
+          final token = order[index];
+          final piece = _tokenPiece(token);
           final color = tC.getColor(settings, 'NOMENCLATURE_$piece',
               defaultColor: kNomenclaturePieceDefaults[piece] ?? LabColors.primary,
               nameSeed: piece);
           return Container(
-            key: ValueKey('nameorder_$piece'),
+            key: ValueKey('nameorder_$token'),
             margin: const EdgeInsets.only(bottom: 6),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.08),
               border: Border.all(color: color.withValues(alpha: 0.4), width: 0.5),
             ),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child: Row(children: [
               Text('${index + 1}.', style: LabStyles.mono(context, fontSize: 10, color: color, fontWeight: FontWeight.bold)),
               const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: _pieceDisplayValues(piece)
-                      .map((v) => Padding(
-                            padding: const EdgeInsets.only(bottom: 2),
-                            child: Text(v.toUpperCase(),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: LabStyles.mono(context, fontSize: 10, color: color, fontWeight: FontWeight.bold)),
-                          ))
-                      .toList(),
-                ),
+                child: Text(_tokenText(token).toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: LabStyles.mono(context, fontSize: 10, color: color, fontWeight: FontWeight.bold)),
               ),
               ReorderableDragStartListener(index: index, child: Icon(Icons.drag_handle, color: color.withValues(alpha: 0.6), size: 18)),
             ]),
           );
         },
         onReorder: (oldIndex, newIndex) => setState(() {
-          final draggedKey = visiblePieces[oldIndex];
+          final dragged = order[oldIndex];
           if (newIndex > oldIndex) newIndex--;
-          _nameOrder.remove(draggedKey);
-          final remainingVisible = _nameOrder.where((k) => _pieceDisplayValues(k).isNotEmpty).toList();
-          if (newIndex >= remainingVisible.length) {
-            _nameOrder.add(draggedKey);
-          } else {
-            final anchorKey = remainingVisible[newIndex];
-            _nameOrder.insert(_nameOrder.indexOf(anchorKey), draggedKey);
-          }
+          final reordered = List<String>.from(order);
+          reordered.removeAt(oldIndex);
+          reordered.insert(newIndex, dragged);
+          _nameOrder = reordered;
         }),
       ),
     ]);

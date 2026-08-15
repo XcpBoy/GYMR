@@ -936,44 +936,91 @@ extension BaseExerciseExtension on BaseExercise {
         .toList();
   }
 
-  // Custom per-exercise assembly order for fullName's pieces. Falls back to
-  // kDefaultNamePieceOrder when nameOrder is null/blank/malformed, or when
-  // it doesn't contain exactly the known piece keys (e.g. an older build's
-  // data, or a future piece added after this exercise saved its order).
-  List<String> get nameOrderResolved {
-    if (nameOrder == null || nameOrder!.isEmpty) return kDefaultNamePieceOrder;
-    try {
-      final List<dynamic> decoded = jsonDecode(nameOrder!);
-      final list = decoded.map((e) => e.toString()).toList();
-      if (list.length == kDefaultNamePieceOrder.length &&
-          list.toSet().containsAll(kDefaultNamePieceOrder)) {
-        return list;
+  // Every individual nomenclature-piece STRING gets its own reorder token,
+  // "<PIECE>::<indexWithinThatPiece'sArray>" (e.g. "BODY_POSITION::1"),
+  // rather than one token per piece category - a piece can hold an
+  // arbitrary number of strings (e.g. BODY_POSITION "HIGH" + "WIDE GRIP")
+  // and each is independently orderable, interleaved with any other
+  // piece's strings. Only active ("s":true) items get a token. NAME is
+  // always a single "NAME::0" token.
+  List<String> get _liveNameTokens {
+    final tokens = <String>[];
+    void addTokens(String piece, List<Map<String, dynamic>> items) {
+      for (int i = 0; i < items.length; i++) {
+        if (items[i]["s"] == true) tokens.add('$piece::$i');
       }
-      return kDefaultNamePieceOrder;
-    } catch (_) {
-      return kDefaultNamePieceOrder;
     }
+    for (final piece in kDefaultNamePieceOrder) {
+      switch (piece) {
+        case 'NAME':
+          tokens.add('NAME::0');
+          break;
+        case 'BODY_POSITION':
+          addTokens('BODY_POSITION', _parsedBodyPositions);
+          break;
+        case 'IMPLEMENTS':
+          addTokens('IMPLEMENTS', parsedImplements);
+          break;
+        case 'PREFIXES':
+          addTokens('PREFIXES', parsedPrefixes);
+          break;
+        case 'SUFFIXES':
+          addTokens('SUFFIXES', parsedSuffixes);
+          break;
+        case 'ASSISTANCE':
+          addTokens('ASSISTANCE', parsedAssistanceTypes);
+          break;
+      }
+    }
+    return tokens;
   }
 
-  static String _activeText(List<Map<String, dynamic>> pieces) {
-    return pieces
-        .where((p) => p["s"] == true)
-        .map((p) => p["v"] as String)
-        .join(' ');
+  // Custom per-exercise assembly order, at individual-string granularity.
+  // The stored token list is reconciled against the exercise's current live
+  // tokens: stale tokens (item removed/toggled off since the order was
+  // saved) are dropped, and new tokens (item added since) are appended in
+  // default piece+array-index order. A null/blank/legacy (pre-per-string)
+  // nameOrder reconciles against an empty stored list, which is just the
+  // default order.
+  List<String> get nameOrderResolved {
+    final liveTokens = _liveNameTokens;
+    List<String> stored = [];
+    if (nameOrder != null && nameOrder!.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(nameOrder!) as List<dynamic>;
+        stored = decoded.map((e) => e.toString()).toList();
+      } catch (_) {}
+    }
+    final liveSet = liveTokens.toSet();
+    final storedSet = stored.toSet();
+    final result = <String>[];
+    for (final t in stored) {
+      if (liveSet.contains(t)) result.add(t);
+    }
+    for (final t in liveTokens) {
+      if (!storedSet.contains(t)) result.add(t);
+    }
+    return result;
   }
 
   String get fullName {
-    final Map<String, String> pieceText = {
-      'BODY_POSITION': _activeText(_parsedBodyPositions),
-      'IMPLEMENTS': _activeText(parsedImplements),
-      'PREFIXES': _activeText(parsedPrefixes),
-      'NAME': name,
-      'SUFFIXES': _activeText(parsedSuffixes),
-      'ASSISTANCE': _activeText(parsedAssistanceTypes),
-    };
+    final Map<String, String> tokenText = {'NAME::0': name};
+    void addTexts(String piece, List<Map<String, dynamic>> items) {
+      for (int i = 0; i < items.length; i++) {
+        if (items[i]["s"] == true) {
+          tokenText['$piece::$i'] = items[i]["v"] as String;
+        }
+      }
+    }
+    addTexts('BODY_POSITION', _parsedBodyPositions);
+    addTexts('IMPLEMENTS', parsedImplements);
+    addTexts('PREFIXES', parsedPrefixes);
+    addTexts('SUFFIXES', parsedSuffixes);
+    addTexts('ASSISTANCE', parsedAssistanceTypes);
+
     final parts = <String>[];
-    for (final key in nameOrderResolved) {
-      final text = pieceText[key];
+    for (final token in nameOrderResolved) {
+      final text = tokenText[token];
       if (text != null && text.isNotEmpty) parts.add(text);
     }
     return parts.join(' ').trim().toUpperCase();
