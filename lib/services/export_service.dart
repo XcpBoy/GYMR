@@ -199,11 +199,33 @@ class ExportService {
     }
   }
 
+  // Tables that must exist for a .sqlite file to plausibly be a GYMR
+  // database - catches "opens fine as *some* SQLite file but isn't ours"
+  // (e.g. a random app's export, or a backup from a wildly older schema
+  // version) before it silently overwrites the user's real database.
+  static const _kGymrCoreTables = ['base_exercises', 'workout_sets'];
+
   static Future<void> importDatabase(
       File sourceFile, String targetFileName) async {
     try {
       final tempDb = sqlite3.open(sourceFile.path);
-      tempDb.dispose();
+      try {
+        final tableNames = tempDb
+            .select(
+                "SELECT name FROM sqlite_master WHERE type = 'table'")
+            .map((row) => row['name'] as String)
+            .toSet();
+        final missing =
+            _kGymrCoreTables.where((t) => !tableNames.contains(t)).toList();
+        if (missing.isNotEmpty) {
+          throw Exception(
+              "Selected file does not look like a GYMR database (missing table(s): ${missing.join(', ')}).");
+        }
+      } finally {
+        tempDb.dispose();
+      }
+    } on Exception {
+      rethrow;
     } catch (e) {
       throw Exception(
           "Selected file is not a valid SQLite database or is corrupted.");
@@ -1883,6 +1905,141 @@ class ExportService {
     return file.path;
   }
 
+  static Future<String> exportExercisesToExcel(
+      List<BaseExercise> exercises) async {
+    var excel = Excel.createExcel();
+    excel.rename('Sheet1', 'EXERCISES');
+    Sheet sheet = excel.sheets.entries.first.value;
+
+    final headerStyle = CellStyle(
+        bold: true, fontColorHex: ExcelColor.fromHexString('#00FFFF'));
+    sheet.appendRow([
+      TextCellValue("NAME"),
+      TextCellValue("PREFIXES"),
+      TextCellValue("IMPLEMENTS"),
+      TextCellValue("BODY_POSITIONS"),
+      TextCellValue("SUFFIXES"),
+      TextCellValue("PRIMARY_MUSCLE"),
+      TextCellValue("SECONDARY_MUSCLE"),
+      TextCellValue("FIELD"),
+      TextCellValue("TISSUE_TYPE"),
+      TextCellValue("TISSUE_NAME"),
+      TextCellValue("NUM_PHASES"),
+      TextCellValue("PHASE_DESCRIPTIONS"),
+      TextCellValue("INTENTION"),
+      TextCellValue("PATTERN_TYPE"),
+      TextCellValue("COMPLEX_METADATA"),
+      TextCellValue("IS_UNILATERAL"),
+      TextCellValue("DESCRIPTION"),
+    ]);
+    for (int ci = 0; ci < 17; ci++) {
+      sheet
+          .cell(CellIndex.indexByColumnRow(columnIndex: ci, rowIndex: 0))
+          .cellStyle = headerStyle;
+    }
+
+    for (var ex in exercises) {
+      final desc = ex.parsedComplexMetadata["description"]?.toString() ?? "";
+      sheet.appendRow([
+        TextCellValue(ex.name),
+        TextCellValue(ex.prefixes ?? ""),
+        TextCellValue(ex.implements ?? ""),
+        TextCellValue(ex.bodyPositions ?? ""),
+        TextCellValue(ex.suffixes ?? ""),
+        TextCellValue(ex.primaryMuscleGroup ?? ""),
+        TextCellValue(ex.secondaryMuscleGroup ?? ""),
+        TextCellValue(ex.field ?? ""),
+        TextCellValue(ex.tissueType ?? ""),
+        TextCellValue(ex.tissueName ?? ""),
+        IntCellValue(ex.numPhases ?? 1),
+        TextCellValue(ex.phaseDescriptions ?? ""),
+        TextCellValue(ex.intention ?? ""),
+        TextCellValue(ex.patternType ?? ""),
+        TextCellValue(ex.complexMetadata ?? ""),
+        IntCellValue(ex.isUnilateral ? 1 : 0),
+        TextCellValue(desc),
+      ]);
+    }
+
+    final output = await getTemporaryDirectory();
+    final filePath =
+        "${output.path}/gymr_exercises_${DateTime.now().millisecondsSinceEpoch}.xlsx";
+    await File(filePath).writeAsBytes(excel.encode()!);
+    return filePath;
+  }
+
+  // Shared by importExercisesFromCsv/Excel: [cells] is the row already
+  // normalized to plain strings (17 positions, matching exportExercisesToCsv's
+  // header order), so both formats funnel through one upsert path instead of
+  // duplicating the same ~50 lines of field mapping twice.
+  //
+  // Upserts by exact NAME match: an existing exercise is UPDATED with the
+  // row's values (not left untouched) so "export, edit in NEXUS skill,
+  // re-import" actually applies the edits instead of silently no-op'ing.
+  static Future<bool> _upsertExerciseRow(
+      AppDatabase db, List<String?> cells) async {
+    String? cell(int i) =>
+        (i < cells.length && (cells[i]?.isNotEmpty ?? false)) ? cells[i] : null;
+
+    final name = cell(0)?.trim();
+    if (name == null || name.isEmpty) return false;
+
+    String? complexMeta = cell(14);
+    final description = cell(16);
+    if (description != null) {
+      Map<String, dynamic> meta = {};
+      if (complexMeta != null) {
+        try {
+          meta = jsonDecode(complexMeta);
+        } catch (_) {}
+      }
+      meta["description"] = description;
+      complexMeta = jsonEncode(meta);
+    }
+
+    final numPhases = int.tryParse(cell(10) ?? '') ?? 1;
+    final isUnilateralRaw = cell(15);
+    final isUnilateral = isUnilateralRaw == "1" ||
+        (isUnilateralRaw?.toLowerCase() == "true");
+
+    try {
+      final existing = await (db.select(db.baseExercises)
+            ..where((t) => t.name.equals(name)))
+          .getSingleOrNull();
+
+      final companion = BaseExercisesCompanion(
+        name: Value(name),
+        prefixes: Value(cell(1)),
+        implements: Value(cell(2)),
+        bodyPositions: Value(cell(3)),
+        suffixes: Value(cell(4)),
+        primaryMuscleGroup: Value(cell(5)),
+        secondaryMuscleGroup: Value(cell(6)),
+        field: Value(cell(7)),
+        tissueType: Value(cell(8)),
+        tissueName: Value(cell(9)),
+        numPhases: Value(numPhases),
+        phaseDescriptions: Value(cell(11)),
+        intention: Value(cell(12)),
+        patternType: Value(cell(13)),
+        complexMetadata: Value(complexMeta),
+        isUnilateral: Value(isUnilateral),
+      );
+
+      if (existing != null) {
+        await (db.update(db.baseExercises)
+              ..where((t) => t.id.equals(existing.id)))
+            .write(companion);
+      } else {
+        await db.into(db.baseExercises).insert(companion);
+      }
+      return true;
+    } catch (e) {
+      debugPrint("Error importing exercise $name: $e");
+      return false;
+    }
+  }
+
   static Future<int> importExercisesFromCsv(
       String csvContent, AppDatabase db) async {
     final rows = _decodeCsv(csvContent);
@@ -1893,67 +2050,7 @@ class ExportService {
       for (int i = 1; i < rows.length; i++) {
         final row = rows[i];
         if (row.isEmpty) continue;
-
-        final name = row[0].trim();
-        if (name.isEmpty) continue;
-
-        String? complexMeta =
-            row.length > 14 && row[14].isNotEmpty ? row[14] : null;
-        final description =
-            row.length > 16 && row[16].isNotEmpty ? row[16] : null;
-
-        if (description != null) {
-          Map<String, dynamic> meta = {};
-          if (complexMeta != null) {
-            try {
-              meta = jsonDecode(complexMeta);
-            } catch (_) {}
-          }
-          meta["description"] = description;
-          complexMeta = jsonEncode(meta);
-        }
-
-        try {
-          await db.into(db.baseExercises).insert(
-                BaseExercisesCompanion.insert(
-                  name: name,
-                  prefixes: Value(
-                      row.length > 1 && row[1].isNotEmpty ? row[1] : null),
-                  implements: Value(
-                      row.length > 2 && row[2].isNotEmpty ? row[2] : null),
-                  bodyPositions: Value(
-                      row.length > 3 && row[3].isNotEmpty ? row[3] : null),
-                  suffixes: Value(
-                      row.length > 4 && row[4].isNotEmpty ? row[4] : null),
-                  primaryMuscleGroup: Value(
-                      row.length > 5 && row[5].isNotEmpty ? row[5] : null),
-                  secondaryMuscleGroup: Value(
-                      row.length > 6 && row[6].isNotEmpty ? row[6] : null),
-                  field: Value(
-                      row.length > 7 && row[7].isNotEmpty ? row[7] : null),
-                  tissueType: Value(
-                      row.length > 8 && row[8].isNotEmpty ? row[8] : null),
-                  tissueName: Value(
-                      row.length > 9 && row[9].isNotEmpty ? row[9] : null),
-                  numPhases:
-                      Value(row.length > 10 ? int.tryParse(row[10]) ?? 1 : 1),
-                  phaseDescriptions: Value(
-                      row.length > 11 && row[11].isNotEmpty ? row[11] : null),
-                  intention: Value(
-                      row.length > 12 && row[12].isNotEmpty ? row[12] : null),
-                  patternType: Value(
-                      row.length > 13 && row[13].isNotEmpty ? row[13] : null),
-                  complexMetadata: Value(complexMeta),
-                  isUnilateral: Value(row.length > 15
-                      ? (row[15] == "1" || row[15].toLowerCase() == "true")
-                      : false),
-                ),
-                mode: InsertMode.insertOrIgnore,
-              );
-          count++;
-        } catch (e) {
-          debugPrint("Error importing exercise $name: $e");
-        }
+        if (await _upsertExerciseRow(db, row)) count++;
       }
     });
 
@@ -1965,6 +2062,8 @@ class ExportService {
     var excel = Excel.decodeBytes(bytes);
     int count = 0;
 
+    // Every sheet with data is imported (not just the first) - a workbook
+    // split across multiple sheets no longer silently loses data.
     for (var table in excel.tables.keys) {
       final sheet = excel.tables[table];
       if (sheet == null || sheet.maxRows <= 1) continue;
@@ -1973,87 +2072,10 @@ class ExportService {
         for (int i = 1; i < sheet.maxRows; i++) {
           final row = sheet.rows[i];
           if (row.isEmpty || row[0] == null) continue;
-
-          final name = row[0]?.value?.toString().trim() ?? "";
-          if (name.isEmpty) continue;
-
-          String? complexMeta = row.length > 14 && row[14] != null
-              ? row[14]?.value?.toString()
-              : null;
-          final description = row.length > 16 && row[16] != null
-              ? row[16]?.value?.toString()
-              : null;
-
-          if (description != null) {
-            Map<String, dynamic> meta = {};
-            if (complexMeta != null) {
-              try {
-                meta = jsonDecode(complexMeta);
-              } catch (_) {}
-            }
-            meta["description"] = description;
-            complexMeta = jsonEncode(meta);
-          }
-
-          try {
-            await db.into(db.baseExercises).insert(
-                  BaseExercisesCompanion.insert(
-                    name: name,
-                    prefixes: Value(row.length > 1 && row[1] != null
-                        ? row[1]?.value?.toString()
-                        : null),
-                    implements: Value(row.length > 2 && row[2] != null
-                        ? row[2]?.value?.toString()
-                        : null),
-                    bodyPositions: Value(row.length > 3 && row[3] != null
-                        ? row[3]?.value?.toString()
-                        : null),
-                    suffixes: Value(row.length > 4 && row[4] != null
-                        ? row[4]?.value?.toString()
-                        : null),
-                    primaryMuscleGroup: Value(row.length > 5 && row[5] != null
-                        ? row[5]?.value?.toString()
-                        : null),
-                    secondaryMuscleGroup: Value(row.length > 6 && row[6] != null
-                        ? row[6]?.value?.toString()
-                        : null),
-                    field: Value(row.length > 7 && row[7] != null
-                        ? row[7]?.value?.toString()
-                        : null),
-                    tissueType: Value(row.length > 8 && row[8] != null
-                        ? row[8]?.value?.toString()
-                        : null),
-                    tissueName: Value(row.length > 9 && row[9] != null
-                        ? row[9]?.value?.toString()
-                        : null),
-                    numPhases: Value(row.length > 10 && row[10] != null
-                        ? int.tryParse(row[10]?.value?.toString() ?? "1") ?? 1
-                        : 1),
-                    phaseDescriptions: Value(row.length > 11 && row[11] != null
-                        ? row[11]?.value?.toString()
-                        : null),
-                    intention: Value(row.length > 12 && row[12] != null
-                        ? row[12]?.value?.toString()
-                        : null),
-                    patternType: Value(row.length > 13 && row[13] != null
-                        ? row[13]?.value?.toString()
-                        : null),
-                    complexMetadata: Value(complexMeta),
-                    isUnilateral: Value(row.length > 15 && row[15] != null
-                        ? (row[15]?.value?.toString() == "1" ||
-                            row[15]?.value?.toString().toLowerCase() == "true")
-                        : false),
-                  ),
-                  mode: InsertMode.insertOrIgnore,
-                );
-            count++;
-          } catch (e) {
-            debugPrint("Error importing exercise $name from Excel: $e");
-          }
+          final cells = row.map((c) => c?.value?.toString()).toList();
+          if (await _upsertExerciseRow(db, cells)) count++;
         }
       });
-      // We usually only care about the first sheet that has data
-      if (count > 0) break;
     }
 
     return count;
@@ -2379,6 +2401,7 @@ class ExportService {
       final wbName = _cell(firstRow, header, 'WB_NAME', 0);
       final wbFolder = _cell(firstRow, header, 'WB_FOLDER', 1);
       final wbCreatedAtRaw = _cell(firstRow, header, 'WB_CREATED_AT', 2);
+      final createdAtWasBlank = wbCreatedAtRaw.isEmpty;
       final createdAt =
           _toInt(wbCreatedAtRaw) ?? DateTime.now().millisecondsSinceEpoch;
       final blockId = createdAt;
@@ -2387,6 +2410,7 @@ class ExportService {
         'name': wbName,
         'folder': wbFolder.isNotEmpty ? wbFolder : null,
         'createdAt': createdAt,
+        'createdAtWasBlank': createdAtWasBlank,
       };
 
       final knsByKey = <String, Map<String, dynamic>>{};
@@ -2404,6 +2428,11 @@ class ExportService {
                 .toList()
             : <String>[];
         final batch = _cell(row, header, 'BATCH', 7);
+        // Read for display only - _writeImportedWorkoutBlocks never persists
+        // these (workout_block_kns has no columns for them), so they're
+        // deliberately excluded from knsKey below: including free-text
+        // fields in the dedup key used to split one exercise's sets into
+        // multiple KNS entries whenever the text was inconsistent row to row.
         final prefixes = _cell(row, header, 'PREFIXES', 15);
         final suffixes = _cell(row, header, 'SUFFIXES', 16);
         final bodyPositions = _cell(row, header, 'BODY_POSITIONS', 17);
@@ -2413,10 +2442,6 @@ class ExportService {
           exName.toUpperCase(),
           utilities.join('|'),
           batch,
-          prefixes,
-          suffixes,
-          bodyPositions,
-          implements
         ].join('\u001F');
 
         var kns = knsByKey[knsKey];
@@ -2584,12 +2609,38 @@ class ExportService {
         final wb = item['wb'] as Map<String, dynamic>;
         final wbName = wb['name']?.toString() ?? '';
         if (wbName.isEmpty) continue;
-        final createdAt =
+        var createdAt =
             _toInt(wb['createdAt']) ?? DateTime.now().millisecondsSinceEpoch;
-        final blockId =
+        var blockId =
             _toInt(wb['id']?.toString().replaceAll('wb_', '')) ?? createdAt;
         final folder = wb['folder']?.toString();
         final resolvedFolder = folder?.isNotEmpty == true ? folder : null;
+
+        // WB_CREATED_AT was blank in the source file (a from-scratch import,
+        // or an edited export where the column got accidentally cleared).
+        // Rather than always minting a fresh ID - which would fork a
+        // duplicate block on a "re-import an edited export" workflow -
+        // reuse an existing block with the same name+folder if one exists.
+        if (wb['createdAtWasBlank'] == true) {
+          final existing = await db.customSelect(
+            'SELECT id, created_at FROM workout_blocks WHERE name = ? AND '
+            '(folder = ? OR (folder IS NULL AND ? IS NULL)) AND deleted_at = 0 '
+            'LIMIT 1',
+            variables: [
+              Variable.withString(wbName),
+              resolvedFolder == null
+                  ? const Variable(null)
+                  : Variable.withString(resolvedFolder),
+              resolvedFolder == null
+                  ? const Variable(null)
+                  : Variable.withString(resolvedFolder),
+            ],
+          ).getSingleOrNull();
+          if (existing != null) {
+            blockId = existing.data['id'] as int;
+            createdAt = existing.data['created_at'] as int;
+          }
+        }
         final intention = wb['intention']?.toString();
         final description =
             item['description']?.toString() ?? wb['description']?.toString();
@@ -2714,6 +2765,144 @@ class ExportService {
     return {'blocks': blocksCount, 'kns': knsCount};
   }
 
+  static const _kWbHeader = [
+    'WB_NAME',
+    'WB_FOLDER',
+    'WB_CREATED_AT',
+    'EXERCISE_NAME',
+    'EXERCISE_ID',
+    'ORDER_INDEX',
+    'UTILITIES',
+    'BATCH',
+    'SET_NUMBER',
+    'SET_MIN_REPS',
+    'SET_MAX_REPS',
+    'SET_PLOAD',
+    'SET_RPE',
+    'SET_RIR',
+    'SET_INTENTION',
+    'PREFIXES',
+    'SUFFIXES',
+    'BODY_POSITIONS',
+    'IMPLEMENTS',
+    'SIDE',
+  ];
+
+  // Shared by exportWorkoutBlocksToXlsx/Csv: builds the flat row list (one
+  // row per set, matching _kWbHeader's column order) so both file formats
+  // stay in sync from a single place instead of duplicating this ~100-line
+  // empty-row/unilateral-expansion/normal-set branching logic per format.
+  static List<List<String>> _buildWorkoutBlockRows(
+      List<Map<String, dynamic>> combinedData) {
+    final rows = <List<String>>[];
+    for (var item in combinedData) {
+      final wb = item['wb'] as Map<String, dynamic>;
+      final knsList = item['kns'] as List<Map<String, dynamic>>;
+      final wbName = wb['name'] ?? '';
+      final wbFolder = wb['folder'] ?? '';
+      final wbCreated = wb['createdAt'] ?? '';
+
+      if (knsList.isEmpty) {
+        rows.add(
+            [wbName.toString(), wbFolder.toString(), wbCreated.toString()]);
+      }
+      for (final kns in knsList) {
+        final exName = kns['exerciseName'] ?? '';
+        final exId = kns['baseExerciseId']?.toString() ?? '';
+        final orderIdx = kns['orderIndex'] ?? 0;
+        final utilities = (kns['utilities'] as List?)?.join(';') ?? '';
+        final batch = kns['batchName'] ?? '';
+        final intention = kns['intention'] ?? '';
+        final prefixes = kns['prefixes'] ?? '';
+        final suffixes = kns['suffixes'] ?? '';
+        final bodyPositions = kns['bodyPositions'] ?? '';
+        final implements = kns['implements'] ?? '';
+        final sets = kns['sets'] as List? ?? [];
+        final isUnilateral = kns['isUnilateral'] == true;
+        if (sets.isEmpty) {
+          rows.add([
+            wbName.toString(),
+            wbFolder.toString(),
+            wbCreated.toString(),
+            exName.toString(),
+            exId,
+            orderIdx.toString(),
+            utilities,
+            batch,
+            '1',
+            '',
+            '',
+            '',
+            '',
+            '',
+            intention.toString(),
+            prefixes.toString(),
+            suffixes.toString(),
+            bodyPositions.toString(),
+            implements.toString(),
+            '',
+          ]);
+        } else if (isUnilateral &&
+            sets.length == 1 &&
+            ((sets.first as Map<String, dynamic>)['side']?.toString() ?? '')
+                .isEmpty) {
+          final s = sets.first as Map<String, dynamic>;
+          for (int sideIndex = 0; sideIndex < 2; sideIndex++) {
+            rows.add([
+              wbName.toString(),
+              wbFolder.toString(),
+              wbCreated.toString(),
+              exName.toString(),
+              exId,
+              orderIdx.toString(),
+              utilities,
+              batch,
+              (s['setNumber'] ?? 1).toString(),
+              s['minReps']?.toString() ?? '',
+              s['maxReps']?.toString() ?? '',
+              s['pload']?.toString() ?? '',
+              s['rpe']?.toString() ?? '',
+              s['rir']?.toString() ?? '',
+              s['intention']?.toString() ?? '',
+              prefixes.toString(),
+              suffixes.toString(),
+              bodyPositions.toString(),
+              implements.toString(),
+              sideIndex == 0 ? 'RIGHT' : 'LEFT',
+            ]);
+          }
+        } else {
+          for (int i = 0; i < sets.length; i++) {
+            final s = sets[i] as Map<String, dynamic>;
+            rows.add([
+              wbName.toString(),
+              wbFolder.toString(),
+              wbCreated.toString(),
+              exName.toString(),
+              exId,
+              orderIdx.toString(),
+              utilities,
+              batch,
+              (s['setNumber'] ?? (i + 1)).toString(),
+              s['minReps']?.toString() ?? '',
+              s['maxReps']?.toString() ?? '',
+              s['pload']?.toString() ?? '',
+              s['rpe']?.toString() ?? '',
+              s['rir']?.toString() ?? '',
+              s['intention']?.toString() ?? '',
+              prefixes.toString(),
+              suffixes.toString(),
+              bodyPositions.toString(),
+              implements.toString(),
+              s['side']?.toString() ?? '',
+            ]);
+          }
+        }
+      }
+    }
+    return rows;
+  }
+
   static Future<String> exportWorkoutBlocksToXlsx(
       List<Map<String, dynamic>> combinedData, AppDatabase db,
       {String lang = 'en'}) async {
@@ -2745,142 +2934,16 @@ class ExportService {
 
     final headerStyle = CellStyle(
         bold: true, fontColorHex: ExcelColor.fromHexString('#00FFFF'));
-    sheet.appendRow([
-      TextCellValue('WB_NAME'),
-      TextCellValue('WB_FOLDER'),
-      TextCellValue('WB_CREATED_AT'),
-      TextCellValue('EXERCISE_NAME'),
-      TextCellValue('EXERCISE_ID'),
-      TextCellValue('ORDER_INDEX'),
-      TextCellValue('UTILITIES'),
-      TextCellValue('BATCH'),
-      TextCellValue('SET_NUMBER'),
-      TextCellValue('SET_MIN_REPS'),
-      TextCellValue('SET_MAX_REPS'),
-      TextCellValue('SET_PLOAD'),
-      TextCellValue('SET_RPE'),
-      TextCellValue('SET_RIR'),
-      TextCellValue('SET_INTENTION'),
-      TextCellValue('PREFIXES'),
-      TextCellValue('SUFFIXES'),
-      TextCellValue('BODY_POSITIONS'),
-      TextCellValue('IMPLEMENTS'),
-      TextCellValue('SIDE'),
-    ]);
+    sheet.appendRow(_kWbHeader.map((h) => TextCellValue(h)).toList());
     // Style header cells by position
-    for (int ci = 0; ci < 20; ci++) {
+    for (int ci = 0; ci < _kWbHeader.length; ci++) {
       sheet
           .cell(CellIndex.indexByColumnRow(columnIndex: ci, rowIndex: 0))
           .cellStyle = headerStyle;
     }
 
-    for (var item in combinedData) {
-      final wb = item['wb'] as Map<String, dynamic>;
-      final knsList = item['kns'] as List<Map<String, dynamic>>;
-      final wbName = wb['name'] ?? '';
-      final wbFolder = wb['folder'] ?? '';
-      final wbCreated = wb['createdAt'] ?? '';
-
-      if (knsList.isEmpty) {
-        sheet.appendRow([
-          TextCellValue(wbName.toString()),
-          TextCellValue(wbFolder.toString()),
-          TextCellValue(wbCreated.toString())
-        ]);
-      }
-      for (final kns in knsList) {
-        final exName = kns['exerciseName'] ?? '';
-        final exId = kns['baseExerciseId']?.toString() ?? '';
-        final orderIdx = kns['orderIndex'] ?? 0;
-        final utilities = (kns['utilities'] as List?)?.join(';') ?? '';
-        final batch = kns['batchName'] ?? '';
-        final intention = kns['intention'] ?? '';
-        final prefixes = kns['prefixes'] ?? '';
-        final suffixes = kns['suffixes'] ?? '';
-        final bodyPositions = kns['bodyPositions'] ?? '';
-        final implements = kns['implements'] ?? '';
-        final sets = kns['sets'] as List? ?? [];
-        final isUnilateral = kns['isUnilateral'] == true;
-        if (sets.isEmpty) {
-          sheet.appendRow([
-            TextCellValue(wbName.toString()),
-            TextCellValue(wbFolder.toString()),
-            TextCellValue(wbCreated.toString()),
-            TextCellValue(exName.toString()),
-            TextCellValue(exId),
-            TextCellValue(orderIdx.toString()),
-            TextCellValue(utilities),
-            TextCellValue(batch),
-            TextCellValue('1'),
-            TextCellValue(''),
-            TextCellValue(''),
-            TextCellValue(''),
-            TextCellValue(''),
-            TextCellValue(''),
-            TextCellValue(intention.toString()),
-            TextCellValue(prefixes.toString()),
-            TextCellValue(suffixes.toString()),
-            TextCellValue(bodyPositions.toString()),
-            TextCellValue(implements.toString()),
-            TextCellValue(''),
-          ]);
-        } else if (isUnilateral &&
-            sets.length == 1 &&
-            ((sets.first as Map<String, dynamic>)['side']?.toString() ?? '')
-                .isEmpty) {
-          final s = sets.first as Map<String, dynamic>;
-          for (int sideIndex = 0; sideIndex < 2; sideIndex++) {
-            sheet.appendRow([
-              TextCellValue(wbName.toString()),
-              TextCellValue(wbFolder.toString()),
-              TextCellValue(wbCreated.toString()),
-              TextCellValue(exName.toString()),
-              TextCellValue(exId),
-              TextCellValue(orderIdx.toString()),
-              TextCellValue(utilities),
-              TextCellValue(batch),
-              TextCellValue((s['setNumber'] ?? 1).toString()),
-              TextCellValue(s['minReps']?.toString() ?? ''),
-              TextCellValue(s['maxReps']?.toString() ?? ''),
-              TextCellValue(s['pload']?.toString() ?? ''),
-              TextCellValue(s['rpe']?.toString() ?? ''),
-              TextCellValue(s['rir']?.toString() ?? ''),
-              TextCellValue(s['intention']?.toString() ?? ''),
-              TextCellValue(prefixes.toString()),
-              TextCellValue(suffixes.toString()),
-              TextCellValue(bodyPositions.toString()),
-              TextCellValue(implements.toString()),
-              TextCellValue(sideIndex == 0 ? 'RIGHT' : 'LEFT'),
-            ]);
-          }
-        } else {
-          for (int i = 0; i < sets.length; i++) {
-            final s = sets[i] as Map<String, dynamic>;
-            sheet.appendRow([
-              TextCellValue(wbName.toString()),
-              TextCellValue(wbFolder.toString()),
-              TextCellValue(wbCreated.toString()),
-              TextCellValue(exName.toString()),
-              TextCellValue(exId),
-              TextCellValue(orderIdx.toString()),
-              TextCellValue(utilities),
-              TextCellValue(batch),
-              TextCellValue((s['setNumber'] ?? (i + 1)).toString()),
-              TextCellValue(s['minReps']?.toString() ?? ''),
-              TextCellValue(s['maxReps']?.toString() ?? ''),
-              TextCellValue(s['pload']?.toString() ?? ''),
-              TextCellValue(s['rpe']?.toString() ?? ''),
-              TextCellValue(s['rir']?.toString() ?? ''),
-              TextCellValue(s['intention']?.toString() ?? ''),
-              TextCellValue(prefixes.toString()),
-              TextCellValue(suffixes.toString()),
-              TextCellValue(bodyPositions.toString()),
-              TextCellValue(implements.toString()),
-              TextCellValue(s['side']?.toString() ?? ''),
-            ]);
-          }
-        }
-      }
+    for (final row in _buildWorkoutBlockRows(combinedData)) {
+      sheet.appendRow(row.map((v) => TextCellValue(v)).toList());
     }
 
     final output = await getTemporaryDirectory();
@@ -2888,6 +2951,18 @@ class ExportService {
         "${output.path}/gymr_wbs_${DateTime.now().millisecondsSinceEpoch}.xlsx";
     await File(filePath).writeAsBytes(excel.encode()!);
     return filePath;
+  }
+
+  static Future<String> exportWorkoutBlocksToCsv(
+      List<Map<String, dynamic>> combinedData, AppDatabase db) async {
+    final csvData = <List<dynamic>>[_kWbHeader];
+    csvData.addAll(_buildWorkoutBlockRows(combinedData));
+
+    final output = await getTemporaryDirectory();
+    final file = File(
+        "${output.path}/gymr_wbs_${DateTime.now().millisecondsSinceEpoch}.csv");
+    await file.writeAsString(_encodeCsv(csvData));
+    return file.path;
   }
 
   /// Generates an empty WB template .xlsx for NEXUS EXPECTED INPUTS.

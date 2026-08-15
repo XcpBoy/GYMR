@@ -1,6 +1,6 @@
 # Workout Block (routine) format
 
-Source of truth: `lib/services/export_service.dart` — `exportWorkoutBlocksToXlsx` (writer), `importWorkoutBlocksFromCsv`/`importWorkoutBlocksFromExcel` → shared `_parseWorkoutBlockRows`/`_writeImportedWorkoutBlocks` (readers). CSV import exists even though there's no CSV export — you can hand-author a CSV using this spec and it will import fine.
+Source of truth: `lib/services/export_service.dart` — `exportWorkoutBlocksToXlsx`/`exportWorkoutBlocksToCsv` (writers, share a `_buildWorkoutBlockRows` helper), `importWorkoutBlocksFromCsv`/`importWorkoutBlocksFromExcel` → shared `_parseWorkoutBlockRows`/`_writeImportedWorkoutBlocks` (readers).
 
 **One row per SET, not per exercise.** An exercise with 3 sets in the routine needs 3 rows, all sharing the same exercise-identity columns (WB_NAME/WB_FOLDER/WB_CREATED_AT/EXERCISE_NAME/ORDER_INDEX/UTILITIES/BATCH), differing only in the `SET_*` columns.
 
@@ -12,7 +12,7 @@ Source of truth: `lib/services/export_service.dart` — `exportWorkoutBlocksToXl
 |---|---|---|---|
 | `WB_NAME` | `workout_blocks.name` | **Yes** — empty drops the row | Plain text, shared across every row of the block |
 | `WB_FOLDER` | `workout_blocks.folder` | No | Plain text, shared across the block |
-| `WB_CREATED_AT` | `workout_blocks.created_at` **and the block's literal database ID** | No, but see warning below | Integer (epoch millis). **Leave blank for a brand-new block** — GYMR mints one. **Preserve the exact original value when re-importing an edited export** of an existing block, or the re-import will create a duplicate block instead of updating the original. |
+| `WB_CREATED_AT` | `workout_blocks.created_at` **and the block's literal database ID** | No | Integer (epoch millis). **Leave blank for a brand-new block** — GYMR mints one. When re-importing an edited export, prefer preserving the exact original value — if it's blank instead, the importer falls back to matching an existing block by `WB_NAME` + `WB_FOLDER` and updates it in place rather than forking a duplicate, but that fallback only works if the name/folder are unchanged. |
 | `EXERCISE_NAME` | resolved by exact name match | **Yes** — empty drops the row | Must match an exercise **already in the target GYMR install** exactly. This importer does NOT create missing exercises — pair with an exercises-format import first if needed. |
 | `EXERCISE_ID` | optional numeric hint | No | Leave blank; the app resolves by name anyway |
 | `ORDER_INDEX` | exercise order within the block | No, defaults 0 | Integer, 0-based |
@@ -38,7 +38,7 @@ Rows are grouped into one exercise-block-entry per unique `[ORDER_INDEX, EXERCIS
 
 ## Idempotency
 
-Re-importing a file with the same `WB_CREATED_AT` **updates the existing block in place** (all its exercises/sets are replaced with what's in the file). Re-importing with a blank/different `WB_CREATED_AT` **creates a new block**. This is the mechanism to use for "edit and re-import" workflows — always round-trip the ID.
+Re-importing a file with the same `WB_CREATED_AT` **updates the existing block in place** (all its exercises/sets are replaced with what's in the file). With a blank `WB_CREATED_AT`, the importer looks for an existing block with the same `WB_NAME`+`WB_FOLDER` and updates that instead of creating a duplicate; if none matches, a new block is created. Re-importing with a *different* (non-blank) `WB_CREATED_AT` than any existing block always creates a new block. Still prefer round-tripping the exact ID for "edit and re-import" workflows — the name/folder fallback is a safety net, not the primary mechanism.
 
 ## Ready template
 

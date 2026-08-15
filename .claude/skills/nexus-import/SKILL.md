@@ -34,10 +34,10 @@ Ready-to-copy starter templates for both live in `templates/`. Prefer editing a 
 - **No exercise auto-creation in the Workout Blocks importer.** If a routine references an exercise name that doesn't already exist in the user's GYMR inventory, the row will not create it. If you're building a routine from scratch for someone else, pair it with an exercises-import file (or tell the user which exercise names must already exist / be imported first).
 - **Never blank a required column to "skip" a row.** `NAME` (exercises) and `WB_NAME`/`EXERCISE_NAME` (workout blocks) being empty causes the whole row to be silently dropped, with no error shown to the user.
 
-## Known app bugs worth telling the user about (don't work around them silently)
+## Known app quirks worth telling the user about (don't work around them silently)
 
-- The **"IMPORT ROUTINE" button in NEXUS currently parses FitNotes-app CSVs, not GYMR blueprint/routine CSVs** — a wiring bug in `nexus_screen.dart`'s dispatch logic. If a user says a routine/blueprint CSV "didn't import right", this is almost certainly why. Tell them, don't just quietly generate a workaround.
-- There is **no Excel export for exercises** and **no CSV export for workout blocks** in the app — only the pairs documented above exist. If the user wants to "start from their current export" in the other format, generate it from the format that *does* export, translating columns per the reference docs.
+- The button that imports FitNotes-app CSVs in NEXUS is labeled **"IMPORT FITNOTES LOG"** — it does not parse GYMR blueprint/routine CSVs, that legacy Blueprints format is not wired into the NEXUS UI at all (documented in GYMR's pndev history as a deliberately deprecated format — don't try to resurrect it).
+- Both exercises and workout blocks now export/import in **both CSV and XLSX**. Prefer CSV for anything you generate yourself (easier to write correctly than binary `.xlsx`).
 
 ## Workflow
 

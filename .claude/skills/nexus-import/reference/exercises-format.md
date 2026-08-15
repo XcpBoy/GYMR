@@ -45,9 +45,9 @@ Source of truth: `lib/services/export_service.dart` — `exportExercisesToCsv` (
 
 ## Duplicate handling
 
-Exercises are matched **by exact name**. An exercise with the same `NAME` as one already in the target GYMR install is **left untouched** — re-importing does not update/overwrite an existing exercise's data. If you're revising an exercise the user already has, tell them explicitly that they may need to delete the old one first, or that only genuinely new names will take effect.
+Exercises are matched **by exact name**. An exercise with the same `NAME` as one already in the target GYMR install is **UPDATED in place** with the row's values — re-importing an edited export overwrites the existing exercise's data. If you're generating a file to add descriptions/edits to an existing exercise, this is the expected round-trip: export, edit, re-import.
 
 ## Known app quirks to warn the user about, not silently work around
 
-- Excel import only reads the **first sheet** with data in the workbook — if you're handed a multi-sheet `.xlsx`, only sheet 1 will import.
-- There is no Excel *export* for exercises (only CSV) — if the user wants a `.xlsx` starting point, generate CSV instead (Excel opens CSV fine) or tell them to convert.
+- Excel import reads every sheet with data in the workbook (not just the first).
+- `exportExercisesToExcel` exists alongside the CSV exporter — either format works as a starting point.
