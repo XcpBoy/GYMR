@@ -67,6 +67,7 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
     "pattern",
     "field",
     "movement",
+    "nomenclature",
   ];
 
   // State for collapsible section cards within a tab.
@@ -350,6 +351,16 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
     }.toList()
       ..sort();
 
+    // ── NOMENCLATURE PIECE COLORS (EDIT_EXERCISE / EXERCISE_CREATOR) ──
+    final Map<String, Color> nomenclatureDefaults = {
+      "BODY_POSITION": Colors.blueAccent,
+      "IMPLEMENTS": Colors.orangeAccent,
+      "PREFIXES": LabColors.primary,
+      "NAME": Colors.white,
+      "SUFFIXES": LabColors.primary,
+      "ASSISTANCE": Colors.tealAccent,
+    };
+
     final List<String> supersetItems = settings.keys
         .where((k) => k.startsWith("SUPERSET_"))
         .map((k) => k.replaceFirst("SUPERSET_", ""))
@@ -378,6 +389,8 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
             defaults: nexusDefaults),
       ]),
       _ThemeCategory(tr(lang, "DATA"), [
+        _ThemeSection("NOMENCLATURE_COLORS", "nomenclature", kDefaultNamePieceOrder,
+            defaults: nomenclatureDefaults),
         _ThemeSection("VISUAL_ATMOSPHERE", "wallpaper", screens,
             isValueType: true),
         _ThemeSection("MOVEMENT_UTILITIES", "utility", utilities),

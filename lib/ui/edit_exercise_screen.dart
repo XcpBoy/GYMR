@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:drift/drift.dart' as drift;
 import '../providers/database_provider.dart';
+import '../providers/theme_provider.dart';
 import '../database/database.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
@@ -10,6 +11,17 @@ import 'main_scaffold.dart';
 import 'wb_shared/wb_shared_widgets.dart';
 import 'complex_metadata_screen.dart'; // NEW
 import '../localization/strings.dart';
+
+// Default color per nomenclature piece, used when the user hasn't
+// customized it in THEME.MDFYR > DATA > NOMENCLATURE_COLORS.
+const Map<String, Color> kNomenclaturePieceDefaults = {
+  'BODY_POSITION': Colors.blueAccent,
+  'IMPLEMENTS': Colors.orangeAccent,
+  'PREFIXES': LabColors.primary,
+  'NAME': Colors.white,
+  'SUFFIXES': LabColors.primary,
+  'ASSISTANCE': Colors.tealAccent,
+};
 
 class EditExerciseScreen extends ConsumerStatefulWidget {
   final BaseExercise exercise;
@@ -64,17 +76,28 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
     try {
       final List<dynamic> decoded = jsonDecode(raw);
       for (var item in decoded) {
-        controllers.add(TextEditingController(text: item['v']));
+        controllers.add(_newPieceController(item['v']));
         showFlags.add(item['s'] ?? true);
       }
     } catch (_) {
       for (var v in raw.split(',')) {
         if (v.isNotEmpty) {
-          controllers.add(TextEditingController(text: v));
+          controllers.add(_newPieceController(v));
           showFlags.add(true);
         }
       }
     }
+  }
+
+  // Live-updates the NOMENCLATURE_CONTROL preview (which shows the actual
+  // entered value, not a placeholder label) as the user types, since typing
+  // into a TextEditingController doesn't trigger a rebuild on its own.
+  TextEditingController _newPieceController([String? text]) {
+    final c = TextEditingController(text: text);
+    c.addListener(() {
+      if (mounted) setState(() {});
+    });
+    return c;
   }
 
   String? _encodePieceList(
@@ -105,7 +128,7 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
     super.initState();
     final e = widget.exercise;
     _isUnilateral = e.isUnilateral;
-    _nameController = TextEditingController(text: e.name);
+    _nameController = _newPieceController(e.name);
     _primaryMuscleController = TextEditingController(text: e.primaryMuscleGroup);
     _secondaryMuscleController = TextEditingController(text: e.secondaryMuscleGroup);
     _fieldController = TextEditingController(text: e.field);
@@ -378,6 +401,8 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
   @override
   Widget build(BuildContext context) {
     final lang = ref.watch(languageProvider).value ?? 'en';
+    final settings = ref.watch(themeSettingsProvider).value ?? <String, ThemeSetting>{};
+    final tC = ref.read(themeControllerProvider);
     return MainScaffold(
       title: 'EDIT_EXERCISE',
       body: SingleChildScrollView(
@@ -420,29 +445,29 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
               _buildSectionTitle('QUALITIES'),
               const SizedBox(height: 16),
               _buildToggleableList('BODY_POSITION', _bodyPositionControllers, _bodyPositionShowInName,
-                  () => setState(() { _bodyPositionControllers.add(TextEditingController()); _bodyPositionShowInName.add(true); }),
+                  () => setState(() { _bodyPositionControllers.add(_newPieceController()); _bodyPositionShowInName.add(true); }),
                   type: 'bodyPosition', color: Colors.blueAccent),
               const SizedBox(height: 16),
               _buildToggleableList('IMPLEMENTS', _implementControllers, _implementShowInName,
-                  () => setState(() { _implementControllers.add(TextEditingController()); _implementShowInName.add(true); }),
+                  () => setState(() { _implementControllers.add(_newPieceController()); _implementShowInName.add(true); }),
                   type: 'implement', color: Colors.orangeAccent),
               const SizedBox(height: 16),
               _buildToggleableList('PREFIXES', _prefixControllers, _prefixShowInName,
-                  () => setState(() { _prefixControllers.add(TextEditingController()); _prefixShowInName.add(true); }),
+                  () => setState(() { _prefixControllers.add(_newPieceController()); _prefixShowInName.add(true); }),
                   type: 'prefix', color: LabColors.primary),
               const SizedBox(height: 16),
               _buildToggleableList('SUFFIXES', _suffixControllers, _suffixShowInName,
-                  () => setState(() { _suffixControllers.add(TextEditingController()); _suffixShowInName.add(true); }),
+                  () => setState(() { _suffixControllers.add(_newPieceController()); _suffixShowInName.add(true); }),
                   type: 'suffix', color: LabColors.primary),
               const SizedBox(height: 16),
               _buildToggleableList('ASSISTANCE_TYPE', _assistanceControllers, _assistanceShowInName,
-                  () => setState(() { _assistanceControllers.add(TextEditingController()); _assistanceShowInName.add(true); }),
+                  () => setState(() { _assistanceControllers.add(_newPieceController()); _assistanceShowInName.add(true); }),
                   type: 'assistance', color: Colors.tealAccent),
 
               const SizedBox(height: 32),
               _buildSectionTitle('NOMENCLATURE_CONTROL'),
               const SizedBox(height: 16),
-              _buildNomenclatureControl(),
+              _buildNomenclatureControl(settings, tC),
 
               const SizedBox(height: 32),
               _buildSectionTitle('LOAD_METRICS'),
@@ -547,7 +572,7 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
             IconButton(
               icon: Icon(Icons.manage_search, color: color, size: 18),
               onPressed: () => _showQualityOverlay(null, type, onSelect: (v) => setState(() {
-                controllers.add(TextEditingController(text: v));
+                controllers.add(_newPieceController(v));
                 showInName.add(true);
               }))
             ),
@@ -578,45 +603,96 @@ class _EditExerciseScreenState extends ConsumerState<EditExerciseScreen> {
   // Lets the user drag-reorder the pieces fullName assembles from, per
   // exercise. Defaults to kDefaultNamePieceOrder (see database.dart) until
   // touched.
-  Widget _buildNomenclatureControl() {
-    const color = Colors.purpleAccent;
+  // Space-joined text of the "shown in name" items in [controllers], same
+  // rule fullName uses at save time (BaseExerciseExtension._activeText).
+  String _activePieceText(List<TextEditingController> controllers, List<bool> showFlags) {
+    final parts = <String>[];
+    for (int i = 0; i < controllers.length; i++) {
+      if (i < showFlags.length && showFlags[i]) {
+        final t = controllers[i].text.trim();
+        if (t.isNotEmpty) parts.add(t);
+      }
+    }
+    return parts.join(' ');
+  }
+
+  String _pieceDisplayText(String key) {
+    switch (key) {
+      case 'NAME':
+        return _nameController.text.trim();
+      case 'BODY_POSITION':
+        return _activePieceText(_bodyPositionControllers, _bodyPositionShowInName);
+      case 'IMPLEMENTS':
+        return _activePieceText(_implementControllers, _implementShowInName);
+      case 'PREFIXES':
+        return _activePieceText(_prefixControllers, _prefixShowInName);
+      case 'SUFFIXES':
+        return _activePieceText(_suffixControllers, _suffixShowInName);
+      case 'ASSISTANCE':
+        return _activePieceText(_assistanceControllers, _assistanceShowInName);
+      default:
+        return '';
+    }
+  }
+
+  Widget _buildNomenclatureControl(Map<String, ThemeSetting> settings, ThemeController tC) {
+    // Only pieces that actually have something to show in the assembled
+    // name are worth reordering - an empty piece has nothing to move.
+    final visiblePieces = _nameOrder.where((k) => _pieceDisplayText(k).isNotEmpty).toList();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
         Text('DRAG_TO_REORDER_NAME_PIECES', style: LabStyles.mono(context, fontSize: 7, color: Colors.grey[600])),
         IconButton(
-          icon: const Icon(Icons.restart_alt, color: color, size: 18),
+          icon: Icon(Icons.restart_alt, color: Colors.grey[400], size: 18),
           tooltip: 'RESET_DEFAULT_ORDER',
           onPressed: () => setState(() => _nameOrder = List<String>.from(kDefaultNamePieceOrder)),
         ),
       ]),
       const SizedBox(height: 4),
+      if (visiblePieces.isEmpty)
+        Text('NOTHING_TO_REORDER_YET', style: LabStyles.mono(context, fontSize: 8, color: Colors.grey[700])),
       ReorderableListView.builder(
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         buildDefaultDragHandles: false,
-        itemCount: _nameOrder.length,
+        itemCount: visiblePieces.length,
         itemBuilder: (context, index) {
-          final piece = _nameOrder[index];
+          final piece = visiblePieces[index];
+          final color = tC.getColor(settings, 'NOMENCLATURE_$piece',
+              defaultColor: kNomenclaturePieceDefaults[piece] ?? LabColors.primary,
+              nameSeed: piece);
           return Container(
             key: ValueKey('nameorder_$piece'),
             margin: const EdgeInsets.only(bottom: 6),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.06),
-              border: Border.all(color: color.withValues(alpha: 0.3), width: 0.5),
+              color: color.withValues(alpha: 0.08),
+              border: Border.all(color: color.withValues(alpha: 0.4), width: 0.5),
             ),
             child: Row(children: [
               Text('${index + 1}.', style: LabStyles.mono(context, fontSize: 10, color: color, fontWeight: FontWeight.bold)),
               const SizedBox(width: 8),
-              Expanded(child: Text(piece, style: LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold))),
+              Expanded(
+                child: Text(_pieceDisplayText(piece).toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: LabStyles.mono(context, fontSize: 10, color: color, fontWeight: FontWeight.bold)),
+              ),
               ReorderableDragStartListener(index: index, child: Icon(Icons.drag_handle, color: color.withValues(alpha: 0.6), size: 18)),
             ]),
           );
         },
         onReorder: (oldIndex, newIndex) => setState(() {
+          final draggedKey = visiblePieces[oldIndex];
           if (newIndex > oldIndex) newIndex--;
-          final item = _nameOrder.removeAt(oldIndex);
-          _nameOrder.insert(newIndex, item);
+          _nameOrder.remove(draggedKey);
+          final remainingVisible = _nameOrder.where((k) => _pieceDisplayText(k).isNotEmpty).toList();
+          if (newIndex >= remainingVisible.length) {
+            _nameOrder.add(draggedKey);
+          } else {
+            final anchorKey = remainingVisible[newIndex];
+            _nameOrder.insert(_nameOrder.indexOf(anchorKey), draggedKey);
+          }
         }),
       ),
     ]);
