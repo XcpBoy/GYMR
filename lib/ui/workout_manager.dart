@@ -710,7 +710,6 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
     for (final id in exIds) {
       final ex = exMap[id];
       if (ex == null) continue;
-      final m = (ex.parsedComplexMetadata["vpMultiplier"] as num?)?.toDouble() ?? 1.0;
       final loadType = RegExp(r'\[NT:(\w+)\]').firstMatch(ex.intention ?? '')?.group(1) ?? 'EXT.LOAD';
       final isJst = loadType == 'JST.BW';
       final isL = loadType == 'LASTRE';
@@ -727,7 +726,7 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
         final tonnage = w * reps;
         if (tonnage <= 0) continue;
         final ordinal = i + 1;
-        knsVp += tonnage * (1 + m * log(ordinal + 1));
+        knsVp += tonnage * (1 + log(ordinal + 1));
       }
       if (knsVp > 0) {
         vpByEx[id] = (name: ex.fullName, totalVp: knsVp);
@@ -3743,7 +3742,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   bool _isIso = false;
   bool _hasVpPr = false;
   double _vpValue = 0;
-  double _vpMultiplier = 1.0;
   Timer? _vpTimer;
   Future<List<drift.QueryRow>>? _somaticLogsFuture;
 
@@ -3763,7 +3761,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     final reps = double.tryParse(_rC.text) ?? 0;
     final tonnage = tL * reps;
     final setOrdinal = widget.index + 1;
-    return tonnage * (1 + _vpMultiplier * log(setOrdinal + 1));
+    return tonnage * (1 + log(setOrdinal + 1));
   }
 
   @override
@@ -3785,8 +3783,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     // Isometric detection for conditional UI
     _isIso = widget.isIso;
     // VP initialisation
-    _vpMultiplier =
-        (widget.exercise.parsedComplexMetadata["vpMultiplier"] as num?)?.toDouble() ?? 1.0;
     if (widget.set.complexMetadata != null &&
         widget.set.complexMetadata!.isNotEmpty) {
       try {

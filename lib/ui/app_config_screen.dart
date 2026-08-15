@@ -22,6 +22,18 @@ const List<_ConfigToggle> _cwoToggles = [
   _ConfigToggle("FAILURE.PHASE", "APPCFG_SHOW_FAILURE_PHASE"),
 ];
 
+// Toggles that live under VISUALS > EDIT_EXERCISE. Each one hides the
+// matching field from EDIT_EXERCISE and EXERCISE_CREATOR when off - see
+// _fieldVisible() in both screens. Default true so nothing changes for
+// existing users until they turn one off.
+const List<_ConfigToggle> _editExerciseToggles = [
+  _ConfigToggle("SECONDARY MUSCLE", "APPCFG_SHOW_SECONDARY_MUSCLE"),
+  _ConfigToggle("PATTERN TYPE", "APPCFG_SHOW_PATTERN_TYPE"),
+  _ConfigToggle("TYPE OF TISSUE", "APPCFG_SHOW_TISSUE_TYPE"),
+  _ConfigToggle("NAME OF TISSUE", "APPCFG_SHOW_TISSUE_NAME"),
+  _ConfigToggle("PHASES", "APPCFG_SHOW_PHASES"),
+];
+
 class AppConfigScreen extends ConsumerStatefulWidget {
   const AppConfigScreen({super.key});
 
@@ -123,6 +135,13 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
             const SizedBox(height: 12),
           ],
           _buildKnsFaceLayoutPicker(context, settings, tC, lang),
+        ]),
+        const SizedBox(height: 12),
+        _buildSectionCard(context, "EDIT_EXERCISE", [
+          for (final t in _editExerciseToggles) ...[
+            _buildToggleRow(context, settings, tC, t),
+            const SizedBox(height: 12),
+          ],
         ]),
       ],
     );

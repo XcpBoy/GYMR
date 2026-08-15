@@ -170,7 +170,6 @@ final Map<String, String> esTranslations = {
   'Number of Phases': 'Número de Fases',
   'Phase': 'Fase',
   'Update Movement': 'Actualizar Movimiento',
-  'VP MULTIPLIER': 'MULTIPLICADOR VP',
 
   // --- kinisi_tree_screen.dart ---
   'UP: PROGRESSIONS': 'ARRIBA: PROGRESIONES',

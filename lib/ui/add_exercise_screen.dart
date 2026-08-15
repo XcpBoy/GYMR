@@ -123,7 +123,6 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
   // RELATIONS
   Map<String, dynamic> _complexMetadata = {"regressions": [], "progressions": [], "alters": [], "particular_toggles": [], "description": ""};
   final _descriptionController = TextEditingController();
-  final _vpMultiplierController = TextEditingController(text: '1.0');
 
   // PHASES
   final _numPhasesController = TextEditingController(text: '1');
@@ -161,7 +160,6 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     _patternTypeController.dispose(); _intentionController.dispose();
     _tissueTypeController.dispose(); _tissueNameController.dispose();
     _numPhasesController.dispose();
-    _vpMultiplierController.dispose();
     for (var c in [..._prefixControllers, ..._suffixControllers, ..._implementControllers, ..._bodyPositionControllers, ..._assistanceControllers, ..._phaseDescriptionControllers]) {
       c.dispose();
     }
@@ -220,7 +218,7 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
             nameOrder: drift.Value(jsonEncode(_reconcileNameOrder(_nameOrder, _liveNameTokens()))),
             numPhases: drift.Value(int.tryParse(_numPhasesController.text) ?? 1),
             phaseDescriptions: drift.Value(jsonEncode(metadata)),
-            complexMetadata: drift.Value(jsonEncode({..._complexMetadata, "classification": _classification, "description": _descriptionController.text.trim(), "vpMultiplier": double.tryParse(_vpMultiplierController.text) ?? 1.0})),
+            complexMetadata: drift.Value(jsonEncode({..._complexMetadata, "classification": _classification, "description": _descriptionController.text.trim()})),
             isUnilateral: drift.Value(_isUnilateral),
             orderIndex: drift.Value(maxOrder),
           ),
@@ -392,6 +390,11 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
     final lang = ref.watch(languageProvider).value ?? 'en';
     final settings = ref.watch(themeSettingsProvider).value ?? <String, ThemeSetting>{};
     final tC = ref.read(themeControllerProvider);
+    final showSecondaryMuscle = tC.getBool(settings, 'APPCFG_SHOW_SECONDARY_MUSCLE', defaultValue: true);
+    final showPatternType = tC.getBool(settings, 'APPCFG_SHOW_PATTERN_TYPE', defaultValue: true);
+    final showTissueType = tC.getBool(settings, 'APPCFG_SHOW_TISSUE_TYPE', defaultValue: true);
+    final showTissueName = tC.getBool(settings, 'APPCFG_SHOW_TISSUE_NAME', defaultValue: true);
+    final showPhases = tC.getBool(settings, 'APPCFG_SHOW_PHASES', defaultValue: true);
     return MainScaffold(
       title: 'EXERCISE_CREATOR',
       body: SingleChildScrollView(
@@ -468,44 +471,43 @@ class _AddExerciseScreenState extends ConsumerState<AddExerciseScreen> {
               _buildIsometricToggle(),
               const SizedBox(height: 8),
               _buildUnilateralToggle(),
-              const SizedBox(height: 16),
-              Row(children: [
-                Expanded(
-                    child: LabTextField(
-                        controller: _vpMultiplierController,
-                        label: 'VP MULTIPLIER',
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true))),
-              ]),
 
               const SizedBox(height: 32),
               _buildSectionTitle('TARGETING'),
               const SizedBox(height: 16),
               _buildSearchableField(tr(lang, 'Primary Muscle'), _primaryMuscleController, 'muscle'),
-              const SizedBox(height: 16),
-              _buildSearchableField(tr(lang, 'Secondary Muscle'), _secondaryMuscleController, 'muscle'),
+              if (showSecondaryMuscle) ...[
+                const SizedBox(height: 16),
+                _buildSearchableField(tr(lang, 'Secondary Muscle'), _secondaryMuscleController, 'muscle'),
+              ],
 
               const SizedBox(height: 32),
-              _buildSearchableField(tr(lang, 'Pattern Type'), _patternTypeController, 'pattern'),
-              const SizedBox(height: 16),
+              if (showPatternType) ...[
+                _buildSearchableField(tr(lang, 'Pattern Type'), _patternTypeController, 'pattern'),
+                const SizedBox(height: 16),
+              ],
               _buildSearchableField(tr(lang, 'Purpose / Intention'), _intentionController, 'purpose'),
 
-              const SizedBox(height: 32),
-              _buildSectionTitle('BIOMECHANICAL_TISSUE'),
-              const SizedBox(height: 16),
-              _buildSearchableField(tr(lang, 'Type of Tissue'), _tissueTypeController, 'tissueType'),
-              const SizedBox(height: 16),
-              _buildSearchableField(tr(lang, 'Name of Tissue'), _tissueNameController, 'tissueName'),
+              if (showTissueType || showTissueName) ...[
+                const SizedBox(height: 32),
+                _buildSectionTitle('BIOMECHANICAL_TISSUE'),
+                const SizedBox(height: 16),
+                if (showTissueType) _buildSearchableField(tr(lang, 'Type of Tissue'), _tissueTypeController, 'tissueType'),
+                if (showTissueType && showTissueName) const SizedBox(height: 16),
+                if (showTissueName) _buildSearchableField(tr(lang, 'Name of Tissue'), _tissueNameController, 'tissueName'),
+              ],
 
-              const SizedBox(height: 32),
-              _buildSectionTitle('PHASES'),
-              const SizedBox(height: 16),
-              LabTextField(controller: _numPhasesController, label: tr(lang, 'Number of Phases')),
-              const SizedBox(height: 16),
-              ..._phaseDescriptionControllers.asMap().entries.map((entry) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _buildSearchableField('${tr(lang, 'Phase')} ${entry.key + 1}', entry.value, 'phase')
-              )),
+              if (showPhases) ...[
+                const SizedBox(height: 32),
+                _buildSectionTitle('PHASES'),
+                const SizedBox(height: 16),
+                LabTextField(controller: _numPhasesController, label: tr(lang, 'Number of Phases')),
+                const SizedBox(height: 16),
+                ..._phaseDescriptionControllers.asMap().entries.map((entry) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _buildSearchableField('${tr(lang, 'Phase')} ${entry.key + 1}', entry.value, 'phase')
+                )),
+              ],
 
               const SizedBox(height: 40),
               LabButton(label: tr(lang, 'Add Movement'), onPressed: _saveExercise, color: LabColors.accent),
