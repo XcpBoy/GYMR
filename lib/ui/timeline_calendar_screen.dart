@@ -30,8 +30,9 @@ class _TimelineCalendarScreenState extends ConsumerState<TimelineCalendarScreen>
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider).value ?? 'en';
     return MainScaffold(
-      title: 'TIMELINE_CALENDAR',
+      title: tr(lang, 'TIMELINE_CALENDAR'),
       screenKey: 'TIMELINE_CAL',
       body: ListView.builder(
         controller: _scrollController,
@@ -127,10 +128,10 @@ class _MonthCalendarGrid extends ConsumerWidget {
     }
 
     // Flat list of TimelineDays for easy lookup
-    final Map<int, TimelineDay> dayMap = {};
+    final Map<String, TimelineDay> dayMap = {};
     for (var w in weeks) {
       for (var d in w.days) {
-        dayMap[d.date.day] = d;
+        dayMap["${d.date.year}-${d.date.month}-${d.date.day}"] = d;
       }
     }
 
@@ -150,7 +151,7 @@ class _MonthCalendarGrid extends ConsumerWidget {
           final dayDate = allDays[index];
           if (dayDate == null) return const SizedBox();
           
-          final dayData = dayMap[dayDate.day];
+          final dayData = dayMap["${dayDate.year}-${dayDate.month}-${dayDate.day}"];
           return _CalendarDayCell(date: dayDate, data: dayData, settings: settings, controller: controller, lang: lang);
         },
       ),
@@ -172,7 +173,7 @@ class _CalendarDayCell extends StatelessWidget {
     final isToday = date.year == DateTime.now().year && date.month == DateTime.now().month && date.day == DateTime.now().day;
 
     return InkWell(
-      onTap: data != null ? () => _showDaySummary(context) : null,
+      onTap: data != null ? () => _showDaySummary(context, data!) : null,
       child: Container(
         decoration: BoxDecoration(
           color: Colors.black,
@@ -217,7 +218,7 @@ class _CalendarDayCell extends StatelessWidget {
     );
   }
 
-  void _showDaySummary(BuildContext context) {
+  void _showDaySummary(BuildContext context, TimelineDay data) {
     showDialog(
       context: context,
       builder: (c) => AlertDialog(
@@ -240,8 +241,8 @@ class _CalendarDayCell extends StatelessWidget {
               children: [
                 Text(tr(lang, "KNS_SUMMARY:"), style: LabStyles.mono(context, fontSize: 10, color: LabColors.primary)),
                 const SizedBox(height: 12),
-                ...data!.exercises.map((ex) {
-                  final pattern = data!.exercisePatterns[ex] ?? "NONE";
+                ...data.exercises.map((ex) {
+                  final pattern = data.exercisePatterns[ex] ?? "NONE";
                   final color = controller.getColor(settings, "pattern_$pattern", nameSeed: pattern);
                   
                   return Padding(
@@ -262,13 +263,13 @@ class _CalendarDayCell extends StatelessWidget {
                       ],
                     ),
                   );
-                }).toList(),
+                }),
                 const SizedBox(height: 16),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(tr(lang, "TOTAL_VOLUME:"), style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
-                    Text("${data!.totalVolume.toStringAsFixed(0)} KG", style: LabStyles.mono(context, fontSize: 8, fontWeight: FontWeight.bold, color: LabColors.accent)),
+                    Text("${data.totalVolume.toStringAsFixed(0)} KG", style: LabStyles.mono(context, fontSize: 8, fontWeight: FontWeight.bold, color: LabColors.accent)),
                   ],
                 ),
               ],

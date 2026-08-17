@@ -49,26 +49,19 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
           Expanded(
             child: timelineData.when(
               data: (weeks) {
-                // Correction: just use the week's days filter directly for simplicity
-                final displayWeeks = weeks.where((week) {
-                  final filteredDays = week.days.where((day) {
-                    final matchesQuery = _searchQuery.isEmpty || 
-                        day.exercises.any((e) => e.toLowerCase().contains(_searchQuery.toLowerCase())) ||
-                        day.fields.any((f) => f.toLowerCase().contains(_searchQuery.toLowerCase()));
-                    final matchesPr = !_onlyPr || day.hasPr;
-                    return matchesQuery && matchesPr;
-                  }).toList();
-                  return filteredDays.isNotEmpty;
-                }).map((week) {
-                   final filteredDays = week.days.where((day) {
-                    final matchesQuery = _searchQuery.isEmpty || 
-                        day.exercises.any((e) => e.toLowerCase().contains(_searchQuery.toLowerCase())) ||
-                        day.fields.any((f) => f.toLowerCase().contains(_searchQuery.toLowerCase()));
-                    final matchesPr = !_onlyPr || day.hasPr;
-                    return matchesQuery && matchesPr;
-                  }).toList();
-                  return TimelineWeek(year: week.year, weekNumber: week.weekNumber, days: filteredDays);
-                }).toList();
+                final displayWeeks = weeks
+                    .map((week) {
+                      final filteredDays = week.days.where((day) {
+                        final matchesQuery = _searchQuery.isEmpty ||
+                            day.exercises.any((e) => e.toLowerCase().contains(_searchQuery.toLowerCase())) ||
+                            day.fields.any((f) => f.toLowerCase().contains(_searchQuery.toLowerCase()));
+                        final matchesPr = !_onlyPr || day.hasPr;
+                        return matchesQuery && matchesPr;
+                      }).toList();
+                      return TimelineWeek(year: week.year, weekNumber: week.weekNumber, days: filteredDays);
+                    })
+                    .where((week) => week.days.isNotEmpty)
+                    .toList();
 
                 if (displayWeeks.isEmpty) return _buildEmptyState(context, lang);
                 
