@@ -88,6 +88,7 @@ class _KnstFixerView extends ConsumerStatefulWidget {
 
 class _KnstFixerViewState extends ConsumerState<_KnstFixerView> {
   bool _fixing = false;
+  bool _removingBroken = false;
 
   // Fixes exactly the ONE_SIDED_LINK issues currently on screen, one
   // targeted add per issue via db.addMissingReciprocal - NOT
@@ -119,6 +120,37 @@ class _KnstFixerViewState extends ConsumerState<_KnstFixerView> {
     }
   }
 
+  // Removing a dangling link is unambiguous by construction - findKnsTreeIssues
+  // already confirmed [issue['targetName']] doesn't resolve to any exercise
+  // in the inventory, so there's nothing to lose by dropping the reference.
+  // (A BROKEN_LINK that's actually just a typo of a real exercise name still
+  // gets removed here rather than auto-corrected - guessing the intended
+  // target isn't safe to automate, so that case is still a manual fix via
+  // KNST.ALERT -> tap through to the exercise.)
+  Future<void> _removeBrokenLink(Map<String, dynamic> issue) async {
+    final db = ref.read(databaseProvider);
+    final exercise = issue['exercise'] as BaseExercise;
+    final category = issue['category'] as String;
+    final targetName = issue['targetName'] as String;
+    await db.removeRelationEntry(exercise.id, category, targetName);
+  }
+
+  Future<void> _runRemoveAllBroken(List<Map<String, dynamic>> broken) async {
+    setState(() => _removingBroken = true);
+    try {
+      for (final issue in broken) {
+        await _removeBrokenLink(issue);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("BROKEN_LINKS_REMOVED"),
+            backgroundColor: LabColors.primary));
+      }
+    } finally {
+      if (mounted) setState(() => _removingBroken = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final exercises = ref.watch(allExercisesProvider).value ?? [];
@@ -131,6 +163,8 @@ class _KnstFixerViewState extends ConsumerState<_KnstFixerView> {
     final issues = ExportService.findKnsTreeIssues(exercises);
     final oneSided =
         issues.where((i) => (i['label'] as String).startsWith('ONE_SIDED_LINK')).toList();
+    final broken =
+        issues.where((i) => (i['label'] as String).startsWith('BROKEN_LINK')).toList();
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -182,6 +216,68 @@ class _KnstFixerViewState extends ConsumerState<_KnstFixerView> {
               const SizedBox(height: 4),
               Text(issue['label'] as String,
                   style: LabStyles.mono(context, fontSize: 9, color: Colors.orangeAccent)),
+            ]),
+          ),
+        ],
+        const SizedBox(height: 24),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: LabColors.surfaceContainerLow,
+            border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3), width: 0.5),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('REMOVE BROKEN LINKS',
+                style: LabStyles.mono(context,
+                    fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+            const SizedBox(height: 6),
+            Text(
+                broken.isEmpty
+                    ? 'No broken links found.'
+                    : '${broken.length} broken link(s) found - the referenced exercise doesn\'t exist. Removing just drops the dangling reference; it can\'t recreate or rename the missing exercise, so double-check it isn\'t a typo (fix that manually via KNST.ALERT) before removing in bulk.',
+                style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
+            if (broken.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: LabButton(
+                  label: _removingBroken ? 'REMOVING...' : 'REMOVE ALL BROKEN LINKS',
+                  color: Colors.redAccent,
+                  onPressed: _removingBroken
+                      ? () {}
+                      : () => _runRemoveAllBroken(broken),
+                ),
+              ),
+            ],
+          ]),
+        ),
+        const SizedBox(height: 16),
+        for (final issue in broken) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: LabColors.surfaceContainerLow,
+              border: Border.all(color: Colors.grey[800]!, width: 0.5),
+            ),
+            child: Row(children: [
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text((issue['exercise'] as BaseExercise).fullName,
+                      style: LabStyles.mono(context,
+                          fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                  const SizedBox(height: 4),
+                  Text(issue['label'] as String,
+                      style: LabStyles.mono(context, fontSize: 9, color: Colors.redAccent)),
+                ]),
+              ),
+              IconButton(
+                icon: const Icon(Icons.link_off, color: Colors.redAccent, size: 18),
+                tooltip: 'REMOVE_THIS_LINK',
+                onPressed: () async {
+                  await _removeBrokenLink(issue);
+                },
+              ),
             ]),
           ),
         ],

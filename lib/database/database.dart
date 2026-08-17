@@ -348,6 +348,26 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  // Pure remove-only fix for one BROKEN_LINK issue: drop [targetName] from
+  // [exerciseId]'s [category] list. Only ever removes the exact entry
+  // passed in, never touches anything else on the exercise - safe to call
+  // repeatedly in a loop for the same reason addMissingReciprocal is (each
+  // call re-reads the exercise fresh from the DB right before writing).
+  Future<void> removeRelationEntry(
+      int exerciseId, String category, String targetName) async {
+    final ex = await (select(baseExercises)
+          ..where((t) => t.id.equals(exerciseId)))
+        .getSingle();
+    final meta = ex.parsedComplexMetadata;
+    final list = List<String>.from(meta[category] ?? []);
+    if (list.remove(targetName)) {
+      meta[category] = list;
+      await (update(baseExercises)..where((t) => t.id.equals(exerciseId)))
+          .write(BaseExercisesCompanion(
+              complexMetadata: Value(jsonEncode(meta))));
+    }
+  }
+
   Future<void> syncBidirectionalRelations(
       int exerciseId, Map<String, dynamic> newMeta) async {
     final exercise = await (select(baseExercises)

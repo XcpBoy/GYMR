@@ -1706,6 +1706,12 @@ class ExportService {
             issues.add({
               'exercise': e,
               'label': 'BROKEN_LINK ($category -> "$targetName" NOT_FOUND)',
+              // Structured fields for KNST.FIXER's "remove broken link"
+              // action - deleting a dangling reference is unambiguous
+              // (the target genuinely doesn't exist), unlike a BROKEN_LINK
+              // that turns out to be a typo of a real exercise name.
+              'category': category,
+              'targetName': targetName,
             });
             continue;
           }
