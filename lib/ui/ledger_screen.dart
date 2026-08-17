@@ -14,7 +14,10 @@ import 'exercise_history_screen.dart';
 import 'kinisi_tree_screen.dart';
 import 'kns_tree_manager_screen.dart';
 
-enum _SortMode { alphaAsc, alphaDesc, mostUsed, leastUsed, mostRecent, leastRecent, unusedFirst }
+// Declaration order is the tap-to-cycle order (see _buildSortPicker,
+// which advances via _listSortMode.index + 1) - mostRecent ("NEW") first
+// since that's the default, then alphabetical, then the rest.
+enum _SortMode { mostRecent, alphaAsc, alphaDesc, mostUsed, leastUsed, leastRecent, unusedFirst }
 
 extension _SortModeLabel on _SortMode {
   String get label {
@@ -23,7 +26,7 @@ extension _SortModeLabel on _SortMode {
       case _SortMode.alphaDesc: return 'Z-A';
       case _SortMode.mostUsed: return 'MOST USED';
       case _SortMode.leastUsed: return 'LEAST USED';
-      case _SortMode.mostRecent: return 'MOST RECENT';
+      case _SortMode.mostRecent: return 'NEW';
       case _SortMode.leastRecent: return 'LEAST RECENT';
       case _SortMode.unusedFirst: return 'NO USE FIRST';
     }
@@ -56,7 +59,7 @@ class LedgerScreen extends ConsumerStatefulWidget {
 class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerProviderStateMixin {
   String _filterQuery = '';
   final TextEditingController _filterController = TextEditingController();
-  _SortMode _listSortMode = _SortMode.alphaAsc;
+  _SortMode _listSortMode = _SortMode.mostRecent;
   Timer? _debounce;
   Future<Map<int, _UsageInfo>>? _usageFuture;
   late final TabController _tabController;
