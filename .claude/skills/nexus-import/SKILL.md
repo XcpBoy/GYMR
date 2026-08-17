@@ -19,6 +19,7 @@ Read the matching reference doc **before** generating either file — the two fo
 
 1. **Exercise inventory (KNS list)** → `reference/exercises-format.md`. Round-trips cleanly: what NEXUS exports as CSV is exactly what it re-imports.
 2. **Workout block (routine)** → `reference/workout-blocks-format.md`. One row per **set** (not per exercise) — an exercise with 3 sets is 3 rows sharing the same exercise identity columns.
+3. **KNS.TREE structure** (progressions/regressions/alters, not field data) → `reference/kns-tree-structure-format.md`. A markdown table, not prose — has an ADD ONLY vs OVERRIDE import distinction that matters a lot (OVERRIDE can delete existing relations).
 
 Ready-to-copy starter templates for both live in `templates/`. Prefer editing a copy of these over building a file from a blank sheet — they already encode the trickier conventions correctly (unilateral single-row sets, empty-vs-omitted-column handling).
 

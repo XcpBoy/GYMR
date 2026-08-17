@@ -1783,6 +1783,262 @@ class ExportService {
     return file.path;
   }
 
+  // --- KNS.TREE structure export/import (.md table) + visual PDF ---
+  //
+  // Distinct from exportKnsTreeAlertToMarkdown above: that one reports
+  // ISSUES (broken/one-sided links). This describes the actual tree
+  // STRUCTURE - every exercise's progressions/regressions/alters, as a
+  // markdown table (not prose) since the format only needs to round-trip
+  // through this app, not read naturally. One row per exercise that has at
+  // least one relation; multiple names in a cell are ';'-separated,
+  // matching the UTILITIES column convention used elsewhere in NEXUS.
+
+  static Future<String> exportKnsTreeStructureToMarkdown(
+      List<BaseExercise> exercises,
+      {bool share = true}) async {
+    final buffer = StringBuffer();
+    buffer.writeln("# GYMR // KNS.TREE STRUCTURE");
+    buffer.writeln();
+    buffer.writeln("| EXERCISE | PROGRESSIONS | REGRESSIONS | ALTERS |");
+    buffer.writeln("|---|---|---|---|");
+    for (final e in exercises) {
+      final meta = e.parsedComplexMetadata;
+      final prog = List<String>.from(meta['progressions'] ?? []);
+      final reg = List<String>.from(meta['regressions'] ?? []);
+      final alt = List<String>.from(meta['alters'] ?? []);
+      if (prog.isEmpty && reg.isEmpty && alt.isEmpty) continue;
+      buffer.writeln(
+          "| ${e.fullName} | ${prog.join(';')} | ${reg.join(';')} | ${alt.join(';')} |");
+    }
+
+    final output = await getTemporaryDirectory();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final file = File("${output.path}/gymr_kns_tree_structure_$ts.md");
+    await file.writeAsString(buffer.toString());
+    if (share) {
+      await SharePlus.instance.share(ShareParams(
+          files: [XFile(file.path)], text: 'GYMR KNS Tree Structure'));
+    }
+    return file.path;
+  }
+
+  static List<Map<String, dynamic>> _parseKnsTreeTable(String content) {
+    final rows = <Map<String, dynamic>>[];
+    List<String> splitCell(String c) => c.isEmpty
+        ? <String>[]
+        : c
+            .split(';')
+            .map((s) => s.trim().toUpperCase())
+            .where((s) => s.isNotEmpty)
+            .toList();
+
+    for (final rawLine in content.split('\n')) {
+      final line = rawLine.trim();
+      if (!line.startsWith('|')) continue;
+      final inner =
+          line.substring(1, line.endsWith('|') ? line.length - 1 : line.length);
+      final cells = inner.split('|').map((c) => c.trim()).toList();
+      if (cells.length < 4) continue;
+      final name = cells[0].toUpperCase();
+      if (name.isEmpty || name == 'EXERCISE') continue; // header row
+      if (RegExp(r'^:?-+:?$').hasMatch(cells[0])) continue; // separator row
+      rows.add({
+        'name': name,
+        'progressions': splitCell(cells[1]),
+        'regressions': splitCell(cells[2]),
+        'alters': splitCell(cells[3]),
+      });
+    }
+    return rows;
+  }
+
+  // ADD ONLY (overrideMode: false): every resolved target is appended via
+  // db.addMissingReciprocal (same safe, order-independent primitive
+  // KNST.FIXER uses) - never removes anything already on the exercise.
+  // OVERRIDE (overrideMode: true): db.overrideRelations makes the file the
+  // source of truth for every exercise it mentions, replacing all three
+  // lists outright.
+  // Either way, a row/target that doesn't resolve to a real exercise is
+  // skipped and reported, never auto-created (matches the same
+  // "report and skip" choice made for KNST.FIXER's BROKEN_LINK handling).
+  static Future<Map<String, dynamic>> importKnsTreeStructureFromMarkdown(
+      String content, AppDatabase db,
+      {required bool overrideMode}) async {
+    final rows = _parseKnsTreeTable(content);
+    final allExercises = await db.select(db.baseExercises).get();
+    final byName = {for (final e in allExercises) e.fullName: e};
+
+    int rowsApplied = 0;
+    int entriesApplied = 0;
+    final skippedExerciseNames = <String>{};
+    final skippedTargetNames = <String>{};
+
+    for (final row in rows) {
+      final name = row['name'] as String;
+      final source = byName[name];
+      if (source == null) {
+        skippedExerciseNames.add(name);
+        continue;
+      }
+
+      final categories = {
+        'progressions': row['progressions'] as List<String>,
+        'regressions': row['regressions'] as List<String>,
+        'alters': row['alters'] as List<String>,
+      };
+
+      if (overrideMode) {
+        final resolved = <String, List<String>>{};
+        for (final entry in categories.entries) {
+          final list = <String>[];
+          for (final target in entry.value) {
+            if (byName.containsKey(target)) {
+              list.add(target);
+              entriesApplied++;
+            } else {
+              skippedTargetNames.add(target);
+            }
+          }
+          resolved[entry.key] = list;
+        }
+        await db.overrideRelations(source.id,
+            progressions: resolved['progressions']!,
+            regressions: resolved['regressions']!,
+            alters: resolved['alters']!);
+      } else {
+        for (final entry in categories.entries) {
+          for (final target in entry.value) {
+            if (byName.containsKey(target)) {
+              await db.addMissingReciprocal(source.id, entry.key, target);
+              entriesApplied++;
+            } else {
+              skippedTargetNames.add(target);
+            }
+          }
+        }
+      }
+      rowsApplied++;
+    }
+
+    return {
+      'rows': rowsApplied,
+      'entries': entriesApplied,
+      'skippedExercises': skippedExerciseNames.toList(),
+      'skippedTargets': skippedTargetNames.toList(),
+    };
+  }
+
+  static pw.Widget _pdfTreeNode(String name, bool exists, PdfColor color) {
+    return pw.Container(
+      margin: const pw.EdgeInsets.symmetric(vertical: 1),
+      padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: exists ? color : PdfColors.red, width: 0.5),
+        color: exists ? PdfColors.white : PdfColors.red50,
+      ),
+      child: pw.Text(name,
+          style: pw.TextStyle(
+              fontSize: 8, color: exists ? PdfColors.black : PdfColors.red)),
+    );
+  }
+
+  // A simplified visual stand-in for kinisi_tree_screen.dart's interactive
+  // bezier-connected canvas: an indented outline (depth = indentation, not
+  // literal connector lines) walking the same category/reciprocal
+  // traversal, color-coded the same way (green=progressions, red=
+  // regressions/broken, purple=alters). Guards against relation cycles
+  // with [visited] since the graph isn't guaranteed acyclic.
+  static pw.Widget _pdfTreeOutline(
+      String name, Map<String, BaseExercise> cache, String category,
+      PdfColor color,
+      {int depth = 0, int maxDepth = 6, Set<String>? visited}) {
+    final seen = visited ?? <String>{};
+    final ex = cache[name];
+    final exists = ex != null;
+    final row = pw.Padding(
+      padding: pw.EdgeInsets.only(left: depth * 14.0),
+      child: _pdfTreeNode(name, exists, color),
+    );
+    if (!exists || depth >= maxDepth || seen.contains(name)) return row;
+    final children = List<String>.from(ex.parsedComplexMetadata[category] ?? []);
+    if (children.isEmpty) return row;
+    final nextSeen = {...seen, name};
+    return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+      row,
+      ...children.map((c) => _pdfTreeOutline(c, cache, category, color,
+          depth: depth + 1, maxDepth: maxDepth, visited: nextSeen)),
+    ]);
+  }
+
+  static pw.Widget _pdfKnsTreePage(
+      BaseExercise root, Map<String, BaseExercise> cache) {
+    final alters = List<String>.from(root.parsedComplexMetadata['alters'] ?? []);
+    return pw.Column(crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
+      pw.Text(root.fullName,
+          style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
+      pw.SizedBox(height: 8),
+      if (alters.isNotEmpty) ...[
+        pw.Text("ALTERS",
+            style: pw.TextStyle(
+                fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.purple)),
+        pw.SizedBox(height: 4),
+        pw.Wrap(
+            children: alters
+                .map((a) => pw.Padding(
+                    padding: const pw.EdgeInsets.only(right: 6, bottom: 4),
+                    child: _pdfTreeNode(a, cache.containsKey(a), PdfColors.purple)))
+                .toList()),
+        pw.SizedBox(height: 12),
+      ],
+      pw.Text("PROGRESSIONS (UP)",
+          style: pw.TextStyle(
+              fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.green)),
+      pw.SizedBox(height: 4),
+      _pdfTreeOutline(root.fullName, cache, 'progressions', PdfColors.green),
+      pw.SizedBox(height: 12),
+      pw.Text("REGRESSIONS (DOWN)",
+          style: pw.TextStyle(
+              fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.red)),
+      pw.SizedBox(height: 4),
+      _pdfTreeOutline(root.fullName, cache, 'regressions', PdfColors.red),
+    ]);
+  }
+
+  // [rootOnly] set = single-exercise export (one page). Null = one page
+  // per exercise that has at least one relation ("ALL" mode from the
+  // NEXUS picker dialog).
+  static Future<String> exportKnsTreeToPdf(List<BaseExercise> exercises,
+      {BaseExercise? rootOnly, bool share = true}) async {
+    final pdf = pw.Document();
+    final cache = {for (final e in exercises) e.fullName: e};
+    final roots = rootOnly != null
+        ? [rootOnly]
+        : exercises.where((e) {
+            final m = e.parsedComplexMetadata;
+            return (m['progressions'] as List).isNotEmpty ||
+                (m['regressions'] as List).isNotEmpty ||
+                (m['alters'] as List).isNotEmpty;
+          }).toList();
+
+    for (final root in roots) {
+      pdf.addPage(pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(24),
+        build: (context) => _pdfKnsTreePage(root, cache),
+      ));
+    }
+
+    final output = await getTemporaryDirectory();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final file = File("${output.path}/gymr_kns_tree_$ts.pdf");
+    await file.writeAsBytes(await pdf.save());
+    if (share) {
+      await SharePlus.instance.share(
+          ShareParams(files: [XFile(file.path)], text: 'GYMR KNS Tree Visual'));
+    }
+    return file.path;
+  }
+
   static Future<void> exportBlueprintsToCsv(
       List<Map<String, dynamic>> combinedData, AppDatabase db,
       {String lang = 'en'}) async {

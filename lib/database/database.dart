@@ -368,6 +368,29 @@ class AppDatabase extends _$AppDatabase {
     }
   }
 
+  // Unconditionally replaces an exercise's progressions/regressions/alters
+  // with exactly what's passed in (an empty list clears that category),
+  // leaving every other complexMetadata key (description, particular_toggles,
+  // classification, etc.) untouched. Used by the KNS.TREE structure .md
+  // importer's OVERRIDE mode - unlike addMissingReciprocal/removeRelationEntry
+  // (additive/subtractive single-entry ops), this makes the imported file
+  // the source of truth for whichever exercises it mentions.
+  Future<void> overrideRelations(int exerciseId,
+      {required List<String> progressions,
+      required List<String> regressions,
+      required List<String> alters}) async {
+    final ex = await (select(baseExercises)
+          ..where((t) => t.id.equals(exerciseId)))
+        .getSingle();
+    final meta = ex.parsedComplexMetadata;
+    meta['progressions'] = progressions;
+    meta['regressions'] = regressions;
+    meta['alters'] = alters;
+    await (update(baseExercises)..where((t) => t.id.equals(exerciseId)))
+        .write(BaseExercisesCompanion(
+            complexMetadata: Value(jsonEncode(meta))));
+  }
+
   Future<void> syncBidirectionalRelations(
       int exerciseId, Map<String, dynamic> newMeta) async {
     final exercise = await (select(baseExercises)

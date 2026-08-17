@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../localization/strings.dart';
 import '../providers/database_provider.dart';
+import '../database/database.dart';
 import '../services/export_service.dart';
 import '../providers/theme_provider.dart';
 import 'WO.Blocks.manager.dart';
@@ -34,6 +35,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
   bool _isSynthesisExpanded = true;
   bool _isRawDataExpanded = false;
   bool _isExpectedInputsExpanded = false;
+  bool _isOnlyOutputExpanded = false;
 
   @override
   void initState() {
@@ -100,6 +102,8 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
           _buildSynthesisSection(context),
           const Divider(height: 1, color: LabColors.cyanBorder, thickness: 0.2),
           _buildExchangeSection(context),
+          const Divider(height: 1, color: LabColors.cyanBorder, thickness: 0.2),
+          _buildOnlyOutputSection(context),
           const Divider(height: 1, color: LabColors.cyanBorder, thickness: 0.2),
           _buildRawDataSection(context),
           const Divider(height: 1, color: LabColors.cyanBorder, thickness: 0.2),
@@ -726,15 +730,14 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       'WO_BLOCKS': LabColors.biometricYellow,
       'KNS_LIBRARY': LabColors.inventoryOrange,
       'ROUTINE': LabColors.visualsNeon,
-      'OTHR_EXPRTS': Colors.redAccent,
+      'KNS_TREE': Colors.purpleAccent,
     };
     final woBlocksColor =
         _nexusExchangeColor('WO_BLOCKS', nexusExchangeDefaults);
     final knsLibraryColor =
         _nexusExchangeColor('KNS_LIBRARY', nexusExchangeDefaults);
     final routineColor = _nexusExchangeColor('ROUTINE', nexusExchangeDefaults);
-    final otherExportsColor =
-        _nexusExchangeColor('OTHR_EXPRTS', nexusExchangeDefaults);
+    final knsTreeColor = _nexusExchangeColor('KNS_TREE', nexusExchangeDefaults);
 
     return Container(
       color: Colors.black,
@@ -819,14 +822,82 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
               onTap: () => _importData('workouts'),
             ),
             const SizedBox(height: 12),
-            Text("OTHR.EXPRTS",
+            Text("KNS.TREE",
                 style: LabStyles.mono(context,
-                    fontSize: 9, color: otherExportsColor, fontWeight: FontWeight.bold)),
+                    fontSize: 9, color: knsTreeColor, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
+            _buildExportCard(
+              title: "EXPORT KNS.TREE (VISUAL)",
+              icon: Icons.account_tree,
+              color: knsTreeColor,
+              format: "PDF",
+              onShare: () => _showKnsTreePdfScopeSheet(share: true),
+              onDownload: () => _showKnsTreePdfScopeSheet(share: false),
+            ),
+            _buildExportCard(
+              title: "EXPORT KNS.TREE (STRUCTURE)",
+              icon: Icons.table_chart,
+              color: knsTreeColor,
+              format: "MD",
+              onShare: () async {
+                await _exportKnsTreeStructurePath(share: true);
+              },
+              onDownload: () async {
+                final filePath = await _exportKnsTreeStructurePath(share: false);
+                if (filePath != null) {
+                  await _downloadExportedFile(
+                      filePath, 'gymr_kns_tree_structure.md');
+                }
+              },
+            ),
+            _buildImportCard(
+              title: "IMPORT KNS.TREE (ADD ONLY)",
+              icon: Icons.add_link,
+              color: knsTreeColor,
+              format: "MD",
+              onTap: () => _importKnsTreeStructure(overrideMode: false),
+            ),
+            _buildImportCard(
+              title: "IMPORT KNS.TREE (OVERRIDE)",
+              icon: Icons.published_with_changes,
+              color: knsTreeColor,
+              format: "MD",
+              onTap: () => _importKnsTreeStructure(overrideMode: true),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ONLY_OUTPUT: exports with no import counterpart, kept separate from
+  // EXCHANGES (which is documented "Type: Bidirectional") so that label
+  // stays accurate - KNS.TREE.ALERT is a generated report, there's nothing
+  // to import back.
+  Widget _buildOnlyOutputSection(BuildContext context) {
+    final onlyOutputColor = _nexusExchangeColor(
+        'ONLY_OUTPUT', <String, Color>{'ONLY_OUTPUT': Colors.redAccent});
+
+    return Container(
+      color: Colors.black,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSectionHeader(
+            "ONLY_OUTPUT",
+            "Type: Export_Only",
+            LabColors.primary,
+            isExpanded: _isOnlyOutputExpanded,
+            onToggle: () =>
+                setState(() => _isOnlyOutputExpanded = !_isOnlyOutputExpanded),
+          ),
+          if (_isOnlyOutputExpanded) ...[
+            const SizedBox(height: 24),
             _buildExportCard(
               title: "EXPORT KNS.TREE.ALERT",
               icon: Icons.account_tree,
-              color: otherExportsColor,
+              color: onlyOutputColor,
               format: "MD",
               onShare: () async {
                 await _exportKnsTreeAlertPath(share: true);
@@ -1273,6 +1344,151 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       }
       if (mounted) setState(() => _isProcessing = false);
       return null;
+    }
+  }
+
+  Future<String?> _exportKnsTreeStructurePath({bool share = true}) async {
+    setState(() => _isProcessing = true);
+    try {
+      final db = ref.read(databaseProvider);
+      final exercises = await db.select(db.baseExercises).get();
+      final filePath = await ExportService.exportKnsTreeStructureToMarkdown(
+          exercises,
+          share: share);
+      if (mounted) setState(() => _isProcessing = false);
+      return filePath;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text("EXPORT_FAILED: $e"),
+            backgroundColor: Colors.redAccent));
+      }
+      if (mounted) setState(() => _isProcessing = false);
+      return null;
+    }
+  }
+
+  Future<String?> _exportKnsTreePdfPath(
+      {BaseExercise? rootOnly, required bool share}) async {
+    setState(() => _isProcessing = true);
+    try {
+      final db = ref.read(databaseProvider);
+      final exercises = await db.select(db.baseExercises).get();
+      final filePath = await ExportService.exportKnsTreeToPdf(exercises,
+          rootOnly: rootOnly, share: share);
+      if (mounted) setState(() => _isProcessing = false);
+      return filePath;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text("EXPORT_FAILED: $e"),
+            backgroundColor: Colors.redAccent));
+      }
+      if (mounted) setState(() => _isProcessing = false);
+      return null;
+    }
+  }
+
+  // Asks SINGLE (opens a root-exercise picker) vs ALL (one page per
+  // exercise with at least one relation) before generating the visual
+  // PDF - the user explicitly wanted both scopes available, not just one.
+  void _showKnsTreePdfScopeSheet({required bool share}) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: LabColors.background,
+      isScrollControlled: true,
+      builder: (c) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('KNS.TREE PDF SCOPE',
+                  style: LabStyles.headline(context).copyWith(fontSize: 14)),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: const Icon(Icons.account_tree, color: LabColors.primary),
+                title: Text('SINGLE EXERCISE',
+                    style: LabStyles.mono(context, fontSize: 12, color: Colors.white)),
+                subtitle: Text('Pick one root exercise',
+                    style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
+                onTap: () async {
+                  Navigator.pop(c);
+                  final db = ref.read(databaseProvider);
+                  final all = await db.select(db.baseExercises).get();
+                  if (!mounted) return;
+                  showModalBottomSheet(
+                    context: context,
+                    backgroundColor: LabColors.background,
+                    isScrollControlled: true,
+                    builder: (c2) => QualitySearchPicker(
+                      title: 'SELECT_ROOT_EXERCISE',
+                      values: all.map((e) => e.fullName).toList(),
+                      onSelected: (name) async {
+                        final root = all.firstWhere((e) => e.fullName == name);
+                        final filePath = await _exportKnsTreePdfPath(
+                            rootOnly: root, share: share);
+                        if (filePath != null && !share) {
+                          await _downloadExportedFile(
+                              filePath, 'gymr_kns_tree_${root.name}.pdf');
+                        }
+                      },
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.all_inclusive, color: LabColors.primary),
+                title: Text('ALL (ONE PAGE PER KNS)',
+                    style: LabStyles.mono(context, fontSize: 12, color: Colors.white)),
+                subtitle: Text('Every exercise with at least one relation',
+                    style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
+                onTap: () async {
+                  Navigator.pop(c);
+                  final filePath =
+                      await _exportKnsTreePdfPath(rootOnly: null, share: share);
+                  if (filePath != null && !share) {
+                    await _downloadExportedFile(filePath, 'gymr_kns_tree_all.pdf');
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _importKnsTreeStructure({required bool overrideMode}) async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.any);
+    if (result == null || result.files.single.path == null) return;
+    setState(() => _isProcessing = true);
+    try {
+      final file = File(result.files.single.path!);
+      final content = await file.readAsString();
+      final db = ref.read(databaseProvider);
+      final report = await ExportService.importKnsTreeStructureFromMarkdown(
+          content, db,
+          overrideMode: overrideMode);
+      if (mounted) {
+        final skippedEx = (report['skippedExercises'] as List).length;
+        final skippedTgt = (report['skippedTargets'] as List).length;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              "IMPORTED: ${report['rows']} rows, ${report['entries']} entries. Skipped: $skippedEx exercise(s), $skippedTgt target(s) not found."),
+          backgroundColor: LabColors.primary,
+          duration: const Duration(seconds: 6),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text("IMPORT_FAILED: $e"),
+            backgroundColor: Colors.redAccent));
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
     }
   }
 
