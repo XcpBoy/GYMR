@@ -1677,8 +1677,9 @@ class ExportService {
     }
   }
 
-  // Shared with kns_tree_alert_screen.dart (KNS.TREE.ALERT), so both the
-  // in-app screen and this exporter agree on exactly what counts as a
+  // Shared with kns_tree_manager_screen.dart (KNST.FIXER/KNST.ALERT), so
+  // both the in-app screens and this exporter agree on exactly what counts
+  // as a
   // relational issue: progressions/regressions/alters pointing at a name
   // that doesn't exist in the exercise inventory, or missing the
   // reciprocal entry on the other side. Each issue keeps the offending

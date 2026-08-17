@@ -12,7 +12,7 @@ import 'main_scaffold.dart';
 import 'exercise_form_screen.dart';
 import 'exercise_history_screen.dart';
 import 'kinisi_tree_screen.dart';
-import 'kns_tree_alert_screen.dart';
+import 'kns_tree_manager_screen.dart';
 
 enum _SortMode { alphaAsc, alphaDesc, mostUsed, leastUsed, mostRecent, leastRecent, unusedFirst }
 
@@ -258,14 +258,14 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
               const SizedBox(height: 16),
               ListTile(
                 leading: const Icon(Icons.account_tree_outlined, color: LabColors.accent),
-                title: Text('TREE.ALERT',
+                title: Text('KNS.TREE.MANAGER',
                     style: LabStyles.mono(context, fontSize: 12, color: Colors.white)),
-                subtitle: Text('Broken progression/regression/alter links',
+                subtitle: Text('Fix and review progression/regression/alter links',
                     style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
                 onTap: () {
                   Navigator.pop(c);
                   Navigator.push(context,
-                      MaterialPageRoute(builder: (ctx) => const KnsTreeAlertScreen()));
+                      MaterialPageRoute(builder: (ctx) => const KnsTreeManagerScreen()));
                 },
               ),
             ],
