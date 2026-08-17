@@ -46,38 +46,6 @@ class BaseExercises extends Table {
       ['UNIQUE(name, prefixes, implements, body_positions, suffixes)'];
 }
 
-class Prefixes extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  TextColumn get name => text().unique()();
-}
-
-class Suffixes extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  TextColumn get name => text().unique()();
-}
-
-class ExerciseVariants extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  IntColumn get baseId => integer().references(BaseExercises, #id)();
-  IntColumn get prefixId => integer().nullable().references(Prefixes, #id)();
-  IntColumn get suffixId => integer().nullable().references(Suffixes, #id)();
-
-  @override
-  List<String> get customConstraints =>
-      ['UNIQUE(base_id, prefix_id, suffix_id)'];
-}
-
-// --- Progression Graph ---
-
-enum ProgressionType { predecessor, successor, equal, weaknessSupport }
-
-class ProgressionEdges extends Table {
-  IntColumn get id => integer().autoIncrement()();
-  IntColumn get fromVariantId => integer().references(ExerciseVariants, #id)();
-  IntColumn get toVariantId => integer().references(ExerciseVariants, #id)();
-  IntColumn get type => intEnum<ProgressionType>()();
-}
-
 // --- Workout Logging ---
 
 class WorkoutLogs extends Table {
@@ -282,10 +250,6 @@ class WorkoutBlockSets extends Table {
 
 @DriftDatabase(tables: [
   BaseExercises,
-  Prefixes,
-  Suffixes,
-  ExerciseVariants,
-  ProgressionEdges,
   WorkoutLogs,
   WorkoutSets,
   DiscomfortTags,
@@ -311,7 +275,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 32;
+  int get schemaVersion => 33;
 
   // --- Bidirectional Relational Integrity ---
 
@@ -794,6 +758,31 @@ class AppDatabase extends _$AppDatabase {
           try {
             await customStatement(
                 'ALTER TABLE workout_sets ADD COLUMN assistance_type TEXT');
+          } catch (_) {}
+        }
+
+        if (from < 33) {
+          // Dead schema cleanup: exercise_variants/progression_edges/
+          // prefixes/suffixes were an old modular KNS-relation model,
+          // fully superseded by the progressions/regressions/alters JSON
+          // arrays living in base_exercises.complex_metadata. Confirmed via
+          // full-codebase audit that nothing ever wrote to any of these
+          // four tables (no *Companion.insert call site for any of them,
+          // and the one file that read from them - lib/logic/
+          // progression_graph.dart - had no callers either, since removed).
+          // Order matters: progression_edges references exercise_variants,
+          // which references prefixes/suffixes.
+          try {
+            await customStatement('DROP TABLE IF EXISTS progression_edges');
+          } catch (_) {}
+          try {
+            await customStatement('DROP TABLE IF EXISTS exercise_variants');
+          } catch (_) {}
+          try {
+            await customStatement('DROP TABLE IF EXISTS prefixes');
+          } catch (_) {}
+          try {
+            await customStatement('DROP TABLE IF EXISTS suffixes');
           } catch (_) {}
         }
 

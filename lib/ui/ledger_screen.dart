@@ -938,31 +938,19 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
               try {
                 // Typed Drift deletes, same FK-safe order the old raw SQL
                 // used (children before parents) - that order alone already
-                // satisfies every FK in the schema (verified: exercise_variants/
-                // workout_sets/blueprint_exercises/workout_block_kns all
-                // reference base_exercises and are deleted before it;
-                // progression_edges/workout_block_sets reference the two
-                // tables deleted right after them). Toggling
-                // "PRAGMA foreign_keys OFF/ON" around this was never actually
-                // needed - it was masking against a wrong delete order that
-                // was never present, not protecting against a real one.
+                // satisfies every FK in the schema (verified: workout_sets/
+                // blueprint_exercises/workout_block_kns all reference
+                // base_exercises and are deleted before it;
+                // workout_block_sets references workout_block_kns, deleted
+                // right after it). Toggling "PRAGMA foreign_keys OFF/ON"
+                // around this was never actually needed - it was masking
+                // against a wrong delete order that was never present, not
+                // protecting against a real one.
+                // (exercise_variants/progression_edges/prefixes/suffixes -
+                // the old modular KNS-relation model, superseded by
+                // progressions/regressions/alters in complex_metadata - were
+                // dropped from the schema entirely; nothing wrote to them.)
                 await db.transaction(() async {
-                  debugPrint('[DELETE_KNS] DELETE FROM progression_edges ...');
-                  final variantIds = await (db.select(db.exerciseVariants)
-                        ..where((t) => t.baseId.equals(exerciseId)))
-                      .map((v) => v.id)
-                      .get();
-                  if (variantIds.isNotEmpty) {
-                    await (db.delete(db.progressionEdges)
-                          ..where((t) =>
-                              t.fromVariantId.isIn(variantIds) |
-                              t.toVariantId.isIn(variantIds)))
-                        .go();
-                  }
-                  debugPrint('[DELETE_KNS] DELETE FROM exercise_variants ...');
-                  await (db.delete(db.exerciseVariants)
-                        ..where((t) => t.baseId.equals(exerciseId)))
-                      .go();
                   debugPrint('[DELETE_KNS] DELETE FROM workout_sets ...');
                   await (db.delete(db.workoutSets)
                         ..where((t) => t.baseExerciseId.equals(exerciseId)))

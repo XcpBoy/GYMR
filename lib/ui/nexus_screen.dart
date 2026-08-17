@@ -333,7 +333,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _buildSectionHeader(
-            "RAW_DATA\nMANAGEMENT",
+            "RW.DT.MNGMNT",
             "Type: SQLite_Core",
             LabColors.tertiary,
             titleFontSize: 13,
@@ -759,7 +759,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
               icon: Icons.upload_file,
               color: routineColor,
               format: "CSV",
-              onTap: () => _importData('workouts'),
+              onTap: _importData,
             ),
             const SizedBox(height: 12),
             Text("KNS.TREE",
@@ -1637,7 +1637,12 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
     }
   }
 
-  Future<void> _importData(String type) async {
+  // Blueprints are deprecated legacy residue (see PNDEV #100 - not
+  // migrated, not used as a new model) with no reachable UI entry point;
+  // this used to branch on a `type` param that was always 'workouts' at
+  // its one real call site. Simplified to just the FitNotes-log import it
+  // actually does.
+  Future<void> _importData() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.any);
     if (result != null && result.files.single.path != null) {
       setState(() => _isProcessing = true);
@@ -1645,18 +1650,11 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
         final file = File(result.files.single.path!);
         final content = await file.readAsString();
         final db = ref.read(databaseProvider);
-        Map<String, int> report;
-        if (type == 'blueprints') {
-          report = await ExportService.importBlueprintsFromCsv(content, db);
-        } else {
-          report = await ExportService.importFromFitNotes(content, db);
-        }
+        final report = await ExportService.importFromFitNotes(content, db);
         if (mounted) {
-          String msg = type == 'blueprints'
-              ? "IMPORTED: ${report['blueprints']} BLUEPRINTS, ${report['exercises']} EXERCISES"
-              : "IMPORTED: ${report['logs']} LOGS, ${report['sets']} SETS";
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(msg),
+              content:
+                  Text("IMPORTED: ${report['logs']} LOGS, ${report['sets']} SETS"),
               backgroundColor: LabColors.primary,
               duration: const Duration(seconds: 5)));
         }
