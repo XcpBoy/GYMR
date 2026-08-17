@@ -3979,7 +3979,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
               const SizedBox(height: 24),
 
               // --- ACTION SECTION ---
-              _buildAssistedRow(),
+              _buildAssistedRow(modalSetState: setModalState),
               const SizedBox(height: 24),
             ],
           ),
@@ -4419,7 +4419,13 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                 ])));
   }
 
-  Widget _buildAssistedRow() {
+  // [modalSetState] is passed when this is rendered inside
+  // _showComplexSetModsModal's StatefulBuilder: that sheet is a separate
+  // overlay route, so calling only the outer widget's setState() updates
+  // _isAssisted but doesn't rebuild the visible sheet (it looked like the
+  // switch "did nothing"). Calling modalSetState too forces the sheet's own
+  // rebuild.
+  Widget _buildAssistedRow({StateSetter? modalSetState}) {
     return Container(
       decoration: BoxDecoration(
         border: Border.all(color: Colors.grey[700]!, width: 0.5),
@@ -4437,14 +4443,17 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
               Switch.adaptive(
                 value: _isAssisted,
                 activeColor: LabColors.primary,
-                onChanged: (v) => setState(() {
-                  _isAssisted = v;
-                  if (!v) {
-                    _assistC.clear();
-                    _assistTypeC.clear();
-                  }
-                  _onChanged();
-                }),
+                onChanged: (v) {
+                  setState(() {
+                    _isAssisted = v;
+                    if (!v) {
+                      _assistC.clear();
+                      _assistTypeC.clear();
+                    }
+                    _onChanged();
+                  });
+                  modalSetState?.call(() {});
+                },
               ),
               if (_isAssisted) ...[
                 const SizedBox(width: 8),
