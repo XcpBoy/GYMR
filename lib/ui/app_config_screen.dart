@@ -53,7 +53,7 @@ class AppConfigScreen extends ConsumerStatefulWidget {
 
 class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabController = TabController(length: 2, vsync: this);
+  late final TabController _tabController = TabController(length: 4, vsync: this);
 
   @override
   void dispose() {
@@ -84,14 +84,23 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
           labelStyle:
               LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold),
           unselectedLabelStyle: LabStyles.mono(context, fontSize: 10),
-          tabs: [Tab(text: tr(lang, "GENERAL")), Tab(text: tr(lang, "VISUALS"))],
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          tabs: [
+            Tab(text: tr(lang, "GENERAL")),
+            Tab(text: "UI_LOCATIONS"),
+            Tab(text: "NEXUS_CONFIG"),
+            Tab(text: "TOGGLES"),
+          ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
         children: [
           _buildGeneralTab(context, settings, tC),
-          _buildVisualsTab(context, settings, tC, lang),
+          _buildUiLocationsTab(context, settings, tC),
+          _buildNexusConfigTab(context, settings, tC),
+          _buildTogglesTab(context, settings, tC, lang),
         ],
       ),
       bottomNavigationBar: const LabFooter(),
@@ -121,23 +130,6 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
           ),
         ]),
         const SizedBox(height: 12),
-        _buildSectionCard(context, "BOTTOM_RIBBON", [
-          for (int i = 0; i < 4; i++) ...[
-            _buildRibbonSlotPicker(context, settings, tC, i),
-            if (i != 3) const SizedBox(height: 12),
-          ],
-        ]),
-        const SizedBox(height: 12),
-        _buildSectionCard(context, "NEXUS_CONFIG", [
-          Text("PDF_COLUMNS",
-              style: LabStyles.mono(context, fontSize: 9, color: Colors.grey[500])),
-          const SizedBox(height: 12),
-          for (final t in _pdfColumnToggles) ...[
-            _buildToggleRow(context, settings, tC, t),
-            const SizedBox(height: 12),
-          ],
-        ]),
-        const SizedBox(height: 12),
         _buildSectionCard(context, tr(lang, "RESET"), [
           SizedBox(
             width: double.infinity,
@@ -152,7 +144,37 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
     );
   }
 
-  Widget _buildVisualsTab(BuildContext context,
+  Widget _buildUiLocationsTab(BuildContext context,
+      Map<String, ThemeSetting> settings, ThemeController tC) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildSectionCard(context, "BOTTOM_RIBBON", [
+          for (int i = 0; i < 4; i++) ...[
+            _buildRibbonSlotPicker(context, settings, tC, i),
+            if (i != 3) const SizedBox(height: 12),
+          ],
+        ]),
+      ],
+    );
+  }
+
+  Widget _buildNexusConfigTab(BuildContext context,
+      Map<String, ThemeSetting> settings, ThemeController tC) {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _buildSectionCard(context, "PDF_COLUMNS", [
+          for (final t in _pdfColumnToggles) ...[
+            _buildToggleRow(context, settings, tC, t),
+            const SizedBox(height: 12),
+          ],
+        ]),
+      ],
+    );
+  }
+
+  Widget _buildTogglesTab(BuildContext context,
       Map<String, ThemeSetting> settings, ThemeController tC, String lang) {
     return ListView(
       padding: const EdgeInsets.all(16),
