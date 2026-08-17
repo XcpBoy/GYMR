@@ -113,78 +113,71 @@ class _KnstFixerViewState extends ConsumerState<_KnstFixerView> {
 
   @override
   Widget build(BuildContext context) {
-    final db = ref.watch(databaseProvider);
+    final exercises = ref.watch(allExercisesProvider).value ?? [];
+    if (exercises.isEmpty) {
+      return Center(
+          child: Text('LOADING...',
+              style: LabStyles.mono(context, color: Colors.grey)));
+    }
 
-    return StreamBuilder<List<BaseExercise>>(
-      stream: db.select(db.baseExercises).watch(),
-      builder: (context, snap) {
-        final exercises = snap.data ?? [];
-        if (exercises.isEmpty) {
-          return Center(
-              child: Text('LOADING...',
-                  style: LabStyles.mono(context, color: Colors.grey)));
-        }
+    final issues = ExportService.findKnsTreeIssues(exercises);
+    final oneSided =
+        issues.where((i) => (i['label'] as String).startsWith('ONE_SIDED_LINK')).toList();
 
-        final issues = ExportService.findKnsTreeIssues(exercises);
-        final oneSided =
-            issues.where((i) => (i['label'] as String).startsWith('ONE_SIDED_LINK')).toList();
-
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: LabColors.surfaceContainerLow,
-                border: Border.all(color: LabColors.accent.withValues(alpha: 0.3), width: 0.5),
-              ),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('AUTO-FIX ONESIDED',
-                    style: LabStyles.mono(context,
-                        fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
-                const SizedBox(height: 6),
-                Text(
-                    oneSided.isEmpty
-                        ? 'No one-sided links found.'
-                        : '${oneSided.length} one-sided link(s) found - a target exercise is missing the reciprocal entry. Safe to auto-fix: no ambiguity, the target already exists.',
-                    style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
-                if (oneSided.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: LabButton(
-                      label: _fixing ? 'FIXING...' : 'AUTO-FIX ONESIDED',
-                      color: LabColors.accent,
-                      onPressed: _fixing
-                          ? () {}
-                          : () => _runAutoFixOneSided(exercises),
-                    ),
-                  ),
-                ],
-              ]),
-            ),
-            const SizedBox(height: 16),
-            for (final issue in oneSided) ...[
-              Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: LabColors.surfaceContainerLow,
-                  border: Border.all(color: Colors.grey[800]!, width: 0.5),
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: LabColors.surfaceContainerLow,
+            border: Border.all(color: LabColors.accent.withValues(alpha: 0.3), width: 0.5),
+          ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('AUTO-FIX ONESIDED',
+                style: LabStyles.mono(context,
+                    fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+            const SizedBox(height: 6),
+            Text(
+                oneSided.isEmpty
+                    ? 'No one-sided links found.'
+                    : '${oneSided.length} one-sided link(s) found - a target exercise is missing the reciprocal entry. Safe to auto-fix: no ambiguity, the target already exists.',
+                style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
+            if (oneSided.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: LabButton(
+                  label: _fixing ? 'FIXING...' : 'AUTO-FIX ONESIDED',
+                  color: LabColors.accent,
+                  onPressed: _fixing
+                      ? () {}
+                      : () => _runAutoFixOneSided(exercises),
                 ),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text((issue['exercise'] as BaseExercise).fullName,
-                      style: LabStyles.mono(context,
-                          fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
-                  const SizedBox(height: 4),
-                  Text(issue['label'] as String,
-                      style: LabStyles.mono(context, fontSize: 9, color: Colors.orangeAccent)),
-                ]),
               ),
             ],
-          ],
-        );
-      },
+          ]),
+        ),
+        const SizedBox(height: 16),
+        for (final issue in oneSided) ...[
+          Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: LabColors.surfaceContainerLow,
+              border: Border.all(color: Colors.grey[800]!, width: 0.5),
+            ),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text((issue['exercise'] as BaseExercise).fullName,
+                  style: LabStyles.mono(context,
+                      fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+              const SizedBox(height: 4),
+              Text(issue['label'] as String,
+                  style: LabStyles.mono(context, fontSize: 9, color: Colors.orangeAccent)),
+            ]),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -198,99 +191,92 @@ class _KnstAlertView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final db = ref.watch(databaseProvider);
+    final exercises = ref.watch(allExercisesProvider).value ?? [];
+    if (exercises.isEmpty) {
+      return Center(
+          child: Text('LOADING...',
+              style: LabStyles.mono(context, color: Colors.grey)));
+    }
+    final issues = ExportService.findKnsTreeIssues(exercises);
+    final flaggedCount =
+        issues.map((i) => (i['exercise'] as BaseExercise).id).toSet().length;
+    final brokenCount = issues
+        .where((i) => (i['label'] as String).startsWith('BROKEN_LINK'))
+        .length;
+    final oneSidedCount = issues.length - brokenCount;
 
-    return StreamBuilder<List<BaseExercise>>(
-      stream: db.select(db.baseExercises).watch(),
-      builder: (context, snap) {
-        final exercises = snap.data ?? [];
-        if (exercises.isEmpty) {
-          return Center(
-              child: Text('LOADING...',
-                  style: LabStyles.mono(context, color: Colors.grey)));
-        }
-        final issues = ExportService.findKnsTreeIssues(exercises);
-        final flaggedCount =
-            issues.map((i) => (i['exercise'] as BaseExercise).id).toSet().length;
-        final brokenCount = issues
-            .where((i) => (i['label'] as String).startsWith('BROKEN_LINK'))
-            .length;
-        final oneSidedCount = issues.length - brokenCount;
+    if (issues.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.check_circle, color: Colors.greenAccent, size: 40),
+              const SizedBox(height: 12),
+              Text('NO_TREE_ISSUES_FOUND',
+                  style: LabStyles.mono(context, color: Colors.grey, fontSize: 11)),
+            ],
+          ),
+        ),
+      );
+    }
 
-        if (issues.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.check_circle, color: Colors.greenAccent, size: 40),
-                  const SizedBox(height: 12),
-                  Text('NO_TREE_ISSUES_FOUND',
-                      style: LabStyles.mono(context, color: Colors.grey, fontSize: 11)),
-                ],
-              ),
-            ),
-          );
-        }
-
-        return Column(
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              color: Colors.redAccent.withValues(alpha: 0.08),
-              child: Text(
-                  '$brokenCount BROKEN_LINK, $oneSidedCount ONE_SIDED_LINK ACROSS $flaggedCount MOVEMENTS',
-                  style: LabStyles.mono(context,
-                      fontSize: 10, color: Colors.redAccent, fontWeight: FontWeight.bold)),
-            ),
-            Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: issues.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, index) {
-                  final issue = issues[index];
-                  final exercise = issue['exercise'] as BaseExercise;
-                  final label = issue['label'] as String;
-                  return InkWell(
-                    onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (c) => ExerciseFormScreen(exercise: exercise))),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: LabColors.surfaceContainerLow,
-                        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3), width: 0.5),
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          color: Colors.redAccent.withValues(alpha: 0.08),
+          child: Text(
+              '$brokenCount BROKEN_LINK, $oneSidedCount ONE_SIDED_LINK ACROSS $flaggedCount MOVEMENTS',
+              style: LabStyles.mono(context,
+                  fontSize: 10, color: Colors.redAccent, fontWeight: FontWeight.bold)),
+        ),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: issues.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final issue = issues[index];
+              final exercise = issue['exercise'] as BaseExercise;
+              final label = issue['label'] as String;
+              return InkWell(
+                onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (c) => ExerciseFormScreen(exercise: exercise))),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: LabColors.surfaceContainerLow,
+                    border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3), width: 0.5),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(exercise.fullName,
+                                style: LabStyles.mono(context,
+                                    fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
+                            const SizedBox(height: 4),
+                            Text(label,
+                                style: LabStyles.mono(context, fontSize: 9, color: Colors.redAccent)),
+                          ],
+                        ),
                       ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(exercise.fullName,
-                                    style: LabStyles.mono(context,
-                                        fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
-                                const SizedBox(height: 4),
-                                Text(label,
-                                    style: LabStyles.mono(context, fontSize: 9, color: Colors.redAccent)),
-                              ],
-                            ),
-                          ),
-                          const Icon(Icons.chevron_right, color: Colors.grey, size: 18),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        );
-      },
+                      const Icon(Icons.chevron_right, color: Colors.grey, size: 18),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

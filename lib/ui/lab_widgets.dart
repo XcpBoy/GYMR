@@ -578,15 +578,36 @@ class NeonPalette {
   ];
 }
 
+// The one shared "bottom sheet + search field + filtered list" picker in
+// the app. Used to be three near-identical implementations
+// (_InternalExercisePicker/_InternalTogglePicker in
+// complex_metadata_screen.dart plus this one) each reimplementing the same
+// TextEditingController+listener+filtered-list plumbing - consolidated
+// here since none of their differences (title, hint text, sheet height, an
+// optional subtitle line) needed a separate class, just a parameter.
+// ExerciseSearchPicker (wb_shared_widgets.dart) is NOT folded into this:
+// it's a genuinely different tool (multi-dimension filter chips, several
+// sort modes, usage-count sorting) built for browsing the full exercise
+// inventory, not a simple search-and-pick - merging it in would either
+// bloat this widget with unrelated filter/sort machinery or gut
+// ExerciseSearchPicker's actual functionality for no real gain.
 class QualitySearchPicker extends StatefulWidget {
   final String title;
   final List<String> values;
   final Function(String) onSelected;
   final bool closeOnSelect;
   // Optional: this widget is plain (no ref access), so callers that have a
-  // WidgetRef can pass the current lang through to get the "Filter..."
-  // hint translated. Defaults to 'en' so existing call sites keep compiling.
+  // WidgetRef can pass the current lang through to get the hint text
+  // translated. Defaults to 'en' so existing call sites keep compiling.
   final String lang;
+  // Optional per-value subtitle (e.g. an exercise's muscle group under its
+  // name). Omit for a plain single-line list.
+  final String Function(String)? subtitleOf;
+  // Sheet height as a fraction of the screen. Different callers wanted
+  // different amounts of room (a short toggle list vs. a long exercise
+  // list) - defaults to the original QualitySearchPicker's 0.6.
+  final double heightFactor;
+  final String hintText;
   const QualitySearchPicker({
     super.key,
     required this.title,
@@ -594,6 +615,9 @@ class QualitySearchPicker extends StatefulWidget {
     required this.onSelected,
     this.closeOnSelect = true,
     this.lang = 'en',
+    this.subtitleOf,
+    this.heightFactor = 0.6,
+    this.hintText = 'Filter...',
   });
   @override State<QualitySearchPicker> createState() => _QualitySearchPickerState();
 }
@@ -612,7 +636,7 @@ class _QualitySearchPickerState extends State<QualitySearchPicker> {
   }
   @override Widget build(BuildContext context) {
     return Container(
-      height: MediaQuery.of(context).size.height * 0.6,
+      height: MediaQuery.of(context).size.height * widget.heightFactor,
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Column(
         children: [
@@ -633,7 +657,7 @@ class _QualitySearchPickerState extends State<QualitySearchPicker> {
                   ]
                 ),
                 const SizedBox(height: 16),
-                LabTextField(controller: sC, label: tr(widget.lang, 'Filter...'))
+                LabTextField(controller: sC, label: tr(widget.lang, widget.hintText))
               ]
             )
           ),
@@ -641,7 +665,16 @@ class _QualitySearchPickerState extends State<QualitySearchPicker> {
             child: ListView.builder(
               itemCount: flt.length,
               itemBuilder: (c, i) => ListTile(
-                title: Text(flt[i].toUpperCase(), style: LabStyles.mono(context, fontSize: 12)),
+                title: Text(flt[i].toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: LabStyles.mono(context, fontSize: 12)),
+                subtitle: widget.subtitleOf == null
+                    ? null
+                    : Text(widget.subtitleOf!(flt[i]).toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
                 onTap: () {
                   widget.onSelected(flt[i]);
                   if (widget.closeOnSelect) Navigator.pop(context);

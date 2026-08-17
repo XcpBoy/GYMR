@@ -882,7 +882,11 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: LabColors.background,
-        title: Text('RESET_PERFORMANCE_HISTORY', style: LabStyles.mono(context, color: Colors.amber)),
+        title: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.cleaning_services, color: Colors.amber, size: 18),
+          const SizedBox(width: 8),
+          Text('RESET_PERFORMANCE_HISTORY', style: LabStyles.mono(context, color: Colors.amber)),
+        ]),
         content: Text('DELETING_ALL_SETS_LOGS_FOR_THIS_MOVEMENT_ONLY. METADATA_WILL_REMAIN.', style: LabStyles.mono(context, fontSize: 10)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(context))),
@@ -903,13 +907,23 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
     );
   }
 
+  // DELETE_KNS's confirm button used to say "CONFIRM_PURGE" - easy to
+  // confuse with PURGE_HISTORY's dialog (same "PURGE" wording) despite
+  // being a much more severe, unrecoverable action (the whole exercise
+  // and every cross-reference to it, vs. just its logged sets). Distinct
+  // wording + a warning icon in the title make the two dialogs harder to
+  // mix up at a glance.
   void _confirmDelete(BuildContext context, String lang) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: LabColors.background,
-        title: Text('DELETE_KNS', style: LabStyles.mono(context, color: Colors.redAccent)),
-        content: Text('THIS_WILL_DELETE_THE_KNS_AND_ALL_ITS_DATA._THIS_CANNOT_BE_UNDONE.', style: LabStyles.mono(context, fontSize: 10)),
+        title: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 18),
+          const SizedBox(width: 8),
+          Text('DELETE_KNS', style: LabStyles.mono(context, color: Colors.redAccent, fontWeight: FontWeight.bold)),
+        ]),
+        content: Text('THIS_WILL_PERMANENTLY_DELETE_THE_KNS,_ALL_ITS_DATA,_AND_EVERY_OTHER_KNS\'_RELATIONAL_REFERENCE_TO_IT._THIS_CANNOT_BE_UNDONE.', style: LabStyles.mono(context, fontSize: 10)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(context))),
           TextButton(
@@ -920,30 +934,64 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
               Navigator.pop(context); // close dialog immediately
               debugPrint('[DELETE_KNS] start exerciseId=$exerciseId ($exerciseFullName)');
               try {
-                // Raw SQL transaction: delete from all related tables in FK-safe order
-                debugPrint('[DELETE_KNS] PRAGMA foreign_keys = OFF');
-                await db.customStatement('PRAGMA foreign_keys = OFF');
-                debugPrint('[DELETE_KNS] DELETE FROM progression_edges ...');
-                await db.customStatement('DELETE FROM progression_edges WHERE from_variant_id IN (SELECT id FROM exercise_variants WHERE base_id = $exerciseId) OR to_variant_id IN (SELECT id FROM exercise_variants WHERE base_id = $exerciseId)');
-                debugPrint('[DELETE_KNS] DELETE FROM exercise_variants ...');
-                await db.customStatement('DELETE FROM exercise_variants WHERE base_id = $exerciseId');
-                debugPrint('[DELETE_KNS] DELETE FROM workout_sets ...');
-                await db.customStatement('DELETE FROM workout_sets WHERE base_exercise_id = $exerciseId');
-                debugPrint('[DELETE_KNS] DELETE FROM blueprint_exercises ...');
-                await db.customStatement('DELETE FROM blueprint_exercises WHERE base_exercise_id = $exerciseId');
-                // workout_block_kns.base_exercise_id has no onDelete cascade
-                // and foreign_keys is OFF for this whole sequence anyway, so
-                // deleting the exercise without this used to leave orphaned
-                // WB entries (and their sets) pointing at a nonexistent
-                // exercise.
-                debugPrint('[DELETE_KNS] DELETE FROM workout_block_sets (orphaned by WB KNS) ...');
-                await db.customStatement('DELETE FROM workout_block_sets WHERE kns_id IN (SELECT id FROM workout_block_kns WHERE base_exercise_id = $exerciseId)');
-                debugPrint('[DELETE_KNS] DELETE FROM workout_block_kns ...');
-                await db.customStatement('DELETE FROM workout_block_kns WHERE base_exercise_id = $exerciseId');
-                debugPrint('[DELETE_KNS] DELETE FROM base_exercises ...');
-                await db.customStatement('DELETE FROM base_exercises WHERE id = $exerciseId');
-                debugPrint('[DELETE_KNS] PRAGMA foreign_keys = ON');
-                await db.customStatement('PRAGMA foreign_keys = ON');
+                // Typed Drift deletes, same FK-safe order the old raw SQL
+                // used (children before parents) - that order alone already
+                // satisfies every FK in the schema (verified: exercise_variants/
+                // workout_sets/blueprint_exercises/workout_block_kns all
+                // reference base_exercises and are deleted before it;
+                // progression_edges/workout_block_sets reference the two
+                // tables deleted right after them). Toggling
+                // "PRAGMA foreign_keys OFF/ON" around this was never actually
+                // needed - it was masking against a wrong delete order that
+                // was never present, not protecting against a real one.
+                await db.transaction(() async {
+                  debugPrint('[DELETE_KNS] DELETE FROM progression_edges ...');
+                  final variantIds = await (db.select(db.exerciseVariants)
+                        ..where((t) => t.baseId.equals(exerciseId)))
+                      .map((v) => v.id)
+                      .get();
+                  if (variantIds.isNotEmpty) {
+                    await (db.delete(db.progressionEdges)
+                          ..where((t) =>
+                              t.fromVariantId.isIn(variantIds) |
+                              t.toVariantId.isIn(variantIds)))
+                        .go();
+                  }
+                  debugPrint('[DELETE_KNS] DELETE FROM exercise_variants ...');
+                  await (db.delete(db.exerciseVariants)
+                        ..where((t) => t.baseId.equals(exerciseId)))
+                      .go();
+                  debugPrint('[DELETE_KNS] DELETE FROM workout_sets ...');
+                  await (db.delete(db.workoutSets)
+                        ..where((t) => t.baseExerciseId.equals(exerciseId)))
+                      .go();
+                  debugPrint('[DELETE_KNS] DELETE FROM blueprint_exercises ...');
+                  await (db.delete(db.blueprintExercises)
+                        ..where((t) => t.baseExerciseId.equals(exerciseId)))
+                      .go();
+                  // workout_block_kns.base_exercise_id has no onDelete
+                  // cascade, so deleting the exercise without this used to
+                  // leave orphaned WB entries (and their sets) pointing at a
+                  // nonexistent exercise.
+                  debugPrint('[DELETE_KNS] DELETE FROM workout_block_sets (orphaned by WB KNS) ...');
+                  final knsIds = await (db.select(db.workoutBlockKns)
+                        ..where((t) => t.baseExerciseId.equals(exerciseId)))
+                      .map((k) => k.id)
+                      .get();
+                  if (knsIds.isNotEmpty) {
+                    await (db.delete(db.workoutBlockSets)
+                          ..where((t) => t.knsId.isIn(knsIds)))
+                        .go();
+                  }
+                  debugPrint('[DELETE_KNS] DELETE FROM workout_block_kns ...');
+                  await (db.delete(db.workoutBlockKns)
+                        ..where((t) => t.baseExerciseId.equals(exerciseId)))
+                      .go();
+                  debugPrint('[DELETE_KNS] DELETE FROM base_exercises ...');
+                  await (db.delete(db.baseExercises)
+                        ..where((t) => t.id.equals(exerciseId)))
+                      .go();
+                });
                 // Other exercises' progressions/regressions/alters still
                 // reference this one by its fullName - strip those out too,
                 // or every deletion guarantees a fresh BROKEN_LINK for
@@ -961,7 +1009,8 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
               } catch (e, st) {
                 debugPrint('[DELETE_KNS] ERROR exerciseId=$exerciseId: $e');
                 debugPrint('[DELETE_KNS] STACKTRACE:\n$st');
-                await db.customStatement('PRAGMA foreign_keys = ON');
+                // No PRAGMA to restore - db.transaction() already rolled
+                // back everything on its own if any delete above threw.
                 if (mounted) {
                   ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(
                     content: Text('DELETE_ERROR: $e', style: LabStyles.mono(this.context)),
@@ -970,7 +1019,7 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
                 }
               }
             },
-            child: Text('CONFIRM_PURGE', style: LabStyles.mono(context, color: Colors.redAccent)),
+            child: Text('DELETE_PERMANENTLY', style: LabStyles.mono(context, color: Colors.redAccent, fontWeight: FontWeight.bold)),
           ),
         ],
       ),

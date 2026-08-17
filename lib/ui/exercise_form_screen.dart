@@ -438,6 +438,14 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     _patternTypeController.text = e.patternType ?? '';
     _numPhasesController.text = (e.numPhases ?? 1).toString();
     _complexMetadata = jsonDecode(jsonEncode(e.parsedComplexMetadata));
+    // progressions/regressions/alters point at the COPIED exercise's own
+    // neighbors, not the new exercise's - carrying them over silently
+    // creates relations that make no sense for what's being built here.
+    // particular_toggles (equipment-style toggles like CHALK/BELT) aren't
+    // relational in that way, so those still carry over.
+    _complexMetadata['progressions'] = [];
+    _complexMetadata['regressions'] = [];
+    _complexMetadata['alters'] = [];
     _classification = _complexMetadata["classification"] ?? "COMPOUND";
     _isUnilateral = e.isUnilateral;
 

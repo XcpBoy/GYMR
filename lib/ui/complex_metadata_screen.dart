@@ -90,6 +90,46 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
     });
   }
 
+  // Fixing a typo used to require delete + recreate (losing the toggle's
+  // "default" state and re-inserting at the end of the list instead of
+  // in place).
+  void _renameToggle(int index) {
+    final list = _metadata["particular_toggles"] as List<Map<String, dynamic>>;
+    final currentName = list[index]["name"].toString();
+    final tC = TextEditingController(text: currentName);
+    final lang = ref.read(languageProvider).value ?? 'en';
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: LabColors.background,
+        title: Text("RENAME_TOGGLE", style: LabStyles.headline(context).copyWith(fontSize: 16)),
+        content: LabTextField(controller: tC, label: tr(lang, "Toggle Name")),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(c),
+            child: Text(tr(lang, 'CANCEL'), style: LabStyles.mono(context)),
+          ),
+          TextButton(
+            onPressed: () {
+              final newName = tC.text.toUpperCase().trim();
+              if (newName.isEmpty) return;
+              if (newName != currentName &&
+                  list.any((t) => t["name"] == newName)) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text("TOGGLE_NAME_ALREADY_EXISTS"),
+                    backgroundColor: Colors.redAccent));
+                return;
+              }
+              setState(() => list[index]["name"] = newName);
+              Navigator.pop(c);
+            },
+            child: Text(tr(lang, 'SAVE'), style: LabStyles.mono(context, color: LabColors.primary)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final lang = ref.watch(languageProvider).value ?? 'en';
@@ -219,12 +259,15 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
                     ),
                   ),
                   Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text(
-                        toggle["name"].toString().toUpperCase(),
-                        style: LabStyles.mono(context, fontSize: 8, color: isDefault ? Colors.cyanAccent : Colors.white70),
-                        softWrap: true, // Expand slice for long text
+                    child: InkWell(
+                      onTap: () => _renameToggle(index),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          toggle["name"].toString().toUpperCase(),
+                          style: LabStyles.mono(context, fontSize: 8, color: isDefault ? Colors.cyanAccent : Colors.white70),
+                          softWrap: true, // Expand slice for long text
+                        ),
                       ),
                     ),
                   ),
@@ -345,10 +388,13 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
       context: context,
       backgroundColor: LabColors.background,
       isScrollControlled: true,
-      builder: (c) => _InternalTogglePicker(
+      builder: (c) => QualitySearchPicker(
+        title: 'SELECT_EXISTING_TOGGLE',
         values: existingToggles.toList()..sort(),
         onSelected: (name) => _addToggle(name),
         lang: lang,
+        heightFactor: 0.7,
+        hintText: 'Search toggle name...',
       ),
     );
   }
@@ -359,15 +405,22 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
 
     if (!mounted) return;
     final lang = ref.read(languageProvider).value ?? 'en';
+    final muscleByName = {
+      for (final e in all) e.fullName: e.primaryMuscleGroup ?? 'GENERAL'
+    };
 
     showModalBottomSheet(
       context: context,
       backgroundColor: LabColors.background,
       isScrollControlled: true,
-      builder: (c) => _InternalExercisePicker(
-        exercises: all,
+      builder: (c) => QualitySearchPicker(
+        title: 'SELECT_RELATION',
+        values: all.map((e) => e.fullName).toList(),
         onSelected: (name) => _addRelation(category, name),
         lang: lang,
+        heightFactor: 0.8,
+        hintText: 'Search exercise name...',
+        subtitleOf: (name) => muscleByName[name] ?? 'GENERAL',
       ),
     );
   }
@@ -438,158 +491,6 @@ class _ExpandableMetadataCardState extends State<_ExpandableMetadataCard> {
             ),
         ],
       ),
-    );
-  }
-}
-
-class _InternalExercisePicker extends StatefulWidget {
-  final List<BaseExercise> exercises;
-  final Function(String) onSelected;
-  final String lang;
-
-  const _InternalExercisePicker({required this.exercises, required this.onSelected, required this.lang});
-
-  @override
-  State<_InternalExercisePicker> createState() => _InternalExercisePickerState();
-}
-
-class _InternalExercisePickerState extends State<_InternalExercisePicker> {
-  late List<BaseExercise> flt;
-  final TextEditingController sC = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    flt = widget.exercises;
-    sC.addListener(() {
-      setState(() {
-        flt = widget.exercises.where((e) =>
-          e.fullName.toLowerCase().contains(sC.text.toLowerCase())
-        ).toList();
-      });
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.8,
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: LabColors.surfaceContainerHigh,
-              border: Border(bottom: BorderSide(color: LabColors.primary, width: 2))
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('SELECT_RELATION', style: LabStyles.headline(context).copyWith(fontSize: 18)),
-                    IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close, color: Colors.white))
-                  ]
-                ),
-                const SizedBox(height: 16),
-                LabTextField(controller: sC, label: tr(widget.lang, 'Search exercise name...'))
-              ]
-            )
-          ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: flt.length,
-              itemBuilder: (c, i) => LabListTile(
-                title: flt[i].fullName,
-                subtitle: flt[i].primaryMuscleGroup ?? 'GENERAL',
-                onTap: () {
-                  widget.onSelected(flt[i].fullName);
-                  Navigator.pop(context);
-                }
-              )
-            )
-          )
-        ]
-      )
-    );
-  }
-}
-
-class _InternalTogglePicker extends StatefulWidget {
-  final List<String> values;
-  final Function(String) onSelected;
-  final String lang;
-
-  const _InternalTogglePicker({required this.values, required this.onSelected, required this.lang});
-
-  @override
-  State<_InternalTogglePicker> createState() => _InternalTogglePickerState();
-}
-
-class _InternalTogglePickerState extends State<_InternalTogglePicker> {
-  late List<String> flt;
-  final TextEditingController sC = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    flt = widget.values;
-    sC.addListener(() {
-      setState(() {
-        flt = widget.values.where((v) =>
-          v.toLowerCase().contains(sC.text.toLowerCase())
-        ).toList();
-      });
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: LabColors.surfaceContainerHigh,
-              border: Border(bottom: BorderSide(color: LabColors.primary, width: 2))
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('SELECT_EXISTING_TOGGLE', style: LabStyles.headline(context).copyWith(fontSize: 18)),
-                    IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close, color: Colors.white))
-                  ]
-                ),
-                const SizedBox(height: 16),
-                LabTextField(controller: sC, label: tr(widget.lang, 'Search toggle name...'))
-              ]
-            )
-          ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: flt.length,
-              itemBuilder: (c, i) => ListTile(
-                title: Text(flt[i],
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: LabStyles.mono(context, fontSize: 12)),
-                onTap: () {
-                  widget.onSelected(flt[i]);
-                  Navigator.pop(context);
-                }
-              )
-            )
-          )
-        ]
-      )
     );
   }
 }
