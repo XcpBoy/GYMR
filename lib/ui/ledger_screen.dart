@@ -379,17 +379,16 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
     );
   }
 
+  // Tap-to-cycle instead of a popup menu, same pattern as the sort button
+  // in ExerciseSearchPicker's "Individual Movement" picker
+  // (wb_shared_widgets.dart) - tapping the frame directly advances to the
+  // next mode instead of opening a list of buttons to pick from.
   Widget _buildSortPicker(BuildContext context, String lang) {
-    return PopupMenuButton<_SortMode>(
-      color: LabColors.surfaceContainerHigh,
-      initialValue: _listSortMode,
-      onSelected: (mode) => setState(() => _listSortMode = mode),
-      itemBuilder: (context) => _SortMode.values
-          .map((m) => PopupMenuItem(
-                value: m,
-                child: Text(tr(lang, m.label), style: LabStyles.mono(context, fontSize: 11)),
-              ))
-          .toList(),
+    return InkWell(
+      onTap: () => setState(() {
+        _listSortMode = _SortMode
+            .values[(_listSortMode.index + 1) % _SortMode.values.length];
+      }),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
