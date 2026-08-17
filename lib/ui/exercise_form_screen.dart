@@ -123,16 +123,29 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     }
   }
 
-  // Live-updates the NOMENCLATURE_CONTROL preview (which shows the actual
-  // entered value, not a placeholder label) as the user types, since typing
-  // into a TextEditingController doesn't trigger a rebuild on its own.
+  // Plain controller - no per-keystroke setState() listener. The
+  // NOMENCLATURE_CONTROL preview still needs to live-update as the user
+  // types, but it's wired via _allNomenclatureControllers() +
+  // AnimatedBuilder at the call site instead, so a keystroke only
+  // rebuilds that small preview widget - not the whole form (every
+  // QUALITY section, all their TextFields/Switches) on every character.
   TextEditingController _newPieceController([String? text]) {
-    final c = TextEditingController(text: text);
-    c.addListener(() {
-      if (mounted) setState(() {});
-    });
-    return c;
+    return TextEditingController(text: text);
   }
+
+  // Every controller whose text feeds into the assembled name / the
+  // NOMENCLATURE_CONTROL preview. Used to scope the preview's rebuild to
+  // just that widget via AnimatedBuilder, instead of the old
+  // whole-screen setState() per keystroke.
+  List<TextEditingController> _allNomenclatureControllers() => [
+        _nameController,
+        ..._bodyPositionControllers,
+        ..._implementControllers,
+        ..._implementPositionControllers,
+        ..._prefixControllers,
+        ..._suffixControllers,
+        ..._assistanceControllers,
+      ];
 
   String? _encodePieceList(
       List<TextEditingController> controllers, List<bool> showFlags) {
@@ -606,7 +619,10 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
               const SizedBox(height: 32),
               _buildSectionTitle('NOMENCLATURE_CONTROL'),
               const SizedBox(height: 16),
-              _buildNomenclatureControl(settings, tC),
+              AnimatedBuilder(
+                animation: Listenable.merge(_allNomenclatureControllers()),
+                builder: (context, _) => _buildNomenclatureControl(settings, tC),
+              ),
 
               const SizedBox(height: 32),
               _buildSectionTitle('LOAD_METRICS'),
