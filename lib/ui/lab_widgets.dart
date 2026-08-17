@@ -66,7 +66,7 @@ final List<RibbonDestination> kRibbonDestinations = [
   RibbonDestination(
       id: 'TIMELINE',
       icon: Icons.schedule,
-      label: 'TIMELINE',
+      label: 'TMNLN',
       defaultColor: LabColors.timelineGrey,
       screenBuilder: () => const TimelineScreen()),
   RibbonDestination(

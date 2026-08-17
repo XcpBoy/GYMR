@@ -224,7 +224,7 @@ class MainHubScreen extends ConsumerWidget {
         _buildModuleButton(context, '03', 'WO.BLCKS', Icons.view_module_rounded, settings, tC, lang, defaultColor: LabColors.blueprintBlue, onTap: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const BlueprintManagerScreen()));
         }),
-        _buildModuleButton(context, '04', 'TIMELINE', Icons.schedule, settings, tC, lang, defaultColor: LabColors.timelineGrey, onTap: () {
+        _buildModuleButton(context, '04', 'TMNLN', Icons.schedule, settings, tC, lang, defaultColor: LabColors.timelineGrey, onTap: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const TimelineScreen()));
         }),
         _buildModuleButton(context, '05', 'ANTRPMT.DT', Icons.straighten, settings, tC, lang, defaultColor: LabColors.biometricYellow, onTap: () {
@@ -238,8 +238,16 @@ class MainHubScreen extends ConsumerWidget {
   }
 
   Widget _buildModuleButton(BuildContext context, String index, String label, IconData icon, Map<String, ThemeSetting> settings, ThemeController tC, String lang, {Color? defaultColor, VoidCallback? onTap}) {
-    final aliases = label == 'WO.BLCKS' ? ["DASHBOARD_CARD_WO.BLKCS", "DASHBOARD_CARD_SESSION.BP"] : <String>[];
-    final bgAliases = label == 'WO.BLCKS' ? ["DASHBOARD_CARD_WO.BLKCS_BG", "DASHBOARD_CARD_SESSION.BP_BG"] : <String>[];
+    final aliases = label == 'WO.BLCKS'
+        ? ["DASHBOARD_CARD_WO.BLKCS", "DASHBOARD_CARD_SESSION.BP"]
+        : label == 'TMNLN'
+            ? ["DASHBOARD_CARD_TIMELINE"]
+            : <String>[];
+    final bgAliases = label == 'WO.BLCKS'
+        ? ["DASHBOARD_CARD_WO.BLKCS_BG", "DASHBOARD_CARD_SESSION.BP_BG"]
+        : label == 'TMNLN'
+            ? ["DASHBOARD_CARD_TIMELINE_BG"]
+            : <String>[];
     final color = tC.getColor(settings, "DASHBOARD_CARD_$label", defaultColor: defaultColor, aliases: aliases);
     final bgColor = tC.getColor(settings, "DASHBOARD_CARD_${label}_BG", defaultColor: (defaultColor ?? LabColors.surfaceContainerLow).withValues(alpha: 0.08), aliases: bgAliases);
 
