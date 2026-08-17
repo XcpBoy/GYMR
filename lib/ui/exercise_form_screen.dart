@@ -17,6 +17,7 @@ import '../localization/strings.dart';
 const Map<String, Color> kNomenclaturePieceDefaults = {
   'BODY_POSITION': Colors.blueAccent,
   'IMPLEMENTS': Colors.orangeAccent,
+  'IMPLEMENT_POSITION': Colors.deepOrangeAccent,
   'PREFIXES': LabColors.primary,
   'NAME': Colors.white,
   'SUFFIXES': LabColors.primary,
@@ -70,6 +71,8 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
   final List<bool> _suffixShowInName = [];
   final List<TextEditingController> _assistanceControllers = [];
   final List<bool> _assistanceShowInName = [];
+  final List<TextEditingController> _implementPositionControllers = [];
+  final List<bool> _implementPositionShowInName = [];
   List<String> _nameOrder = List<String>.from(kDefaultNamePieceOrder);
   List<TextEditingController> _phaseDescriptionControllers = [];
 
@@ -104,6 +107,19 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
           showFlags.add(true);
         }
       }
+    }
+  }
+
+  // Same as _loadPieceInto but for IMPLEMENT_POSITION, which lives inside
+  // complexMetadata (already-decoded List) instead of its own raw-JSON
+  // string column.
+  void _loadPieceIntoFromList(List<Map<String, dynamic>> items,
+      List<TextEditingController> controllers, List<bool> showFlags) {
+    controllers.clear();
+    showFlags.clear();
+    for (var item in items) {
+      controllers.add(_newPieceController(item['v']?.toString()));
+      showFlags.add(item['s'] ?? true);
     }
   }
 
@@ -180,6 +196,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     _loadPieceInto(e?.prefixes, _prefixControllers, _prefixShowInName);
     _loadPieceInto(e?.suffixes, _suffixControllers, _suffixShowInName);
     _loadPieceInto(e?.assistanceTypes, _assistanceControllers, _assistanceShowInName);
+    _loadPieceIntoFromList(e?.parsedImplementPosition ?? [], _implementPositionControllers, _implementPositionShowInName);
     _nameOrder = e != null ? List<String>.from(e.nameOrderResolved) : [];
 
     if (e != null) {
@@ -229,7 +246,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     _tissueTypeController.dispose(); _tissueNameController.dispose(); _numPhasesController.dispose();
     _descriptionController.dispose();
     _bandTypeController.dispose(); _bandTensionController.dispose();
-    for (var c in [..._prefixControllers, ..._suffixControllers, ..._implementControllers, ..._bodyPositionControllers, ..._assistanceControllers, ..._phaseDescriptionControllers]) {
+    for (var c in [..._prefixControllers, ..._suffixControllers, ..._implementControllers, ..._bodyPositionControllers, ..._assistanceControllers, ..._implementPositionControllers, ..._phaseDescriptionControllers]) {
       c.dispose();
     }
     super.dispose();
@@ -250,6 +267,14 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     final assistJson = _encodePieceList(_assistanceControllers, _assistanceShowInName);
     final nameOrderJson = jsonEncode(_reconcileNameOrder(_nameOrder, _liveNameTokens()));
 
+    final List<Map<String, dynamic>> implPosData = [];
+    for (int i = 0; i < _implementPositionControllers.length; i++) {
+      final val = _implementPositionControllers[i].text.trim();
+      if (val.isNotEmpty) {
+        implPosData.add({"v": val.toUpperCase(), "s": _implementPositionShowInName[i]});
+      }
+    }
+
     final Map<String, dynamic> phaseMetadata = {
       "phases": {},
       "graph": {"progresiones": [], "regresiones": [], "nivelados": []}
@@ -266,6 +291,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
       ..._complexMetadata,
       "classification": _classification,
       "description": _descriptionController.text.trim(),
+      "implement_position": implPosData,
       if (_loadType == 'BANDED') "bandType": _bandTypeController.text.trim(),
       if (_loadType == 'BANDED') "bandTension": _bandTensionController.text.trim(),
     });
@@ -380,6 +406,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     _loadPieceInto(e.prefixes, _prefixControllers, _prefixShowInName);
     _loadPieceInto(e.suffixes, _suffixControllers, _suffixShowInName);
     _loadPieceInto(e.assistanceTypes, _assistanceControllers, _assistanceShowInName);
+    _loadPieceIntoFromList(e.parsedImplementPosition, _implementPositionControllers, _implementPositionShowInName);
     _nameOrder = List<String>.from(e.nameOrderResolved);
 
     _phaseDescriptionControllers.clear();
@@ -422,6 +449,8 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
         found = _extractPieceValues(e.suffixes);
       } else if (type == 'assistance') {
         found = _extractPieceValues(e.assistanceTypes);
+      } else if (type == 'implementPosition') {
+        found = e.parsedImplementPosition.map((p) => p['v'].toString()).toList();
       } else if (type == 'tissueType') {
         found = [e.tissueType ?? ''];
       } else if (type == 'tissueName') {
@@ -548,7 +577,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
               ),
 
               const SizedBox(height: 24),
-              _buildSectionTitle('QUALITIES'),
+              _buildSectionTitle('NOMENCLATURE'),
               const SizedBox(height: 16),
               _buildToggleableList('BODY_POSITION', _bodyPositionControllers, _bodyPositionShowInName,
                   () => setState(() { _bodyPositionControllers.add(_newPieceController()); _bodyPositionShowInName.add(true); }),
@@ -557,6 +586,10 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
               _buildToggleableList('IMPLEMENTS', _implementControllers, _implementShowInName,
                   () => setState(() { _implementControllers.add(_newPieceController()); _implementShowInName.add(true); }),
                   type: 'implement', color: Colors.orangeAccent),
+              const SizedBox(height: 16),
+              _buildToggleableList('IMPLEMENT_POSITION', _implementPositionControllers, _implementPositionShowInName,
+                  () => setState(() { _implementPositionControllers.add(_newPieceController()); _implementPositionShowInName.add(true); }),
+                  type: 'implementPosition', color: Colors.deepOrangeAccent),
               const SizedBox(height: 16),
               _buildToggleableList('PREFIXES', _prefixControllers, _prefixShowInName,
                   () => setState(() { _prefixControllers.add(_newPieceController()); _prefixShowInName.add(true); }),
@@ -705,12 +738,45 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     );
   }
 
+  // Same visual pattern as _buildClassificationSelector (two side-by-side
+  // segmented buttons) applied to a boolean, in orange instead of
+  // LabColors.accent so it reads as a distinct control group.
+  Widget _buildBinaryButtonToggle(
+      String trueLabel, bool value, ValueChanged<bool> onChange) {
+    const color = Colors.orangeAccent;
+    return Row(children: [
+      {'label': 'OFF', 'selected': !value},
+      {'label': trueLabel, 'selected': value},
+    ].map((opt) {
+      final sel = opt['selected'] as bool;
+      final label = opt['label'] as String;
+      return Expanded(
+          child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: InkWell(
+                  onTap: () => onChange(label == trueLabel),
+                  child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                          color: sel ? color : Colors.transparent,
+                          border: Border.all(color: color, width: 0.5)),
+                      child: Text(label,
+                          style: LabStyles.mono(context,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: sel ? Colors.black : color))))));
+    }).toList());
+  }
+
   Widget _buildIsometricToggle() {
-    return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('ISOMETRIC_MODE', style: LabStyles.mono(context, fontSize: 12)), Switch.adaptive(value: _isIsometric, activeColor: LabColors.primary, onChanged: (v) => setState(() => _isIsometric = v))]);
+    return _buildBinaryButtonToggle(
+        'ISOMETRIC', _isIsometric, (v) => setState(() => _isIsometric = v));
   }
 
   Widget _buildUnilateralToggle() {
-    return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('UNILATERAL', style: LabStyles.mono(context, fontSize: 12)), Switch.adaptive(value: _isUnilateral, activeColor: LabColors.primary, onChanged: (v) => setState(() => _isUnilateral = v))]);
+    return _buildBinaryButtonToggle(
+        'UNILATERAL', _isUnilateral, (v) => setState(() => _isUnilateral = v));
   }
 
   Widget _buildClassificationSelector() {
@@ -789,6 +855,9 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
         case 'IMPLEMENTS':
           addTokens('IMPLEMENTS', _implementControllers, _implementShowInName);
           break;
+        case 'IMPLEMENT_POSITION':
+          addTokens('IMPLEMENT_POSITION', _implementPositionControllers, _implementPositionShowInName);
+          break;
         case 'PREFIXES':
           addTokens('PREFIXES', _prefixControllers, _prefixShowInName);
           break;
@@ -835,6 +904,9 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
         break;
       case 'IMPLEMENTS':
         ctrls = _implementControllers;
+        break;
+      case 'IMPLEMENT_POSITION':
+        ctrls = _implementPositionControllers;
         break;
       case 'PREFIXES':
         ctrls = _prefixControllers;

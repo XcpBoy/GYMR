@@ -36,8 +36,9 @@ class BaseExercises extends Table {
   // "show in name" flag.
   TextColumn get assistanceTypes => text().nullable()();
   // JSON list of piece keys (BODY_POSITION/IMPLEMENTS/PREFIXES/NAME/
-  // SUFFIXES/ASSISTANCE) controlling the order fullName assembles them in.
-  // Null means "use the default order" (see kDefaultNamePieceOrder).
+  // SUFFIXES/ASSISTANCE/IMPLEMENT_POSITION) controlling the order fullName
+  // assembles them in. Null means "use the default order" (see
+  // kDefaultNamePieceOrder).
   TextColumn get nameOrder => text().nullable()();
 
   @override
@@ -879,7 +880,12 @@ final Map<String, dynamic> _defaultComplexMetadata = {
   "progressions": [],
   "alters": [],
   "particular_toggles": [],
-  "description": ""
+  "description": "",
+  // Nomenclature piece, same [{"v":<value>,"s":<bool>}] shape as
+  // bodyPositions/implements/etc - kept inside complexMetadata instead of
+  // its own column to avoid a schema migration for a new nomenclature
+  // piece; parsed the same way as the column-backed pieces.
+  "implement_position": []
 };
 
 // jsonDecode is synchronous and complexMetadata is read on every rebuild
@@ -895,6 +901,7 @@ final Map<String, Map<String, dynamic>> _complexMetadataCache = {};
 const List<String> kDefaultNamePieceOrder = [
   'BODY_POSITION',
   'IMPLEMENTS',
+  'IMPLEMENT_POSITION',
   'PREFIXES',
   'NAME',
   'SUFFIXES',
@@ -953,6 +960,22 @@ extension BaseExerciseExtension on BaseExercise {
       _parseNomenclaturePiece(suffixes);
   List<Map<String, dynamic>> get parsedAssistanceTypes =>
       _parseNomenclaturePiece(assistanceTypes);
+  // Lives inside complexMetadata (key "implement_position") rather than its
+  // own column - already decoded to a List by parsedComplexMetadata, so this
+  // just normalizes entries to the {"v":...,"s":...} shape (or accepts a
+  // stray plain string / legacy comma-text if the JSON ever got malformed).
+  List<Map<String, dynamic>> get parsedImplementPosition {
+    final raw = parsedComplexMetadata["implement_position"];
+    if (raw is List) {
+      return raw
+          .map((e) => e is Map
+              ? Map<String, dynamic>.from(e)
+              : {"v": e.toString(), "s": true})
+          .toList();
+    }
+    if (raw is String) return _parseNomenclaturePiece(raw);
+    return [];
+  }
 
   List<String> get bodyPositionTags {
     return _parsedBodyPositions
@@ -985,6 +1008,9 @@ extension BaseExerciseExtension on BaseExercise {
           break;
         case 'IMPLEMENTS':
           addTokens('IMPLEMENTS', parsedImplements);
+          break;
+        case 'IMPLEMENT_POSITION':
+          addTokens('IMPLEMENT_POSITION', parsedImplementPosition);
           break;
         case 'PREFIXES':
           addTokens('PREFIXES', parsedPrefixes);
@@ -1039,6 +1065,7 @@ extension BaseExerciseExtension on BaseExercise {
     }
     addTexts('BODY_POSITION', _parsedBodyPositions);
     addTexts('IMPLEMENTS', parsedImplements);
+    addTexts('IMPLEMENT_POSITION', parsedImplementPosition);
     addTexts('PREFIXES', parsedPrefixes);
     addTexts('SUFFIXES', parsedSuffixes);
     addTexts('ASSISTANCE', parsedAssistanceTypes);

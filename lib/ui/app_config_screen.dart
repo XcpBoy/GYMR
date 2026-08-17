@@ -6,6 +6,7 @@ import '../database/database.dart';
 import '../localization/strings.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
+import '../services/export_service.dart';
 
 // A single app-wide toggle: label + persisted key + default state.
 class _ConfigToggle {
@@ -26,6 +27,14 @@ const List<_ConfigToggle> _cwoToggles = [
 // matching field from EDIT_EXERCISE and EXERCISE_CREATOR when off - see
 // _fieldVisible() in both screens. Default true so nothing changes for
 // existing users until they turn one off.
+// PDF report column visibility, under NEXUS_CONFIG > PDF_COLUMNS. Backed by
+// ExportService.kPdfColumnKeys/kPdfColumnLabels so the toggle list and the
+// PDF-building code (exportWorkoutsToPdf) stay in sync automatically.
+final List<_ConfigToggle> _pdfColumnToggles = [
+  for (final key in ExportService.kPdfColumnKeys)
+    _ConfigToggle(ExportService.kPdfColumnLabels[key]!, 'APPCFG_PDF_COL_$key'),
+];
+
 const List<_ConfigToggle> _editExerciseToggles = [
   _ConfigToggle("SECONDARY MUSCLE", "APPCFG_SHOW_SECONDARY_MUSCLE"),
   _ConfigToggle("PATTERN TYPE", "APPCFG_SHOW_PATTERN_TYPE"),
@@ -116,6 +125,16 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
           for (int i = 0; i < 4; i++) ...[
             _buildRibbonSlotPicker(context, settings, tC, i),
             if (i != 3) const SizedBox(height: 12),
+          ],
+        ]),
+        const SizedBox(height: 12),
+        _buildSectionCard(context, "NEXUS_CONFIG", [
+          Text("PDF_COLUMNS",
+              style: LabStyles.mono(context, fontSize: 9, color: Colors.grey[500])),
+          const SizedBox(height: 12),
+          for (final t in _pdfColumnToggles) ...[
+            _buildToggleRow(context, settings, tC, t),
+            const SizedBox(height: 12),
           ],
         ]),
         const SizedBox(height: 12),

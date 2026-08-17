@@ -3979,33 +3979,10 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
               const SizedBox(height: 24),
 
               // --- ACTION SECTION ---
-              _buildModCard(context, 'PURGE_SET', Icons.delete_forever,
-                  Colors.redAccent, () => _confirmDel(context)),
+              _buildAssistedRow(),
               const SizedBox(height: 24),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildModCard(BuildContext context, String label, IconData icon,
-      Color color, VoidCallback onTap) {
-    return Material(
-      color: LabColors.surfaceContainerHigh,
-      child: InkWell(
-        onTap: () {
-          onTap();
-        },
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 8),
-            Text(label,
-                style: LabStyles.mono(context,
-                    fontSize: 8, color: color, fontWeight: FontWeight.bold)),
-          ],
         ),
       ),
     );
@@ -4136,8 +4113,6 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            _buildAssistedRow(),
             const SizedBox(height: 12),
             _buildSomaticCard(),
             const SizedBox(height: 8),
@@ -4155,7 +4130,11 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
             ),
             const SizedBox(height: 12),
             if (showFailurePhase) _buildFailurePhaseCard(),
-            _buildComplexSetModsButton(),
+            Row(children: [
+              Expanded(child: _buildComplexSetModsButton()),
+              const SizedBox(width: 8),
+              _buildPurgeSetButton(),
+            ]),
             const SizedBox(height: 12),
             if (showKnsToggles) _buildParticularTogglesCard(),
             const SizedBox(height: 20),
@@ -4700,6 +4679,23 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
                             style: LabStyles.mono(context,
                                 fontSize: 10, color: LabColors.primary)),
                       ]),
+                ))));
+  }
+
+  Widget _buildPurgeSetButton() {
+    return Container(
+        decoration: BoxDecoration(
+            border: Border.all(
+                color: Colors.redAccent.withValues(alpha: 0.15), width: 0.5)),
+        child: Material(
+            color: Colors.black,
+            child: InkWell(
+                onTap: () => _confirmDel(context),
+                child: const Padding(
+                  padding:
+                      EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                  child: Icon(Icons.delete_forever,
+                      size: 14, color: Colors.redAccent),
                 ))));
   }
 

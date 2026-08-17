@@ -411,6 +411,22 @@ class ExportService {
 
   // --- EXPORT LOGIC ---
 
+  // Ordered keys for the main workout-report PDF table's columns, matching
+  // the fixed index order tableData rows are built in below. Used by
+  // NEXUS_CONFIG > PDF_COLUMNS (app_config_screen.dart) to let the user
+  // toggle which columns get rendered, persisted as APPCFG_PDF_COL_<key>
+  // bools (default true - nothing changes for existing users).
+  static const List<String> kPdfColumnKeys = [
+    'SET', 'EXERCISE', 'UTIL', 'LR', 'NAT', 'LOAD', 'REPS', 'EORM', 'PR',
+    'RPE', 'RIR', 'TECH', 'FAIL', 'TOGGLES', 'NOTES'
+  ];
+  static const Map<String, String> kPdfColumnLabels = {
+    'SET': 'SET', 'EXERCISE': 'EXERCISE', 'UTIL': 'UTIL.', 'LR': 'L/R',
+    'NAT': 'NAT.', 'LOAD': 'LOAD', 'REPS': 'REPS/SECS', 'EORM': 'EORM',
+    'PR': 'PR', 'RPE': 'RPE', 'RIR': 'RIR', 'TECH': 'TECH', 'FAIL': 'FAIL',
+    'TOGGLES': 'TOGGLES', 'NOTES': 'NOTES'
+  };
+
   static Future<void> exportWorkoutsToPdf(List<TypedResult> rows,
       AppDatabase db, Map<String, ThemeSetting> settings, ThemeController tC,
       {String? fileName, bool share = true, String lang = 'en'}) async {
@@ -418,6 +434,13 @@ class ExportService {
     final unicodeFont = await _loadUnicodeFont();
     final emojiFont = await _loadEmojiFont();
     final fallbackFonts = emojiFont != null ? [emojiFont] : null;
+
+    final visibleCols = <int>[
+      for (int i = 0; i < kPdfColumnKeys.length; i++)
+        if (tC.getBool(settings, 'APPCFG_PDF_COL_${kPdfColumnKeys[i]}',
+            defaultValue: true))
+          i
+    ];
 
     // 1. PRE-FETCH DATA (BATCH)
     final allDates =
@@ -723,43 +746,50 @@ class ExportService {
               int segmentStartRow = 0;
               void flushSegment() {
                 if (currentSegment.isEmpty) return;
+                final allHeaders = [
+                  tr(lang, 'SET'),
+                  tr(lang, 'EXERCISE'),
+                  'UTIL.',
+                  'L/R',
+                  'NAT.',
+                  tr(lang, 'LOAD'),
+                  'REPS/SECS',
+                  'EORM',
+                  'PR',
+                  'RPE',
+                  'RIR',
+                  'TECH',
+                  'FAIL',
+                  tr(lang, 'TOGGLES'),
+                  tr(lang, 'NOTES')
+                ];
+                final allColumnWidths = <int, pw.TableColumnWidth>{
+                  0: const pw.FixedColumnWidth(20),
+                  1: const pw.FlexColumnWidth(1.0),
+                  2: const pw.FlexColumnWidth(0.35),
+                  3: const pw.FixedColumnWidth(22),
+                  4: const pw.FixedColumnWidth(55),
+                  5: const pw.FixedColumnWidth(45),
+                  6: const pw.FixedColumnWidth(30),
+                  7: const pw.FixedColumnWidth(35),
+                  8: const pw.FixedColumnWidth(20),
+                  9: const pw.FixedColumnWidth(25),
+                  10: const pw.FixedColumnWidth(20),
+                  11: const pw.FixedColumnWidth(25),
+                  12: const pw.FixedColumnWidth(35),
+                  13: const pw.FlexColumnWidth(0.4),
+                  14: const pw.FlexColumnWidth(0.8),
+                };
                 content.add(pw.TableHelper.fromTextArray(
                   headers: segmentStartRow == 0
-                      ? [
-                          tr(lang, 'SET'),
-                          tr(lang, 'EXERCISE'),
-                          'UTIL.',
-                          'L/R',
-                          'NAT.',
-                          tr(lang, 'LOAD'),
-                          'REPS/SECS',
-                          'EORM',
-                          'PR',
-                          'RPE',
-                          'RIR',
-                          'TECH',
-                          'FAIL',
-                          tr(lang, 'TOGGLES'),
-                          tr(lang, 'NOTES')
-                        ]
+                      ? [for (final i in visibleCols) allHeaders[i]]
                       : null,
-                  data: currentSegment,
+                  data: currentSegment
+                      .map((row) => [for (final i in visibleCols) row[i]])
+                      .toList(),
                   columnWidths: {
-                    0: const pw.FixedColumnWidth(20),
-                    1: const pw.FlexColumnWidth(1.0),
-                    2: const pw.FlexColumnWidth(0.35),
-                    3: const pw.FixedColumnWidth(22),
-                    4: const pw.FixedColumnWidth(55),
-                    5: const pw.FixedColumnWidth(45),
-                    6: const pw.FixedColumnWidth(30),
-                    7: const pw.FixedColumnWidth(35),
-                    8: const pw.FixedColumnWidth(20),
-                    9: const pw.FixedColumnWidth(25),
-                    10: const pw.FixedColumnWidth(20),
-                    11: const pw.FixedColumnWidth(25),
-                    12: const pw.FixedColumnWidth(35),
-                    13: const pw.FlexColumnWidth(0.4),
-                    14: const pw.FlexColumnWidth(0.8),
+                    for (int newIdx = 0; newIdx < visibleCols.length; newIdx++)
+                      newIdx: allColumnWidths[visibleCols[newIdx]]!,
                   },
                   headerStyle:
                       pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 5),
