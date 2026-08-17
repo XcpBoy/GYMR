@@ -514,6 +514,42 @@ class AppDatabase extends _$AppDatabase {
   // beforeOpen runs on every app launch, so naively re-running ALTER TABLE
   // ADD COLUMN forever and swallowing the resulting "duplicate column"
   // error hides genuine failures. Check first instead.
+  // Finds any table whose CREATE TABLE text still references a
+  // `_reindex_tmp_<name>`/`_reindex_new_<name>` table left behind by DB
+  // Inspector's old REINDEX bug (see beforeOpen), and rebuilds it with that
+  // reference pointing at the real table name instead. A no-op (the
+  // sqlite_master scan finds nothing) for every install that either never
+  // used REINDEX or already has the fixed version of it.
+  Future<void> _repairDanglingReindexReferences() async {
+    final tables = await customSelect(
+            "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND sql LIKE '%_reindex_%'")
+        .get();
+    for (final row in tables) {
+      final table = row.data['name'] as String;
+      final sql = row.data['sql'] as String;
+      final fixedSql =
+          sql.replaceAll(RegExp(r'_reindex_(tmp|new)_'), '');
+      if (fixedSql == sql) continue;
+
+      try {
+        final cols = await customSelect('PRAGMA table_info($table)').get();
+        final colNames =
+            cols.map((c) => c.data['name'] as String).join(', ');
+        final tmpName = '_reindex_repair_$table';
+        await customStatement(fixedSql.replaceFirst(
+            RegExp('CREATE TABLE "?$table"?', caseSensitive: false),
+            'CREATE TABLE $tmpName'));
+        await customStatement(
+            'INSERT INTO $tmpName ($colNames) SELECT $colNames FROM $table');
+        await customStatement('DROP TABLE $table');
+        await customStatement('ALTER TABLE $tmpName RENAME TO $table');
+        debugPrint('[DB_REPAIR] fixed dangling reindex reference in $table');
+      } catch (e) {
+        debugPrint('[DB_REPAIR] failed to repair $table: $e');
+      }
+    }
+  }
+
   Future<void> _addColumnIfMissing(
       String table, String column, String columnDef) async {
     final cols = await customSelect('PRAGMA table_info($table)').get();
@@ -771,6 +807,16 @@ class AppDatabase extends _$AppDatabase {
         }
       },
       beforeOpen: (details) async {
+        // Self-heal DB Inspector's old REINDEX bug: it used to rename the
+        // table being reindexed away to `_reindex_tmp_<table>`, then create
+        // a brand-new table under the original name - any OTHER table's FK
+        // constraint text that SQLite had rewritten to follow the rename
+        // was left pointing at that now-deleted temp name forever (SQLite
+        // doesn't validate a FK's target exists until enforcement actually
+        // touches it, so this stayed silently broken until a real delete
+        // tripped over it). Runs before "PRAGMA foreign_keys = ON" below so
+        // the rebuild isn't blocked by the very corruption it's fixing.
+        await _repairDanglingReindexReferences();
         await customStatement('PRAGMA foreign_keys = ON');
         // Safety net: create blueprint_exercises if missing (legacy DBs that predate the table)
         await customStatement('''

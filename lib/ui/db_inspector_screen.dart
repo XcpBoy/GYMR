@@ -1328,11 +1328,26 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
         final cols = _columnsCache[cfg.table];
         if (cols == null || cols.isEmpty) return;
 
-        // 1. Rename original table
-        await db.customStatement(
-            'ALTER TABLE ${cfg.table} RENAME TO _reindex_tmp_${cfg.table}');
+        // Build the new table under a throwaway name and RENAME it into
+        // place at the end, instead of renaming the original away first.
+        // SQLite auto-rewrites other tables' FK reference text whenever the
+        // table THEY reference gets renamed - the old version of this method
+        // renamed the original away (`base_exercises` -> `_reindex_tmp_
+        // base_exercises`), which correctly triggered that rewrite, then
+        // created a brand-new `base_exercises` table that SQLite has no way
+        // of knowing is a "continuation" of the renamed-away one. Every
+        // other table's FK text was left pointing at the temp name forever,
+        // silently, since SQLite doesn't validate a FK's target table
+        // exists until something with foreign_keys=ON actually touches it
+        // - which is exactly what surfaced this as `no such table:
+        // main._reindex_tmp_base_exercises` the next time a real delete
+        // ran with FK checks on. Building under a temp name and renaming
+        // INTO the original name instead means the original table is only
+        // ever dropped, never renamed away, so no other table's FK text is
+        // ever touched by this operation.
+        final tmpName = '_reindex_new_${cfg.table}';
 
-        // 2. Recreate table with same schema using drift
+        // 1. Recreate table (throwaway name) with same schema using drift
         // (We reconstruct via raw SQL since we have the column names)
         final nonIdCols = cols.where((c) => c != 'id').toList();
         final colDefs = <String>[];
@@ -1358,9 +1373,9 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
           }),
         ];
         await db.customStatement(
-            'CREATE TABLE ${cfg.table} (${createColsWithDefaults.join(', ')})');
+            'CREATE TABLE $tmpName (${createColsWithDefaults.join(', ')})');
 
-        // 3. Insert rows with new sequential IDs
+        // 2. Insert rows with new sequential IDs
         for (final row in rows) {
           final oldId = row.data['id'] as int;
           final mappedId = idMap[oldId] ?? oldId;
@@ -1371,12 +1386,12 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
             placeholders.add('?');
           }
           await db.customStatement(
-            'INSERT INTO ${cfg.table} (id, ${nonIdCols.join(', ')}) VALUES (${placeholders.join(', ')})',
+            'INSERT INTO $tmpName (id, ${nonIdCols.join(', ')}) VALUES (${placeholders.join(', ')})',
             values,
           );
         }
 
-        // 4. Update FK references in other tables
+        // 3. Update FK VALUES (not the constraint text) in other tables
         for (final fk in fkRefs) {
           for (final entry in idMap.entries) {
             await db.customStatement(
@@ -1386,29 +1401,32 @@ class _DBInspectorScreenState extends ConsumerState<DBInspectorScreen>
           }
         }
 
-        // 5. Fix NULL values in columns that Drift expects as non-nullable
+        // 4. Fix NULL values in columns that Drift expects as non-nullable
         // (is_pr_song, is_pr, is_completed, order_index, timestamp)
         await db.customStatement(
-            'UPDATE ${cfg.table} SET is_pr_song = 0 WHERE is_pr_song IS NULL');
+            'UPDATE $tmpName SET is_pr_song = 0 WHERE is_pr_song IS NULL');
         await db.customStatement(
-            'UPDATE ${cfg.table} SET is_pr = 0 WHERE is_pr IS NULL');
+            'UPDATE $tmpName SET is_pr = 0 WHERE is_pr IS NULL');
         await db.customStatement(
-            'UPDATE ${cfg.table} SET is_completed = 0 WHERE is_completed IS NULL');
+            'UPDATE $tmpName SET is_completed = 0 WHERE is_completed IS NULL');
         await db.customStatement(
-            'UPDATE ${cfg.table} SET order_index = 0 WHERE order_index IS NULL');
+            'UPDATE $tmpName SET order_index = 0 WHERE order_index IS NULL');
         try {
           await db.customStatement(
-              'UPDATE ${cfg.table} SET timestamp = CAST(strftime("%s", "now") * 1000 AS INTEGER) WHERE timestamp IS NULL');
+              'UPDATE $tmpName SET timestamp = CAST(strftime("%s", "now") * 1000 AS INTEGER) WHERE timestamp IS NULL');
         } catch (_) {
           // Fallback: set to current unix time in ms
           final now = DateTime.now().millisecondsSinceEpoch;
           await db.customStatement(
-              'UPDATE ${cfg.table} SET timestamp = ? WHERE timestamp IS NULL',
+              'UPDATE $tmpName SET timestamp = ? WHERE timestamp IS NULL',
               [now]);
         }
 
-        // 6. Drop temp table
-        await db.customStatement('DROP TABLE _reindex_tmp_${cfg.table}');
+        // 5. Drop the original table, then rename the rebuilt one into
+        // place - the original name is never renamed away, so other
+        // tables' FK reference text never needs touching.
+        await db.customStatement('DROP TABLE ${cfg.table}');
+        await db.customStatement('ALTER TABLE $tmpName RENAME TO ${cfg.table}');
 
         // 6. Reset sqlite_sequence for this table
         try {
