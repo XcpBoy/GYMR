@@ -2,19 +2,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
 import '../providers/database_provider.dart';
 import '../database/database.dart';
+import '../services/export_service.dart';
 import '../localization/strings.dart';
 import 'styles.dart';
 import 'main_scaffold.dart';
 import 'exercise_form_screen.dart';
-
-// One broken relational link for one exercise: progressions/regressions/
-// alters pointing at a name that doesn't exist, or missing the reciprocal
-// entry on the other side.
-class _Issue {
-  final BaseExercise exercise;
-  final String label;
-  const _Issue(this.exercise, this.label);
-}
 
 class KnsTreeAlertScreen extends ConsumerStatefulWidget {
   const KnsTreeAlertScreen({super.key});
@@ -24,43 +16,6 @@ class KnsTreeAlertScreen extends ConsumerStatefulWidget {
 }
 
 class _KnsTreeAlertScreenState extends ConsumerState<KnsTreeAlertScreen> {
-  static const Map<String, String> _reciprocal = {
-    "progressions": "regressions",
-    "regressions": "progressions",
-    "alters": "alters",
-  };
-
-  List<_Issue> _findIssues(List<BaseExercise> exercises) {
-    final byName = {for (final e in exercises) e.fullName: e};
-    final issues = <_Issue>[];
-
-    for (final e in exercises) {
-      final meta = e.parsedComplexMetadata;
-      for (final category in _reciprocal.keys) {
-        final targets = List<String>.from(meta[category] ?? []);
-        for (final targetName in targets) {
-          final target = byName[targetName];
-          if (target == null) {
-            issues.add(_Issue(
-                e, 'BROKEN_LINK ($category -> "$targetName" NOT_FOUND)'));
-            continue;
-          }
-          final oppositeCategory = _reciprocal[category]!;
-          final targetMeta = target.parsedComplexMetadata;
-          final reciprocalList =
-              List<String>.from(targetMeta[oppositeCategory] ?? []);
-          if (!reciprocalList.contains(e.fullName)) {
-            issues.add(_Issue(e,
-                'ONE_SIDED_LINK ($category -> "${target.fullName}" missing reciprocal $oppositeCategory)'));
-          }
-        }
-      }
-    }
-
-    issues.sort((a, b) => a.exercise.fullName.compareTo(b.exercise.fullName));
-    return issues;
-  }
-
   @override
   Widget build(BuildContext context) {
     final lang = ref.watch(languageProvider).value ?? 'en';
@@ -77,8 +32,11 @@ class _KnsTreeAlertScreenState extends ConsumerState<KnsTreeAlertScreen> {
                 child: Text(tr(lang, 'LOADING...'),
                     style: LabStyles.mono(context, color: Colors.grey)));
           }
-          final issues = _findIssues(exercises);
-          final flaggedCount = issues.map((i) => i.exercise.id).toSet().length;
+          final issues = ExportService.findKnsTreeIssues(exercises);
+          final flaggedCount = issues
+              .map((i) => (i['exercise'] as BaseExercise).id)
+              .toSet()
+              .length;
 
           if (issues.isEmpty) {
             return Center(
@@ -115,11 +73,13 @@ class _KnsTreeAlertScreenState extends ConsumerState<KnsTreeAlertScreen> {
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (context, index) {
                     final issue = issues[index];
+                    final exercise = issue['exercise'] as BaseExercise;
+                    final label = issue['label'] as String;
                     return InkWell(
                       onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (c) => ExerciseFormScreen(exercise: issue.exercise))),
+                              builder: (c) => ExerciseFormScreen(exercise: exercise))),
                       child: Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
@@ -132,11 +92,11 @@ class _KnsTreeAlertScreenState extends ConsumerState<KnsTreeAlertScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(issue.exercise.fullName,
+                                  Text(exercise.fullName,
                                       style: LabStyles.mono(context,
                                           fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
                                   const SizedBox(height: 4),
-                                  Text(issue.label,
+                                  Text(label,
                                       style: LabStyles.mono(context, fontSize: 9, color: Colors.redAccent)),
                                 ],
                               ),

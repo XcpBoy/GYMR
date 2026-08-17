@@ -726,12 +726,15 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       'WO_BLOCKS': LabColors.biometricYellow,
       'KNS_LIBRARY': LabColors.inventoryOrange,
       'ROUTINE': LabColors.visualsNeon,
+      'OTHR_EXPRTS': Colors.redAccent,
     };
     final woBlocksColor =
         _nexusExchangeColor('WO_BLOCKS', nexusExchangeDefaults);
     final knsLibraryColor =
         _nexusExchangeColor('KNS_LIBRARY', nexusExchangeDefaults);
     final routineColor = _nexusExchangeColor('ROUTINE', nexusExchangeDefaults);
+    final otherExportsColor =
+        _nexusExchangeColor('OTHR_EXPRTS', nexusExchangeDefaults);
 
     return Container(
       color: Colors.black,
@@ -814,6 +817,26 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
               color: routineColor,
               format: "CSV",
               onTap: () => _importData('workouts'),
+            ),
+            const SizedBox(height: 12),
+            Text("OTHR.EXPRTS",
+                style: LabStyles.mono(context,
+                    fontSize: 9, color: otherExportsColor, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            _buildExportCard(
+              title: "EXPORT KNS.TREE.ALERT",
+              icon: Icons.account_tree,
+              color: otherExportsColor,
+              format: "MD",
+              onShare: () async {
+                await _exportKnsTreeAlertPath(share: true);
+              },
+              onDownload: () async {
+                final filePath = await _exportKnsTreeAlertPath(share: false);
+                if (filePath != null) {
+                  await _downloadExportedFile(filePath, 'gymr_kns_tree_alert.md');
+                }
+              },
             ),
           ],
         ],
@@ -1219,6 +1242,27 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       final exercises = await db.select(db.baseExercises).get();
       final filePath =
           await ExportService.exportExercisesToCsv(exercises, share: share);
+      if (mounted) setState(() => _isProcessing = false);
+      return filePath;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text("EXPORT_FAILED: $e"),
+            backgroundColor: Colors.redAccent));
+      }
+      if (mounted) setState(() => _isProcessing = false);
+      return null;
+    }
+  }
+
+  Future<String?> _exportKnsTreeAlertPath({bool share = true}) async {
+    setState(() => _isProcessing = true);
+    try {
+      final db = ref.read(databaseProvider);
+      final exercises = await db.select(db.baseExercises).get();
+      final filePath = await ExportService.exportKnsTreeAlertToMarkdown(
+          exercises,
+          share: share);
       if (mounted) setState(() => _isProcessing = false);
       return filePath;
     } catch (e) {

@@ -1677,6 +1677,96 @@ class ExportService {
     }
   }
 
+  // Shared with kns_tree_alert_screen.dart (KNS.TREE.ALERT), so both the
+  // in-app screen and this exporter agree on exactly what counts as a
+  // relational issue: progressions/regressions/alters pointing at a name
+  // that doesn't exist in the exercise inventory, or missing the
+  // reciprocal entry on the other side. Each issue keeps the offending
+  // BaseExercise object (not just its name) so the screen can still
+  // navigate to it on tap.
+  static const Map<String, String> kKnsReciprocal = {
+    "progressions": "regressions",
+    "regressions": "progressions",
+    "alters": "alters",
+  };
+
+  static List<Map<String, dynamic>> findKnsTreeIssues(
+      List<BaseExercise> exercises) {
+    final byName = {for (final e in exercises) e.fullName: e};
+    final issues = <Map<String, dynamic>>[];
+
+    for (final e in exercises) {
+      final meta = e.parsedComplexMetadata;
+      for (final category in kKnsReciprocal.keys) {
+        final targets = List<String>.from(meta[category] ?? []);
+        for (final targetName in targets) {
+          final target = byName[targetName];
+          if (target == null) {
+            issues.add({
+              'exercise': e,
+              'label': 'BROKEN_LINK ($category -> "$targetName" NOT_FOUND)',
+            });
+            continue;
+          }
+          final oppositeCategory = kKnsReciprocal[category]!;
+          final targetMeta = target.parsedComplexMetadata;
+          final reciprocalList =
+              List<String>.from(targetMeta[oppositeCategory] ?? []);
+          if (!reciprocalList.contains(e.fullName)) {
+            issues.add({
+              'exercise': e,
+              'label':
+                  'ONE_SIDED_LINK ($category -> "${target.fullName}" missing reciprocal $oppositeCategory)',
+            });
+          }
+        }
+      }
+    }
+
+    issues.sort((a, b) => (a['exercise'] as BaseExercise)
+        .fullName
+        .compareTo((b['exercise'] as BaseExercise).fullName));
+    return issues;
+  }
+
+  static Future<String> exportKnsTreeAlertToMarkdown(
+      List<BaseExercise> exercises,
+      {bool share = true}) async {
+    final issues = findKnsTreeIssues(exercises);
+    final buffer = StringBuffer();
+    buffer.writeln("# GYMR // KNS.TREE.ALERT");
+    buffer.writeln();
+    buffer.writeln("Generated: ${DateTime.now().toIso8601String()}");
+    buffer.writeln();
+
+    if (issues.isEmpty) {
+      buffer.writeln("No relational issues found.");
+    } else {
+      final flaggedCount =
+          issues.map((i) => (i['exercise'] as BaseExercise).id).toSet().length;
+      buffer.writeln(
+          "${issues.length} broken links across $flaggedCount movements.");
+      buffer.writeln();
+      buffer.writeln("| EXERCISE | ISSUE |");
+      buffer.writeln("|:---|:---|");
+      for (final issue in issues) {
+        final exName = (issue['exercise'] as BaseExercise).fullName;
+        buffer.writeln("| $exName | ${issue['label']} |");
+      }
+    }
+    buffer.writeln();
+
+    final output = await getTemporaryDirectory();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final file = File("${output.path}/gymr_kns_tree_alert_$ts.md");
+    await file.writeAsString(buffer.toString());
+    if (share) {
+      await SharePlus.instance.share(ShareParams(
+          files: [XFile(file.path)], text: 'GYMR KNS.TREE.ALERT Report'));
+    }
+    return file.path;
+  }
+
   static Future<void> exportBlueprintsToCsv(
       List<Map<String, dynamic>> combinedData, AppDatabase db,
       {String lang = 'en'}) async {
