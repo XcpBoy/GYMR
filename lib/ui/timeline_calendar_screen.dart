@@ -8,6 +8,7 @@ import '../database/database.dart';
 import 'styles.dart';
 import 'main_scaffold.dart';
 import 'workout_manager.dart';
+import 'timeline_screen.dart';
 import '../localization/strings.dart';
 
 class TimelineCalendarScreen extends ConsumerStatefulWidget {
@@ -34,14 +35,32 @@ class _TimelineCalendarScreenState extends ConsumerState<TimelineCalendarScreen>
     return MainScaffold(
       title: tr(lang, 'TIMELINE_CALENDAR'),
       screenKey: 'TIMELINE_CAL',
-      body: ListView.builder(
-        controller: _scrollController,
-        padding: const EdgeInsets.all(16),
-        itemCount: 24, // Show 2 years for now, can be infinite later
-        itemBuilder: (context, index) {
-          final monthDate = DateTime(_currentMonth.year, _currentMonth.month - index, 1);
-          return _MonthCalendarGrid(monthDate: monthDate);
-        },
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: TimelineViewSwitcher(
+                isMonthView: true,
+                onSwitch: () {
+                  Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => const TimelineScreen()));
+                },
+              ),
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.all(16),
+              itemCount: 24, // Show 2 years for now, can be infinite later
+              itemBuilder: (context, index) {
+                final monthDate = DateTime(_currentMonth.year, _currentMonth.month - index, 1);
+                return _MonthCalendarGrid(monthDate: monthDate);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -61,8 +80,8 @@ class _MonthCalendarGrid extends ConsumerWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 32),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.white10, width: 0.5),
-        color: Colors.black,
+        border: Border.all(color: LabColors.cyanBorder.withValues(alpha: 0.3), width: 0.5),
+        color: LabColors.background,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -176,9 +195,9 @@ class _CalendarDayCell extends StatelessWidget {
       onTap: data != null ? () => _showDaySummary(context, data!) : null,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.black,
+          color: LabColors.background,
           border: Border.all(
-            color: isToday ? LabColors.primary : (data != null ? Colors.white10 : Colors.transparent),
+            color: isToday ? LabColors.primary : (data != null ? LabColors.cyanBorder.withValues(alpha: 0.3) : Colors.transparent),
             width: 0.5,
           ),
         ),

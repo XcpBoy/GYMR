@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -24,10 +25,12 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   bool _onlyPr = false;
+  Timer? _searchDebounce;
 
   @override
   void dispose() {
     _searchController.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
   }
 
@@ -92,7 +95,12 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
             child: LabTextField(
               controller: _searchController,
               label: tr(lang, 'FILTER_BY_MOVE_OR_FIELD'),
-              onChanged: (v) => setState(() => _searchQuery = v),
+              onChanged: (v) {
+                _searchDebounce?.cancel();
+                _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+                  if (mounted) setState(() => _searchQuery = v);
+                });
+              },
             ),
           ),
           const SizedBox(width: 12),
@@ -119,35 +127,42 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
   }
 
   Widget _buildMonthNavigator(BuildContext context, DateTime selectedMonth) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        IconButton(
-          icon: const Icon(Icons.chevron_left, color: LabColors.primary, size: 20),
-          onPressed: () {
-            ref.read(selectedMonthProvider.notifier).state = 
-                DateTime(selectedMonth.year, selectedMonth.month - 1, 1);
-          },
-        ),
-        Text(
-          DateFormat('MMMM yyyy').format(selectedMonth).toUpperCase(),
-          style: LabStyles.mono(context, fontWeight: FontWeight.bold, fontSize: 14),
-        ),
-        IconButton(
-          icon: const Icon(Icons.chevron_right, color: LabColors.primary, size: 20),
-          onPressed: () {
-            ref.read(selectedMonthProvider.notifier).state = 
-                DateTime(selectedMonth.year, selectedMonth.month + 1, 1);
-          },
-        ),
-        const SizedBox(width: 8),
-        IconButton(
-          icon: const Icon(Icons.calendar_month, color: LabColors.primary, size: 20),
-          onPressed: () {
-            Navigator.push(context, MaterialPageRoute(builder: (c) => const TimelineCalendarScreen()));
-          },
-        ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const SizedBox(width: 40),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left, color: LabColors.primary, size: 20),
+                onPressed: () {
+                  ref.read(selectedMonthProvider.notifier).state =
+                      DateTime(selectedMonth.year, selectedMonth.month - 1, 1);
+                },
+              ),
+              Text(
+                DateFormat('MMMM yyyy').format(selectedMonth).toUpperCase(),
+                style: LabStyles.mono(context, fontWeight: FontWeight.bold, fontSize: 14),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right, color: LabColors.primary, size: 20),
+                onPressed: () {
+                  ref.read(selectedMonthProvider.notifier).state =
+                      DateTime(selectedMonth.year, selectedMonth.month + 1, 1);
+                },
+              ),
+            ],
+          ),
+          TimelineViewSwitcher(
+            isMonthView: false,
+            onSwitch: () {
+              Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => const TimelineCalendarScreen()));
+            },
+          ),
+        ],
+      ),
     );
   }
 
@@ -267,6 +282,53 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
                 ),
               )).toList(),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Segmented WEEK/MONTH toggle shared by [TimelineScreen] and
+/// [TimelineCalendarScreen] so both views read as one feature instead of
+/// a hidden sub-page reachable only by a tiny icon. Uses
+/// pushReplacement so switching swaps the view instead of piling up the
+/// back stack.
+class TimelineViewSwitcher extends StatelessWidget {
+  final bool isMonthView;
+  final VoidCallback onSwitch;
+
+  const TimelineViewSwitcher({super.key, required this.isMonthView, required this.onSwitch});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget segment(String label, bool active) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: active ? LabColors.primary.withValues(alpha: 0.12) : Colors.transparent,
+        ),
+        child: Text(
+          label,
+          style: LabStyles.mono(
+            context,
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
+            color: active ? LabColors.primary : Colors.grey[600],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: LabStyles.hairlineBorder(color: LabColors.cyanBorder.withValues(alpha: 0.4)),
+      child: InkWell(
+        onTap: onSwitch,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            segment('WEEK', !isMonthView),
+            segment('MONTH', isMonthView),
           ],
         ),
       ),
