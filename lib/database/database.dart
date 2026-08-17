@@ -315,6 +315,39 @@ class AppDatabase extends _$AppDatabase {
 
   // --- Bidirectional Relational Integrity ---
 
+  // Pure add-only fix for one ONE_SIDED_LINK issue: add [sourceFullName]
+  // to [exerciseId]'s [category] list if it isn't already there. Re-reads
+  // the exercise fresh from the DB right before writing, so it's safe to
+  // call repeatedly in a loop over many issues regardless of order -
+  // unlike syncBidirectionalRelations (below), it never removes anything,
+  // so it can't be tripped up by a stale in-memory snapshot describing an
+  // exercise's OWN relations from before earlier iterations in the same
+  // batch already changed a DIFFERENT exercise's data.
+  //
+  // (KNST.FIXER's AUTO-FIX ONESIDED used to call syncBidirectionalRelations
+  // once per exercise using each exercise's complexMetadata captured
+  // before the whole batch started. Because that method is a full
+  // add-AND-remove sync, processing exercise B using B's stale
+  // pre-batch snapshot could see "exercise A's just-added reciprocal to
+  // me isn't in my (stale) declared target list" and delete A's original,
+  // still-valid link - actively breaking a correct relation while trying
+  // to fix an unrelated one.)
+  Future<void> addMissingReciprocal(
+      int exerciseId, String category, String sourceFullName) async {
+    final ex = await (select(baseExercises)
+          ..where((t) => t.id.equals(exerciseId)))
+        .getSingle();
+    final meta = ex.parsedComplexMetadata;
+    final list = List<String>.from(meta[category] ?? []);
+    if (!list.contains(sourceFullName)) {
+      list.add(sourceFullName);
+      meta[category] = list;
+      await (update(baseExercises)..where((t) => t.id.equals(exerciseId)))
+          .write(BaseExercisesCompanion(
+              complexMetadata: Value(jsonEncode(meta))));
+    }
+  }
+
   Future<void> syncBidirectionalRelations(
       int exerciseId, Map<String, dynamic> newMeta) async {
     final exercise = await (select(baseExercises)

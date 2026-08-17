@@ -89,17 +89,25 @@ class _KnstFixerView extends ConsumerStatefulWidget {
 class _KnstFixerViewState extends ConsumerState<_KnstFixerView> {
   bool _fixing = false;
 
-  Future<void> _runAutoFixOneSided(List<BaseExercise> exercises) async {
+  // Fixes exactly the ONE_SIDED_LINK issues currently on screen, one
+  // targeted add per issue via db.addMissingReciprocal - NOT
+  // syncBidirectionalRelations, which is a full add-AND-remove sync built
+  // for "this one exercise was just edited, propagate its current state."
+  // Looping that over every exercise using each one's pre-batch snapshot
+  // was the actual bug behind "the fix button doesn't work": fixing
+  // exercise A (adding A's name to B's reciprocal list) then processing B
+  // itself with B's now-stale captured metadata made the loop think "A's
+  // link isn't in what B declares" and delete it straight back out,
+  // undoing the fix it had just made.
+  Future<void> _runAutoFixOneSided(List<Map<String, dynamic>> oneSided) async {
     setState(() => _fixing = true);
     final db = ref.read(databaseProvider);
     try {
-      // syncBidirectionalRelations(id, meta) already implements exactly
-      // this: for one exercise's relation lists, add any reciprocal entry
-      // missing on the other side. Running it for every exercise makes the
-      // whole graph consistent in one pass instead of reimplementing the
-      // same reciprocal-diffing logic here.
-      for (final e in exercises) {
-        await db.syncBidirectionalRelations(e.id, e.parsedComplexMetadata);
+      for (final issue in oneSided) {
+        final target = issue['targetExercise'] as BaseExercise;
+        final oppositeCategory = issue['oppositeCategory'] as String;
+        final sourceFullName = (issue['exercise'] as BaseExercise).fullName;
+        await db.addMissingReciprocal(target.id, oppositeCategory, sourceFullName);
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -152,7 +160,7 @@ class _KnstFixerViewState extends ConsumerState<_KnstFixerView> {
                   color: LabColors.accent,
                   onPressed: _fixing
                       ? () {}
-                      : () => _runAutoFixOneSided(exercises),
+                      : () => _runAutoFixOneSided(oneSided),
                 ),
               ),
             ],

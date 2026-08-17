@@ -1718,6 +1718,11 @@ class ExportService {
               'exercise': e,
               'label':
                   'ONE_SIDED_LINK ($category -> "${target.fullName}" missing reciprocal $oppositeCategory)',
+              // Structured fields for KNST.FIXER's auto-fix (add-only: just
+              // this one missing entry on this one target) - the label
+              // string above is for display, not for driving the fix.
+              'targetExercise': target,
+              'oppositeCategory': oppositeCategory,
             });
           }
         }
