@@ -113,6 +113,13 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
     );
   }
 
+  // Used to be raw CSV/XLSX column dumps in horizontally-scrolling boxes -
+  // technically complete but genuinely hard to read. Replaced with one
+  // clean card per importable format, each just a "here's what this looks
+  // like, here's a worked example, download it" - the actual column
+  // reference still lives in the generated file itself (and in
+  // .claude/skills/nexus-import/reference/*.md for anyone generating one
+  // by hand).
   Widget _buildExpectedInputsSection(BuildContext context) {
     return Container(
       color: Colors.black,
@@ -130,182 +137,115 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
           ),
           if (_isExpectedInputsExpanded) ...[
             const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: LabColors.surfaceContainerLow,
-                border: Border.all(
-                    color: LabColors.primary.withValues(alpha: 0.2),
-                    width: 0.5),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("KINISI_LIBRARY_CSV_STRUCTURE:",
-                      style: LabStyles.mono(context,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: LabColors.primary)),
-                  const SizedBox(height: 12),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      color: Colors.black,
-                      child: Text(
-                        "NAME,PREFIXES,IMPLEMENTS,BODY_POSITIONS,SUFFIXES,PRIMARY_MUSCLE,SECONDARY_MUSCLE,FIELD,TISSUE_TYPE,TISSUE_NAME,NUM_PHASES,PHASE_DESCRIPTIONS,INTENTION,PATTERN_TYPE,COMPLEX_METADATA,IS_UNILATERAL,DESCRIPTION",
-                        style: LabStyles.mono(context,
-                            fontSize: 8, color: Colors.grey[400]),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text("SAMPLE_ROW:",
-                      style: LabStyles.mono(context,
-                          fontSize: 8, color: Colors.grey)),
-                  const SizedBox(height: 4),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      color: Colors.black,
-                      child: Text(
-                        "PULL UP,,WEIGHT VEST,DEAD_HANG,,BACK,BICEPS,STRENGTH,MUSCLE,LATS,1,,[NT:LASTRE|ISO:false],VERTICAL_PULL,,0,Weighted pull up focused on latissimus dorsi development.",
-                        style: LabStyles.mono(context,
-                            fontSize: 8, color: Colors.grey[600]),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  LabButton(
-                    label: "GENERATE_EMPTY_TEMPLATE",
-                    onPressed: _generateTemplateCsv,
-                    color: LabColors.primary,
-                    isOutlined: true,
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                  ),
-                ],
-              ),
+            _buildTemplateCard(
+              icon: Icons.auto_awesome_motion,
+              color: LabColors.inventoryOrange,
+              title: "KINISI LIBRARY",
+              format: "CSV",
+              description:
+                  "One row per exercise. Includes a fully worked example row with every column filled in.",
+              onDownload: _generateTemplateCsv,
             ),
-            const SizedBox(height: 24),
-            // ── WB EMPTY TEMPLATE ──
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: LabColors.surfaceContainerLow,
-                border: Border.all(
-                    color: LabColors.accent.withValues(alpha: 0.2),
-                    width: 0.5),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text("WB_EMPTY_TEMPLATE:",
-                      style: LabStyles.mono(context,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: LabColors.accent)),
-                  const SizedBox(height: 12),
-                  Text("WORKOUT_BLOCK:",
-                      style: LabStyles.mono(context,
-                          fontSize: 8, color: Colors.grey)),
-                  const SizedBox(height: 4),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      color: Colors.black,
-                      child: Text(
-                        "NAME,DESCRIPTION\n\"PULL DAY TEMPLATE\",\"Pull strength + iso core + BW metcon\"",
-                        style: LabStyles.mono(context,
-                            fontSize: 8, color: Colors.grey[400]),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text("WORKOUT_BLOCK_KNS:",
-                      style: LabStyles.mono(context,
-                          fontSize: 8, color: Colors.grey)),
-                  const SizedBox(height: 4),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      color: Colors.black,
-                      child: Text(
-                        "ORDER,BASE_EXERCISE_ID,UTILITIES,BATCH_NAME,INTENTION\n"
-                        "0,\"WEIGHTED PULL UP\",\"PULL\",\"PULLING\",\"[NT:LASTRE|ISO:false] Main lat work\"\n"
-                        "1,\"DEVON LIFT ISO\",\"ISO\",\"ISO_HOLD\",\"[NT:EXT.LOAD|ISO:true] Isometric side hold\"\n"
-                        "2,\"MURCIELAGOS\",\"PULL,CORE\",\"CORE\",\"[NT:JST.BW|ISO:false] BW knee raise\"",
-                        style: LabStyles.mono(context,
-                            fontSize: 8, color: Colors.grey[400]),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text("WORKOUT_BLOCK_SETS:",
-                      style: LabStyles.mono(context,
-                          fontSize: 8, color: Colors.grey)),
-                  const SizedBox(height: 4),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      color: Colors.black,
-                      child: Text(
-                        "KNS,SET,MIN_REPS/SEC,P.LOAD,MAX_REPS/SEC,RPE,RIR,SIDE,INTENTION\n"
-                        "\"WEIGHTED PULL UP\",1,,10,8,6,2,,WARMUP\n"
-                        "\"WEIGHTED PULL UP\",2,6,20,8,8,1,,WORKING\n"
-                        "\"WEIGHTED PULL UP\",3,5,25,6,9,1,,HEAVY\n"
-                        "\"DEVON LIFT ISO\",1,15,5,20,,,,ISO HOLD\n"
-                        "\"DEVON LIFT ISO\",2,20,10,30,,,RIGHT,MAX HOLD\n"
-                        "\"MURCIELAGOS\",1,,,12,,,,\n"
-                        "\"MURCIELAGOS\",2,8,,12,,,,\n"
-                        "\"MURCIELAGOS\",3,6,,10,,,RIGHT,UNILATERAL FOCUS",
-                        style: LabStyles.mono(context,
-                            fontSize: 8, color: Colors.grey[400]),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text("BATCH_REFERENCES:",
-                      style: LabStyles.mono(context,
-                          fontSize: 8,
-                          color: Colors.grey,
-                          fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      color: Colors.black,
-                      child: Text(
-                        "BATCH_NAME,EXERCISES\n"
-                        "\"PULLING\",\"WEIGHTED PULL UP\"\n"
-                        "\"ISO_HOLD\",\"DEVON LIFT ISO\"\n"
-                        "\"CORE\",\"MURCIELAGOS\"",
-                        style: LabStyles.mono(context,
-                            fontSize: 8, color: Colors.grey[400]),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  LabButton(
-                    label: "DOWNLOAD_WB_TEMPLATE_XLSX",
-                    onPressed: _generateEmptyWbXlsx,
-                    color: LabColors.accent,
-                    isOutlined: true,
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                  ),
-                ],
-              ),
+            const SizedBox(height: 12),
+            _buildTemplateCard(
+              icon: Icons.view_agenda,
+              color: LabColors.biometricYellow,
+              title: "WORKOUT BLOCK",
+              format: "XLSX",
+              description:
+                  "One row per set. Includes a fully worked 2-exercise pull-day example, bilateral and unilateral.",
+              onDownload: _generateEmptyWbXlsx,
+            ),
+            const SizedBox(height: 12),
+            _buildTemplateCard(
+              icon: Icons.account_tree,
+              color: Colors.purpleAccent,
+              title: "KNS.TREE STRUCTURE",
+              format: "MD",
+              description:
+                  "Progressions/regressions/alters as a markdown table. Includes a worked example pair of exercises.",
+              onDownload: _generateKnsTreeTemplate,
             ),
           ],
         ],
       ),
     );
+  }
+
+  Widget _buildTemplateCard({
+    required IconData icon,
+    required Color color,
+    required String title,
+    required String format,
+    required String description,
+    required VoidCallback onDownload,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: LabColors.surfaceContainerLow,
+        border: Border(left: BorderSide(color: color, width: 2)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Text(title,
+                  style: LabStyles.mono(context,
+                      fontSize: 11, fontWeight: FontWeight.bold, color: color))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.15),
+              border: Border.all(color: color.withValues(alpha: 0.4), width: 0.5),
+            ),
+            child: Text(format,
+                style: LabStyles.mono(context,
+                    fontSize: 8, fontWeight: FontWeight.bold, color: color)),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        Text(description,
+            style: LabStyles.mono(context, fontSize: 9, color: Colors.grey[500])),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: InkWell(
+            onTap: onDownload,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.1),
+                  border: Border.all(color: color, width: 0.5)),
+              alignment: Alignment.center,
+              child: Text("DOWNLOAD_TEMPLATE",
+                  style: LabStyles.mono(context,
+                      fontSize: 9, fontWeight: FontWeight.bold, color: color)),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  Future<void> _generateKnsTreeTemplate() async {
+    setState(() => _isProcessing = true);
+    try {
+      await ExportService.generateEmptyKnsTreeTemplate();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("TEMPLATE_GENERATED_AND_SHARED")));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text("GENERATION_FAILED: $e"),
+            backgroundColor: Colors.redAccent));
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
   }
 
   Future<void> _generateTemplateCsv() async {

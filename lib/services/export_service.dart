@@ -1822,6 +1822,22 @@ class ExportService {
     return file.path;
   }
 
+  static Future<void> generateEmptyKnsTreeTemplate() async {
+    final buffer = StringBuffer();
+    buffer.writeln("# GYMR // KNS.TREE STRUCTURE TEMPLATE");
+    buffer.writeln();
+    buffer.writeln("| EXERCISE | PROGRESSIONS | REGRESSIONS | ALTERS |");
+    buffer.writeln("|---|---|---|---|");
+    buffer.writeln("| PULL UP | WEIGHTED PULL UP;WEIGHTED CHIN UP | BAND ASSISTED PULL UP | CHIN UP |");
+    buffer.writeln("| WEIGHTED PULL UP |  | PULL UP |  |");
+
+    final output = await getTemporaryDirectory();
+    final file = File("${output.path}/gymr_kns_tree_structure_template.md");
+    await file.writeAsString(buffer.toString());
+    await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path)], text: 'GYMR KNS.TREE Structure Template'));
+  }
+
   static List<Map<String, dynamic>> _parseKnsTreeTable(String content) {
     final rows = <Map<String, dynamic>>[];
     List<String> splitCell(String c) => c.isEmpty

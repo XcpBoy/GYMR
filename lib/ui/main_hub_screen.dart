@@ -230,7 +230,7 @@ class MainHubScreen extends ConsumerWidget {
         _buildModuleButton(context, '05', 'ANTRPMT.DT', Icons.straighten, settings, tC, lang, defaultColor: LabColors.biometricYellow, onTap: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const AnthropometricDataScreen()));
         }),
-        _buildModuleButton(context, '06', 'VSR.STATS', Icons.science, settings, tC, lang, defaultColor: LabColors.visualsNeon, onTap: () {
+        _buildModuleButton(context, '06', 'VSR.STATS', Icons.query_stats, settings, tC, lang, defaultColor: LabColors.visualsNeon, onTap: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const PerformanceDashboard()));
         }),
       ],
