@@ -271,7 +271,12 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(name.toUpperCase(), style: LabStyles.mono(context, fontSize: 9, color: color)),
+          Flexible(
+            child: Text(name.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: LabStyles.mono(context, fontSize: 9, color: color)),
+          ),
           const SizedBox(width: 8),
           InkWell(
             onTap: () => _removeRelation(category, index),
@@ -572,7 +577,10 @@ class _InternalTogglePickerState extends State<_InternalTogglePicker> {
             child: ListView.builder(
               itemCount: flt.length,
               itemBuilder: (c, i) => ListTile(
-                title: Text(flt[i], style: LabStyles.mono(context, fontSize: 12)),
+                title: Text(flt[i],
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: LabStyles.mono(context, fontSize: 12)),
                 onTap: () {
                   widget.onSelected(flt[i]);
                   Navigator.pop(context);

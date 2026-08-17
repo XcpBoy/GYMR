@@ -916,8 +916,9 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
             onPressed: () async {
               final db = ref.read(databaseProvider);
               final exerciseId = widget.exercise.id;
+              final exerciseFullName = widget.exercise.fullName;
               Navigator.pop(context); // close dialog immediately
-              debugPrint('[DELETE_KNS] start exerciseId=$exerciseId (${widget.exercise.fullName})');
+              debugPrint('[DELETE_KNS] start exerciseId=$exerciseId ($exerciseFullName)');
               try {
                 // Raw SQL transaction: delete from all related tables in FK-safe order
                 debugPrint('[DELETE_KNS] PRAGMA foreign_keys = OFF');
@@ -930,10 +931,25 @@ class _ExerciseCardState extends ConsumerState<_ExerciseCard> {
                 await db.customStatement('DELETE FROM workout_sets WHERE base_exercise_id = $exerciseId');
                 debugPrint('[DELETE_KNS] DELETE FROM blueprint_exercises ...');
                 await db.customStatement('DELETE FROM blueprint_exercises WHERE base_exercise_id = $exerciseId');
+                // workout_block_kns.base_exercise_id has no onDelete cascade
+                // and foreign_keys is OFF for this whole sequence anyway, so
+                // deleting the exercise without this used to leave orphaned
+                // WB entries (and their sets) pointing at a nonexistent
+                // exercise.
+                debugPrint('[DELETE_KNS] DELETE FROM workout_block_sets (orphaned by WB KNS) ...');
+                await db.customStatement('DELETE FROM workout_block_sets WHERE kns_id IN (SELECT id FROM workout_block_kns WHERE base_exercise_id = $exerciseId)');
+                debugPrint('[DELETE_KNS] DELETE FROM workout_block_kns ...');
+                await db.customStatement('DELETE FROM workout_block_kns WHERE base_exercise_id = $exerciseId');
                 debugPrint('[DELETE_KNS] DELETE FROM base_exercises ...');
                 await db.customStatement('DELETE FROM base_exercises WHERE id = $exerciseId');
                 debugPrint('[DELETE_KNS] PRAGMA foreign_keys = ON');
                 await db.customStatement('PRAGMA foreign_keys = ON');
+                // Other exercises' progressions/regressions/alters still
+                // reference this one by its fullName - strip those out too,
+                // or every deletion guarantees a fresh BROKEN_LINK for
+                // KNST.ALERT to report.
+                debugPrint('[DELETE_KNS] removeExerciseFromRelations ...');
+                await db.removeExerciseFromRelations(exerciseFullName);
                 widget.onDataChanged();
                 // Note: this is the dialog's context, which is already
                 // unmounted by the time we get here (popped above, before

@@ -212,6 +212,10 @@ class _KnstAlertView extends ConsumerWidget {
         final issues = ExportService.findKnsTreeIssues(exercises);
         final flaggedCount =
             issues.map((i) => (i['exercise'] as BaseExercise).id).toSet().length;
+        final brokenCount = issues
+            .where((i) => (i['label'] as String).startsWith('BROKEN_LINK'))
+            .length;
+        final oneSidedCount = issues.length - brokenCount;
 
         if (issues.isEmpty) {
           return Center(
@@ -237,7 +241,7 @@ class _KnstAlertView extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               color: Colors.redAccent.withValues(alpha: 0.08),
               child: Text(
-                  '${issues.length} BROKEN LINKS ACROSS $flaggedCount MOVEMENTS',
+                  '$brokenCount BROKEN_LINK, $oneSidedCount ONE_SIDED_LINK ACROSS $flaggedCount MOVEMENTS',
                   style: LabStyles.mono(context,
                       fontSize: 10, color: Colors.redAccent, fontWeight: FontWeight.bold)),
             ),

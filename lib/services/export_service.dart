@@ -1745,8 +1745,12 @@ class ExportService {
     } else {
       final flaggedCount =
           issues.map((i) => (i['exercise'] as BaseExercise).id).toSet().length;
+      final brokenCount = issues
+          .where((i) => (i['label'] as String).startsWith('BROKEN_LINK'))
+          .length;
+      final oneSidedCount = issues.length - brokenCount;
       buffer.writeln(
-          "${issues.length} broken links across $flaggedCount movements.");
+          "$brokenCount BROKEN_LINK, $oneSidedCount ONE_SIDED_LINK across $flaggedCount movements.");
       buffer.writeln();
       buffer.writeln("| EXERCISE | ISSUE |");
       buffer.writeln("|:---|:---|");
@@ -1989,7 +1993,9 @@ class ExportService {
         "PATTERN_TYPE",
         "COMPLEX_METADATA",
         "IS_UNILATERAL",
-        "DESCRIPTION"
+        "DESCRIPTION",
+        "ASSISTANCE_TYPE",
+        "NAME_ORDER"
       ]
     ];
 
@@ -2012,7 +2018,9 @@ class ExportService {
         ex.patternType ?? "",
         ex.complexMetadata ?? "",
         ex.isUnilateral ? 1 : 0,
-        desc
+        desc,
+        ex.assistanceTypes ?? "",
+        ex.nameOrder ?? "",
       ]);
     }
 
@@ -2052,8 +2060,10 @@ class ExportService {
       TextCellValue("COMPLEX_METADATA"),
       TextCellValue("IS_UNILATERAL"),
       TextCellValue("DESCRIPTION"),
+      TextCellValue("ASSISTANCE_TYPE"),
+      TextCellValue("NAME_ORDER"),
     ]);
-    for (int ci = 0; ci < 17; ci++) {
+    for (int ci = 0; ci < 19; ci++) {
       sheet
           .cell(CellIndex.indexByColumnRow(columnIndex: ci, rowIndex: 0))
           .cellStyle = headerStyle;
@@ -2079,6 +2089,8 @@ class ExportService {
         TextCellValue(ex.complexMetadata ?? ""),
         IntCellValue(ex.isUnilateral ? 1 : 0),
         TextCellValue(desc),
+        TextCellValue(ex.assistanceTypes ?? ""),
+        TextCellValue(ex.nameOrder ?? ""),
       ]);
     }
 
@@ -2090,13 +2102,19 @@ class ExportService {
   }
 
   // Shared by importExercisesFromCsv/Excel: [cells] is the row already
-  // normalized to plain strings (17 positions, matching exportExercisesToCsv's
+  // normalized to plain strings (19 positions, matching exportExercisesToCsv's
   // header order), so both formats funnel through one upsert path instead of
   // duplicating the same ~50 lines of field mapping twice.
   //
-  // Upserts by exact NAME match: an existing exercise is UPDATED with the
-  // row's values (not left untouched) so "export, edit in NEXUS skill,
-  // re-import" actually applies the edits instead of silently no-op'ing.
+  // Upserts by the SAME tuple the DB's own UNIQUE constraint uses
+  // (name, prefixes, implements, body_positions, suffixes) - matching by
+  // name alone would collide two different variants that only differ by
+  // prefix/implement/etc (e.g. "FRONT SQUAT" vs "BACK SQUAT" both stored
+  // as name="SQUAT" with different prefixes), silently overwriting one
+  // variant's entire row with the other's data. An existing match is
+  // UPDATED with the row's values (not left untouched) so "export, edit in
+  // NEXUS skill, re-import" actually applies the edits instead of silently
+  // no-op'ing.
   static Future<bool> _upsertExerciseRow(
       AppDatabase db, List<String?> cells) async {
     String? cell(int i) =>
@@ -2122,18 +2140,32 @@ class ExportService {
     final isUnilateralRaw = cell(15);
     final isUnilateral = isUnilateralRaw == "1" ||
         (isUnilateralRaw?.toLowerCase() == "true");
+    final prefixesVal = cell(1);
+    final implementsVal = cell(2);
+    final bodyPositionsVal = cell(3);
+    final suffixesVal = cell(4);
 
     try {
-      final existing = await (db.select(db.baseExercises)
+      final candidates = await (db.select(db.baseExercises)
             ..where((t) => t.name.equals(name)))
-          .getSingleOrNull();
+          .get();
+      BaseExercise? existing;
+      for (final c in candidates) {
+        if (c.prefixes == prefixesVal &&
+            c.implements == implementsVal &&
+            c.bodyPositions == bodyPositionsVal &&
+            c.suffixes == suffixesVal) {
+          existing = c;
+          break;
+        }
+      }
 
       final companion = BaseExercisesCompanion(
         name: Value(name),
-        prefixes: Value(cell(1)),
-        implements: Value(cell(2)),
-        bodyPositions: Value(cell(3)),
-        suffixes: Value(cell(4)),
+        prefixes: Value(prefixesVal),
+        implements: Value(implementsVal),
+        bodyPositions: Value(bodyPositionsVal),
+        suffixes: Value(suffixesVal),
         primaryMuscleGroup: Value(cell(5)),
         secondaryMuscleGroup: Value(cell(6)),
         field: Value(cell(7)),
@@ -2145,11 +2177,13 @@ class ExportService {
         patternType: Value(cell(13)),
         complexMetadata: Value(complexMeta),
         isUnilateral: Value(isUnilateral),
+        assistanceTypes: Value(cell(17)),
+        nameOrder: Value(cell(18)),
       );
 
       if (existing != null) {
         await (db.update(db.baseExercises)
-              ..where((t) => t.id.equals(existing.id)))
+              ..where((t) => t.id.equals(existing!.id)))
             .write(companion);
       } else {
         await db.into(db.baseExercises).insert(companion);
@@ -2221,7 +2255,9 @@ class ExportService {
         "PATTERN_TYPE",
         "COMPLEX_METADATA",
         "IS_UNILATERAL",
-        "DESCRIPTION"
+        "DESCRIPTION",
+        "ASSISTANCE_TYPE",
+        "NAME_ORDER"
       ],
       [
         "PULL UP",
@@ -2240,7 +2276,9 @@ class ExportService {
         "VERTICAL_PULL",
         "",
         "0",
-        "Weighted pull up focused on latissimus dorsi development."
+        "Weighted pull up focused on latissimus dorsi development.",
+        "",
+        ""
       ]
     ];
 

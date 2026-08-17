@@ -1,6 +1,6 @@
 # Exercise Inventory (KNS list) format
 
-Source of truth: `lib/services/export_service.dart` — `exportExercisesToCsv` (writer) and `importExercisesFromCsv`/`importExercisesFromExcel` (readers, identical column layout for both). CSV and XLSX use the same 17 columns in the same order — the difference is only file container, not content.
+Source of truth: `lib/services/export_service.dart` — `exportExercisesToCsv` (writer) and `importExercisesFromCsv`/`importExercisesFromExcel` (readers, identical column layout for both). CSV and XLSX use the same 19 columns in the same order — the difference is only file container, not content.
 
 **Positional, not name-based.** The importer skips the header row unconditionally and reads every subsequent row by column *index*. If you reorder columns, the import will silently put data in the wrong DB fields — no error.
 
@@ -25,6 +25,8 @@ Source of truth: `lib/services/export_service.dart` — `exportExercisesToCsv` (
 | 14 | `COMPLEX_METADATA` | `complexMetadata` | No | JSON object, see shape below. If malformed JSON, the importer silently discards the whole cell and starts from `{}` — don't half-write JSON here. |
 | 15 | `IS_UNILATERAL` | `isUnilateral` | No | `1` or `true` (case-insensitive) = true; anything else = false |
 | 16 | `DESCRIPTION` | *(merged into COMPLEX_METADATA["description"])* | No | Plain text. Use this column for descriptions rather than hand-editing the JSON in column 14 — it's simpler and the importer merges it in automatically. |
+| 17 | `ASSISTANCE_TYPE` | `assistanceTypes` | No | Same rules as PREFIXES (the ASSISTANCE nomenclature piece) |
+| 18 | `NAME_ORDER` | `nameOrder` | No | JSON list of `"<PIECE>::<index>"` tokens controlling assembly order. Leave blank to use the default order — don't hand-author this. |
 
 ## COMPLEX_METADATA JSON shape (column 14)
 
@@ -45,7 +47,7 @@ Source of truth: `lib/services/export_service.dart` — `exportExercisesToCsv` (
 
 ## Duplicate handling
 
-Exercises are matched **by exact name**. An exercise with the same `NAME` as one already in the target GYMR install is **UPDATED in place** with the row's values — re-importing an edited export overwrites the existing exercise's data. If you're generating a file to add descriptions/edits to an existing exercise, this is the expected round-trip: export, edit, re-import.
+Exercises are matched **by the same tuple GYMR's own uniqueness constraint uses**: `NAME` + `PREFIXES` + `IMPLEMENTS` + `BODY_POSITIONS` + `SUFFIXES` (i.e. the exact variant, not just the base name — "SQUAT" with prefix "FRONT" and "SQUAT" with prefix "BACK" are different rows). A row matching an existing exercise on all five is **UPDATED in place** with the row's other values — re-importing an edited export overwrites that variant's data. If you're generating a file to add descriptions/edits to an existing exercise, keep those five columns byte-identical to the original export or it will insert a new row instead of updating.
 
 ## Known app quirks to warn the user about, not silently work around
 

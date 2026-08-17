@@ -225,10 +225,12 @@ class _KinisiTreeScreenState extends ConsumerState<KinisiTreeScreen> {
             mainAxisSize: MainAxisSize.min,
             children: childrenNames.map((name) {
               final childEx = _exerciseCache[name];
-              return childEx != null ? Padding(
+              return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _buildNode(childEx, color: Colors.greenAccent),
-              ) : const SizedBox();
+                child: childEx != null
+                    ? _buildNode(childEx, color: Colors.greenAccent)
+                    : _buildBrokenNode(name),
+              );
             }).toList(),
           ),
         ] else ...[
@@ -236,10 +238,12 @@ class _KinisiTreeScreenState extends ConsumerState<KinisiTreeScreen> {
             mainAxisSize: MainAxisSize.min,
             children: childrenNames.map((name) {
               final childEx = _exerciseCache[name];
-              return childEx != null ? Padding(
+              return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _buildNode(childEx, color: Colors.redAccent),
-              ) : const SizedBox();
+                child: childEx != null
+                    ? _buildNode(childEx, color: Colors.redAccent)
+                    : _buildBrokenNode(name),
+              );
             }).toList(),
           ),
           if (levels > 1) const SizedBox(height: 60),
@@ -274,12 +278,38 @@ class _KinisiTreeScreenState extends ConsumerState<KinisiTreeScreen> {
     final List<String> alters = List<String>.from(base.parsedComplexMetadata["alters"] ?? []);
     return alters.map((name) {
       final ex = _exerciseCache[name];
-      if (ex == null) return const SizedBox();
       return Padding(
         padding: const EdgeInsets.only(left: 40),
-        child: _buildNode(ex, color: LabColors.accent),
+        child: ex != null
+            ? _buildNode(ex, color: LabColors.accent)
+            : _buildBrokenNode(name),
       );
     }).toList();
+  }
+
+  // A progressions/regressions/alters entry pointing at a name that isn't
+  // in _exerciseCache (BROKEN_LINK, same check KNST.ALERT runs) used to
+  // just render nothing - indistinguishable from "this movement genuinely
+  // has no more progressions". Flag it visibly instead so a dangling link
+  // is obvious right where it's dangling, not just in a separate screen.
+  Widget _buildBrokenNode(String name) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withValues(alpha: 0.08),
+        border: Border.all(color: Colors.redAccent, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.link_off, color: Colors.redAccent, size: 14),
+          const SizedBox(width: 6),
+          Text(name.toUpperCase(),
+              style: LabStyles.mono(context,
+                  fontSize: 9, color: Colors.redAccent, fontWeight: FontWeight.bold)),
+        ],
+      ),
+    );
   }
 }
 

@@ -363,6 +363,72 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  // Relations are stored as denormalized fullName strings (see
+  // BaseExerciseExtension.fullName), so renaming an exercise (editing its
+  // NAME or any nomenclature piece in ExerciseFormScreen, which changes
+  // fullName) used to silently orphan every other exercise's
+  // progressions/regressions/alters reference to the old name -
+  // syncBidirectionalRelations only reconciles the edited exercise's OWN
+  // lists, never rewrites what other exercises call it. Call this
+  // alongside a save whenever oldFullName != newFullName to patch every
+  // reference across the whole inventory instead of letting it become a
+  // fresh BROKEN_LINK for KNST.ALERT to catch after the fact.
+  Future<void> renameExerciseInRelations(
+      String oldFullName, String newFullName) async {
+    if (oldFullName == newFullName) return;
+    final categories = ["progressions", "regressions", "alters"];
+    final allEx = await select(baseExercises).get();
+
+    await transaction(() async {
+      for (var ex in allEx) {
+        final meta = ex.parsedComplexMetadata;
+        bool changed = false;
+        for (final category in categories) {
+          final list = List<String>.from(meta[category] ?? []);
+          final idx = list.indexOf(oldFullName);
+          if (idx != -1) {
+            list[idx] = newFullName;
+            meta[category] = list;
+            changed = true;
+          }
+        }
+        if (changed) {
+          await (update(baseExercises)..where((t) => t.id.equals(ex.id)))
+              .write(BaseExercisesCompanion(
+                  complexMetadata: Value(jsonEncode(meta))));
+        }
+      }
+    });
+  }
+
+  // Deleting an exercise used to leave every other exercise's
+  // progressions/regressions/alters still pointing at its (now
+  // nonexistent) fullName - a guaranteed fresh BROKEN_LINK per delete.
+  // Call this before/alongside removing the BaseExercises row.
+  Future<void> removeExerciseFromRelations(String fullName) async {
+    final categories = ["progressions", "regressions", "alters"];
+    final allEx = await select(baseExercises).get();
+
+    await transaction(() async {
+      for (var ex in allEx) {
+        final meta = ex.parsedComplexMetadata;
+        bool changed = false;
+        for (final category in categories) {
+          final list = List<String>.from(meta[category] ?? []);
+          if (list.remove(fullName)) {
+            meta[category] = list;
+            changed = true;
+          }
+        }
+        if (changed) {
+          await (update(baseExercises)..where((t) => t.id.equals(ex.id)))
+              .write(BaseExercisesCompanion(
+                  complexMetadata: Value(jsonEncode(meta))));
+        }
+      }
+    });
+  }
+
   // Workout Blocks / plan_day_blocks are not version-gated in onUpgrade:
   // they're created and column-patched here in beforeOpen instead, so a DB
   // file restored from an older backup (not just a normal version upgrade)
@@ -891,9 +957,28 @@ final Map<String, dynamic> _defaultComplexMetadata = {
 // jsonDecode is synchronous and complexMetadata is read on every rebuild
 // (search/filter loops over the full exercise list call this per item, per
 // keystroke). Cache by raw JSON string so repeated reads of the same value
-// don't reparse. Safe to share the returned map across callers: nothing in
-// the codebase mutates the result, it's read-only lookups everywhere.
+// don't reparse. The cached map is a shared template, never handed out
+// directly - parsedComplexMetadata always returns a fresh clone via
+// _cloneComplexMetadata (see below). Without that clone, two different
+// BaseExercise rows with byte-identical complexMetadata JSON (or both
+// null/empty, falling back to _defaultComplexMetadata) would receive the
+// exact same List objects for "regressions"/"progressions"/etc - any
+// future call site that mutates one in place instead of copying first
+// would silently corrupt every other exercise sharing that cache entry.
 final Map<String, Map<String, dynamic>> _complexMetadataCache = {};
+
+Map<String, dynamic> _cloneComplexMetadata(Map<String, dynamic> src) {
+  final clone = <String, dynamic>{};
+  src.forEach((key, value) {
+    if (value is List) {
+      clone[key] =
+          value.map((e) => e is Map ? Map<String, dynamic>.from(e) : e).toList();
+    } else {
+      clone[key] = value;
+    }
+  });
+  return clone;
+}
 
 // Default assembly order for fullName's pieces - matches the order the
 // feature always used before per-exercise reordering existed. A null/blank
@@ -931,10 +1016,10 @@ extension BaseExerciseExtension on BaseExercise {
   Map<String, dynamic> get parsedComplexMetadata {
     final raw = complexMetadata;
     if (raw == null || raw.isEmpty) {
-      return _defaultComplexMetadata;
+      return _cloneComplexMetadata(_defaultComplexMetadata);
     }
     final cached = _complexMetadataCache[raw];
-    if (cached != null) return cached;
+    if (cached != null) return _cloneComplexMetadata(cached);
     Map<String, dynamic> result;
     try {
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
@@ -947,7 +1032,7 @@ extension BaseExerciseExtension on BaseExercise {
       result = _defaultComplexMetadata;
     }
     _complexMetadataCache[raw] = result;
-    return result;
+    return _cloneComplexMetadata(result);
   }
 
   List<Map<String, dynamic>> get _parsedBodyPositions =>

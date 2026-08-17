@@ -265,6 +265,20 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     super.dispose();
   }
 
+  // Mirrors BaseExercise.fullName's assembly exactly (nameOrderResolved +
+  // per-token text, joined and uppercased) but reads the live editing
+  // state instead of a saved row - used to validate before writing rather
+  // than discovering a duplicate/rename fallout after the fact.
+  String _computeProspectiveFullName() {
+    final order = _reconcileNameOrder(_nameOrder, _liveNameTokens());
+    final parts = <String>[];
+    for (final token in order) {
+      final text = _tokenText(token);
+      if (text.isNotEmpty) parts.add(text);
+    }
+    return parts.join(' ').trim().toUpperCase();
+  }
+
   Future<void> _saveExercise() async {
     if (!_formKey.currentState!.validate()) return;
     if (_nameController.text.trim().isEmpty) {
@@ -273,6 +287,26 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     }
 
     final db = ref.read(databaseProvider);
+
+    // Every progressions/regressions/alters entry across the whole
+    // inventory identifies an exercise by this exact assembled string, so
+    // a collision would silently misroute relations to whichever exercise
+    // the lookup map happens to keep - block the save instead of letting
+    // that happen invisibly.
+    final prospectiveFullName = _computeProspectiveFullName();
+    final allExisting = await db.select(db.baseExercises).get();
+    final duplicate = allExisting.any((e) =>
+        e.fullName == prospectiveFullName &&
+        (!_isEditing || e.id != widget.exercise!.id));
+    if (duplicate) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('DUPLICATE_NAME: "$prospectiveFullName" already exists'),
+            backgroundColor: Colors.redAccent));
+      }
+      return;
+    }
+    final oldFullName = _isEditing ? widget.exercise!.fullName : null;
     final posJson = _encodePieceList(_bodyPositionControllers, _bodyPositionShowInName);
     final impJson = _encodePieceList(_implementControllers, _implementShowInName);
     final preJson = _encodePieceList(_prefixControllers, _prefixShowInName);
@@ -334,6 +368,9 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
           ),
         );
         await db.syncBidirectionalRelations(widget.exercise!.id, _complexMetadata);
+        if (oldFullName != null && oldFullName != prospectiveFullName) {
+          await db.renameExerciseInRelations(oldFullName, prospectiveFullName);
+        }
       } else {
         final maxOrder = await (db.select(db.baseExercises)
               ..orderBy([(t) => drift.OrderingTerm(expression: t.orderIndex, mode: drift.OrderingMode.desc)]))
