@@ -11,49 +11,67 @@ import 'charts/chart_widgets.dart';
 import 'charts/performance_dashboard.dart';
 import '../localization/strings.dart';
 
-/// Segmented ANALYZER/VIEWER toggle shared by [DataAnalyzerScreen] (DATA.NLZR)
-/// and [PerformanceDashboard] (DATA.VWR) so both read as one module (DT.PRCSR)
-/// instead of two unrelated screens. Uses pushReplacement so switching swaps
-/// the view instead of piling up the back stack - same pattern as
-/// TimelineViewSwitcher in timeline_screen.dart.
-class DataProcessorViewSwitcher extends StatelessWidget {
+/// Small floating chooser shared by [DataAnalyzerScreen] (DATA.NLZR) and
+/// [PerformanceDashboard] (DATA.VWR) so both read as one module (DT.PRCSR)
+/// instead of two unrelated screens, without eating a full header row like
+/// the first version of this switcher did. Tap opens a 2-item picker; the
+/// active view is checked. Uses pushReplacement so switching swaps the view
+/// instead of piling up the back stack - same idea as TimelineViewSwitcher
+/// in timeline_screen.dart, just as a FAB instead of an inline segmented bar.
+class DataProcessorSwitcherFab extends StatelessWidget {
   final bool isViewerActive;
-  final VoidCallback onSwitch;
 
-  const DataProcessorViewSwitcher({super.key, required this.isViewerActive, required this.onSwitch});
+  const DataProcessorSwitcherFab({super.key, required this.isViewerActive});
 
   @override
   Widget build(BuildContext context) {
-    Widget segment(String label, bool active) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: active ? LabColors.primary.withValues(alpha: 0.12) : Colors.transparent,
-        ),
-        child: Text(
-          label,
-          style: LabStyles.mono(
-            context,
-            fontSize: 9,
-            fontWeight: FontWeight.bold,
-            color: active ? LabColors.primary : Colors.grey[600],
-          ),
-        ),
-      );
-    }
+    return FloatingActionButton(
+      heroTag: 'dt_prcsr_switcher',
+      backgroundColor: LabColors.surfaceContainerHigh,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.zero,
+        side: BorderSide(color: LabColors.cyanBorder.withValues(alpha: 0.5), width: 0.5),
+      ),
+      onPressed: () => _showChooser(context),
+      child: const Icon(Icons.swap_horiz, color: LabColors.primary),
+    );
+  }
 
-    return Container(
-      decoration: LabStyles.hairlineBorder(color: LabColors.cyanBorder.withValues(alpha: 0.4)),
-      child: InkWell(
-        onTap: onSwitch,
-        child: Row(
+  void _showChooser(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: LabColors.background,
+      builder: (c) => SafeArea(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            segment('NLZR', !isViewerActive),
-            segment('VWR', isViewerActive),
+            _option(context, c, icon: Icons.query_stats, label: 'DATA.NLZR', active: !isViewerActive, onTap: () {
+              if (isViewerActive) {
+                Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const DataAnalyzerScreen()));
+              }
+            }),
+            _option(context, c, icon: Icons.analytics, label: 'DATA.VWR', active: isViewerActive, onTap: () {
+              if (!isViewerActive) {
+                Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const PerformanceDashboard()));
+              }
+            }),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _option(BuildContext context, BuildContext sheetContext,
+      {required IconData icon, required String label, required bool active, required VoidCallback onTap}) {
+    return ListTile(
+      leading: Icon(icon, color: active ? LabColors.primary : Colors.grey),
+      title: Text(label, style: LabStyles.mono(context, fontWeight: FontWeight.bold, color: active ? LabColors.primary : Colors.white)),
+      trailing: active ? const Icon(Icons.check, color: LabColors.primary, size: 16) : null,
+      onTap: () {
+        Navigator.pop(sheetContext);
+        onTap();
+      },
     );
   }
 }
@@ -71,44 +89,46 @@ class DataAnalyzerScreen extends ConsumerWidget {
     return MainScaffold(
       title: tr(lang, 'DATA.NLZR'),
       screenKey: 'DATA_NLZR',
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: DataProcessorViewSwitcher(
-                isViewerActive: false,
-                onSwitch: () {
-                  Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => const PerformanceDashboard()));
-                },
-              ),
-            ),
-          ),
-          Expanded(child: _LrAlertSection()),
-        ],
-      ),
+      body: const _LrAlertSection(),
+      floatingActionButton: const DataProcessorSwitcherFab(isViewerActive: false),
       bottomNavigationBar: const LabFooter(),
     );
   }
 }
 
-class _LrAlertSection extends ConsumerWidget {
+class _LrAlertSection extends ConsumerStatefulWidget {
+  const _LrAlertSection();
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_LrAlertSection> createState() => _LrAlertSectionState();
+}
+
+class _LrAlertSectionState extends ConsumerState<_LrAlertSection> {
+  // Default ALL history, all unilateral KNS - matches the plan's window
+  // default (10%) but the user asked for a full-history default instead of
+  // a fixed 14-day one, with a quick filter to narrow it if wanted.
+  DateTimeRange? _timeRange;
+  double? _customThreshold;
+
+  @override
+  Widget build(BuildContext context) {
     final lang = ref.watch(languageProvider).value ?? 'en';
-    final overview = ref.watch(lrAsymmetryOverviewProvider);
-    final threshold = ref.watch(lrAlertThresholdProvider).value ?? 10.0;
+    final overview = ref.watch(lrAsymmetryOverviewProvider(_timeRange));
+    final configuredThreshold = ref.watch(lrAlertThresholdProvider).value ?? 10.0;
+    final threshold = _customThreshold ?? configuredThreshold;
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
       children: [
         Text('L/R ASYMMETRY', style: LabStyles.mono(context, fontWeight: FontWeight.bold, color: LabColors.primary)),
-        const SizedBox(height: 4),
-        Text(
-          '${tr(lang, "THRESHOLD")}: ${threshold.toStringAsFixed(0)}% · ${_lrWindowLabel(lang)}',
-          style: LabStyles.mono(context, fontSize: 9, color: Colors.grey),
+        const SizedBox(height: 8),
+        TechnicalQuickTimeFilter(
+          currentRange: _timeRange,
+          onRangeSelected: (range) => setState(() => _timeRange = range),
+          activeColor: LabColors.visualsNeon,
         ),
+        const SizedBox(height: 12),
+        _buildThresholdFilter(context, lang, threshold),
         const SizedBox(height: 12),
         overview.when(
           data: (rows) {
@@ -131,7 +151,45 @@ class _LrAlertSection extends ConsumerWidget {
     );
   }
 
-  String _lrWindowLabel(String lang) => '14D';
+  Widget _buildThresholdFilter(BuildContext context, String lang, double threshold) {
+    return Row(
+      children: [
+        Text('${tr(lang, "THRESHOLD")}:', style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: LabColors.visualsNeon,
+              inactiveTrackColor: LabColors.surfaceBright,
+              thumbColor: LabColors.visualsNeon,
+              overlayColor: LabColors.visualsNeon.withValues(alpha: 0.2),
+              trackHeight: 2,
+            ),
+            child: Slider(
+              value: threshold.clamp(0, 100),
+              min: 0,
+              max: 100,
+              divisions: 100,
+              onChanged: (v) => setState(() => _customThreshold = v),
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 40,
+          child: Text('${threshold.toStringAsFixed(0)}%',
+              textAlign: TextAlign.right, style: LabStyles.mono(context, fontSize: 10, fontWeight: FontWeight.bold, color: LabColors.visualsNeon)),
+        ),
+        if (_customThreshold != null)
+          IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            icon: const Icon(Icons.close, color: Colors.grey, size: 14),
+            tooltip: 'RESET',
+            onPressed: () => setState(() => _customThreshold = null),
+          ),
+      ],
+    );
+  }
 }
 
 class _AsymmetryRow extends ConsumerWidget {

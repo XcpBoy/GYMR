@@ -86,16 +86,6 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            Align(
-              alignment: Alignment.centerRight,
-              child: DataProcessorViewSwitcher(
-                isViewerActive: true,
-                onSwitch: () {
-                  Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => const DataAnalyzerScreen()));
-                },
-              ),
-            ),
-            const SizedBox(height: 12),
             _buildGlobalTimeFilter(),
             TechnicalQuickTimeFilter(
               currentRange: _globalTimeRange,
@@ -116,6 +106,7 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
           ],
         ),
       ),
+      floatingActionButton: const DataProcessorSwitcherFab(isViewerActive: true),
       bottomNavigationBar: const LabFooter(),
     );
   }

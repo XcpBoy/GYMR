@@ -370,22 +370,23 @@ final lrAlertThresholdProvider = StreamProvider<double>((ref) {
       .map((row) => double.tryParse(row?.data['value'] as String? ?? '10') ?? 10.0);
 });
 
-const _lrWindowDays = 14;
-
-// One row per unilateral exercise with data in the last 14 days, sorted
-// worst asymmetry first. threshold is read separately (lrAlertThresholdProvider)
-// so this provider doesn't need to re-run when only the threshold changes -
-// the UI applies isAlert client-side from the raw asymmetryPct.
-final lrAsymmetryOverviewProvider = StreamProvider<List<(BaseExercise, LrAsymmetryResult)>>((ref) {
+// One row per unilateral exercise with data in [range] (null = ALL time),
+// sorted worst asymmetry first. threshold is read separately
+// (lrAlertThresholdProvider) so this provider doesn't need to re-run when
+// only the threshold changes - the UI applies isAlert client-side from the
+// raw asymmetryPct.
+final lrAsymmetryOverviewProvider =
+    StreamProvider.family<List<(BaseExercise, LrAsymmetryResult)>, DateTimeRange?>((ref, range) {
   final db = ref.watch(databaseProvider);
-  final windowStart = DateTime.now().subtract(const Duration(days: _lrWindowDays));
 
   final query = db.select(db.workoutSets).join([
     innerJoin(db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId)),
     innerJoin(db.baseExercises, db.baseExercises.id.equalsExp(db.workoutSets.baseExerciseId)),
   ])
-    ..where(db.baseExercises.isUnilateral.equals(true))
-    ..where(db.workoutSets.timestamp.isBiggerOrEqualValue(windowStart));
+    ..where(db.baseExercises.isUnilateral.equals(true));
+  if (range != null) {
+    query.where(db.workoutSets.timestamp.isBetweenValues(range.start, range.end));
+  }
 
   return query.watch().asyncMap((rows) async {
     final dateKeys = <int>{};
