@@ -6,7 +6,7 @@ import 'styles.dart';
 import 'home_screen.dart';
 import 'workout_manager.dart';
 import 'ledger_screen.dart';
-import 'charts/performance_dashboard.dart';
+import 'data_analyzer_screen.dart';
 import 'blueprint_manager.dart';
 import 'timeline_screen.dart';
 import 'nexus_screen.dart';
@@ -56,7 +56,7 @@ final List<RibbonDestination> kRibbonDestinations = [
       icon: Icons.analytics,
       label: 'VISUALS',
       defaultColor: LabColors.visualsNeon,
-      screenBuilder: () => const PerformanceDashboard()),
+      screenBuilder: () => const DataAnalyzerScreen()),
   RibbonDestination(
       id: 'BLUEPRINT',
       icon: Icons.view_module_rounded,

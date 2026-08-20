@@ -130,6 +130,10 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
           ),
         ]),
         const SizedBox(height: 12),
+        _buildSectionCard(context, "DATA.NLZR", [
+          _LrThresholdField(settings: settings, tC: tC, lang: lang),
+        ]),
+        const SizedBox(height: 12),
         _buildSectionCard(context, tr(lang, "RESET"), [
           SizedBox(
             width: double.infinity,
@@ -387,6 +391,72 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
           ),
         ],
       ),
+    );
+  }
+}
+
+// LR.ALERT asymmetry threshold, stored as a plain string in the
+// theme_settings KV (APPCFG_LR_ALERT_THRESHOLD, default "10") - same
+// pattern as every other APPCFG_ setting, no new table. Own StatefulWidget
+// just to own the TextEditingController without adding init/dispose noise
+// to _AppConfigScreenState.
+class _LrThresholdField extends StatefulWidget {
+  final Map<String, ThemeSetting> settings;
+  final ThemeController tC;
+  final String lang;
+
+  const _LrThresholdField({required this.settings, required this.tC, required this.lang});
+
+  @override
+  State<_LrThresholdField> createState() => _LrThresholdFieldState();
+}
+
+class _LrThresholdFieldState extends State<_LrThresholdField> {
+  late final TextEditingController _controller;
+
+  static const _key = 'APPCFG_LR_ALERT_THRESHOLD';
+  static const _default = '10';
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.tC.getValue(widget.settings, _key) ?? _default);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _commit(String v) {
+    final parsed = double.tryParse(v);
+    if (parsed == null || parsed < 0 || parsed > 100) return;
+    widget.tC.setValue(_key, parsed.toStringAsFixed(0));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: LabTextField(
+            controller: _controller,
+            label: tr(widget.lang, 'THRESHOLD') + ' (%)',
+            keyboardType: TextInputType.number,
+            onChanged: _commit,
+          ),
+        ),
+        const SizedBox(width: 12),
+        IconButton(
+          tooltip: 'RESET',
+          icon: const Icon(Icons.restart_alt, color: Colors.grey, size: 20),
+          onPressed: () {
+            setState(() => _controller.text = _default);
+            widget.tC.setValue(_key, _default);
+          },
+        ),
+      ],
     );
   }
 }

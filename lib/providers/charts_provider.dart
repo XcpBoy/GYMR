@@ -6,6 +6,7 @@ import '../database/database.dart';
 import '../logic/chart_models.dart';
 import 'database_provider.dart';
 import '../logic/calculator.dart';
+import '../logic/lr_asymmetry.dart';
 
 // --- Session Metrics ---
 final sessionsMetricsProvider = StreamProvider.family<List<SessionMetric>, DateTimeRange?>((ref, range) {
@@ -299,6 +300,191 @@ final oneRmProgressionProvider = StreamProvider.family<List<OneRmPoint>, (int, D
         reps: set.reps,
       );
     }).toList()..sort((a, b) => a.date.compareTo(b.date));
+  });
+});
+
+// --- LR.ALERT (DATA.NLZR) ---
+
+// Same load-type detection as oneRmProgressionProvider above (LASTRE/
+// JST.BW/UNMOVABLE vs plain EXT.LOAD), plus assistanceValue subtracted
+// before adding bodyweight - matches _applyAssistance/_detectLoadDetails in
+// export_service.dart/workout_manager.dart so the EORM numbers here agree
+// with the rest of the app for the same exercise.
+double _lrTotalLoad(BaseExercise exercise, double weight, double? assistanceValue, double bw) {
+  final intentionText = exercise.intention ?? '';
+  final metaMatch = RegExp(r'\[NT:(.*)\|ISO:(.*)\]').firstMatch(intentionText);
+  final isL = (metaMatch?.group(1) == 'LASTRE') || exercise.field == 'LASTRE';
+  final isJst = (metaMatch?.group(1) == 'JST.BW') || exercise.field == 'JST.BW';
+  final isU = (metaMatch?.group(1) == 'UNMOVABLE') || exercise.field == 'UNMOVABLE';
+  final assistance = assistanceValue ?? 0.0;
+
+  double totalLoad;
+  if (isJst) {
+    totalLoad = bw - assistance;
+  } else if (isL || isU) {
+    totalLoad = (weight - assistance) + bw;
+  } else {
+    totalLoad = weight - assistance;
+  }
+  return totalLoad < 0 ? 0.0 : totalLoad;
+}
+
+String? _lrSideOf(String? rawComplexMetadata) {
+  if (rawComplexMetadata == null || rawComplexMetadata.isEmpty) return null;
+  try {
+    final decoded = jsonDecode(rawComplexMetadata) as Map<String, dynamic>;
+    final side = decoded['side'] as String?;
+    return (side == 'RIGHT' || side == 'LEFT') ? side : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+Future<Map<int, double>> _bodyweightCache(AppDatabase db, Set<int> dateMsKeys) async {
+  final Map<int, double> bwCache = {};
+  for (final dateMs in dateMsKeys) {
+    final date = DateTime.fromMillisecondsSinceEpoch(dateMs);
+    final cutoffSeconds = date.millisecondsSinceEpoch ~/ 1000;
+    final result = await db.customSelect(
+      "SELECT value FROM anthropometric_logs WHERE label = 'WEIGHT' AND date <= ? "
+      'ORDER BY date DESC LIMIT 1',
+      variables: [Variable(cutoffSeconds)],
+      readsFrom: {db.anthropometricLogs},
+    ).getSingleOrNull();
+    bwCache[dateMs] = (result?.data['value'] as num?)?.toDouble() ?? 0.0;
+  }
+  return bwCache;
+}
+
+// Configurable threshold (APPCFG_LR_ALERT_THRESHOLD in theme_settings KV,
+// default 10%). No new table - same string-KV pattern as every other
+// APPCFG_ setting (see app_config_screen.dart).
+final lrAlertThresholdProvider = StreamProvider<double>((ref) {
+  final db = ref.watch(databaseProvider);
+  return db
+      .customSelect(
+        "SELECT value FROM theme_settings WHERE key = 'APPCFG_LR_ALERT_THRESHOLD'",
+        readsFrom: {db.themeSettings},
+      )
+      .watchSingleOrNull()
+      .map((row) => double.tryParse(row?.data['value'] as String? ?? '10') ?? 10.0);
+});
+
+const _lrWindowDays = 14;
+
+// One row per unilateral exercise with data in the last 14 days, sorted
+// worst asymmetry first. threshold is read separately (lrAlertThresholdProvider)
+// so this provider doesn't need to re-run when only the threshold changes -
+// the UI applies isAlert client-side from the raw asymmetryPct.
+final lrAsymmetryOverviewProvider = StreamProvider<List<(BaseExercise, LrAsymmetryResult)>>((ref) {
+  final db = ref.watch(databaseProvider);
+  final windowStart = DateTime.now().subtract(const Duration(days: _lrWindowDays));
+
+  final query = db.select(db.workoutSets).join([
+    innerJoin(db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId)),
+    innerJoin(db.baseExercises, db.baseExercises.id.equalsExp(db.workoutSets.baseExerciseId)),
+  ])
+    ..where(db.baseExercises.isUnilateral.equals(true))
+    ..where(db.workoutSets.timestamp.isBiggerOrEqualValue(windowStart));
+
+  return query.watch().asyncMap((rows) async {
+    final dateKeys = <int>{};
+    for (final row in rows) {
+      final log = row.readTable(db.workoutLogs);
+      dateKeys.add(DateTime(log.date.year, log.date.month, log.date.day).millisecondsSinceEpoch);
+    }
+    final bwCache = await _bodyweightCache(db, dateKeys);
+
+    final Map<int, BaseExercise> exercisesById = {};
+    final Map<int, List<SideSetSample>> samplesByExercise = {};
+
+    for (final row in rows) {
+      final set = row.readTable(db.workoutSets);
+      final log = row.readTable(db.workoutLogs);
+      final exercise = row.readTable(db.baseExercises);
+
+      final side = _lrSideOf(set.complexMetadata);
+      if (side == null) continue;
+
+      final dateMs = DateTime(log.date.year, log.date.month, log.date.day).millisecondsSinceEpoch;
+      final bw = bwCache[dateMs] ?? 0.0;
+      final totalLoad = _lrTotalLoad(exercise, set.weight, set.assistanceValue, bw);
+
+      exercisesById[exercise.id] = exercise;
+      samplesByExercise
+          .putIfAbsent(exercise.id, () => [])
+          .add(SideSetSample(date: log.date, totalLoad: totalLoad, reps: set.reps, side: side));
+    }
+
+    final results = samplesByExercise.entries
+        .map((e) => (exercisesById[e.key]!, computeAsymmetry(e.value)))
+        .where((r) => r.$2.weakSide != null)
+        .toList()
+      ..sort((a, b) => b.$2.asymmetryPct.compareTo(a.$2.asymmetryPct));
+
+    return results;
+  });
+});
+
+// Per-day R/L EORM series for one exercise, for the detail chart. No window
+// cutoff here (unlike the overview) - respects the caller's DateTimeRange
+// like the other per-exercise providers (oneRmProgressionProvider etc.).
+final lrAsymmetryTimeSeriesProvider =
+    StreamProvider.family<List<({DateTime date, double rightEorm, double leftEorm})>, (int, DateTimeRange?)>((ref, arg) {
+  final exerciseId = arg.$1;
+  final range = arg.$2;
+  final db = ref.watch(databaseProvider);
+
+  final query = db.select(db.workoutSets).join([
+    innerJoin(db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId)),
+    innerJoin(db.baseExercises, db.baseExercises.id.equalsExp(db.workoutSets.baseExerciseId)),
+  ])
+    ..where(db.workoutSets.baseExerciseId.equals(exerciseId));
+
+  if (range != null) {
+    query.where(db.workoutSets.timestamp.isBetweenValues(range.start, range.end));
+  }
+
+  return query.watch().asyncMap((rows) async {
+    final dateKeys = <int>{};
+    for (final row in rows) {
+      final log = row.readTable(db.workoutLogs);
+      dateKeys.add(DateTime(log.date.year, log.date.month, log.date.day).millisecondsSinceEpoch);
+    }
+    final bwCache = await _bodyweightCache(db, dateKeys);
+
+    final samples = <SideSetSample>[];
+    for (final row in rows) {
+      final set = row.readTable(db.workoutSets);
+      final log = row.readTable(db.workoutLogs);
+      final exercise = row.readTable(db.baseExercises);
+
+      final side = _lrSideOf(set.complexMetadata);
+      if (side == null) continue;
+
+      final dateMs = DateTime(log.date.year, log.date.month, log.date.day).millisecondsSinceEpoch;
+      final bw = bwCache[dateMs] ?? 0.0;
+      final totalLoad = _lrTotalLoad(exercise, set.weight, set.assistanceValue, bw);
+      samples.add(SideSetSample(date: log.date, totalLoad: totalLoad, reps: set.reps, side: side));
+    }
+
+    final bestBySideDay = bestEormPerSidePerDay(samples);
+    final allDayKeys = {...bestBySideDay['RIGHT']!.keys, ...bestBySideDay['LEFT']!.keys};
+    final dateByKey = <String, DateTime>{};
+    for (final s in samples) {
+      dateByKey["${s.date.year}-${s.date.month}-${s.date.day}"] = s.date;
+    }
+
+    final series = allDayKeys.map((key) {
+      return (
+        date: dateByKey[key]!,
+        rightEorm: bestBySideDay['RIGHT']![key] ?? 0.0,
+        leftEorm: bestBySideDay['LEFT']![key] ?? 0.0,
+      );
+    }).toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+
+    return series;
   });
 });
 

@@ -108,6 +108,9 @@ final Map<String, String> esTranslations = {
   // --- timeline_screen.dart / full_dataset_screen.dart / export_service.dart ---
   'CHRONO_HISTORY': 'CRONO_HISTORIA',
   'TIMELINE_CALENDAR': 'CALENDARIO_CRONOLOGICO',
+
+  // --- data_analyzer_screen.dart (LR.ALERT / DT.PRCSR) ---
+  'THRESHOLD': 'UMBRAL',
   'FILTER_BY_MOVE_OR_FIELD': 'FILTRAR_POR_MOVIMIENTO_O_CAMPO',
   'PR_ONLY': 'SOLO_PR',
   'NO_DATA_FOR_THIS_PERIOD': 'SIN_DATOS_PARA_ESTE_PERÍODO',

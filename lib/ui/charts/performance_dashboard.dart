@@ -10,6 +10,7 @@ import '../../logic/chart_models.dart';
 import '../styles.dart';
 import 'chart_widgets.dart';
 import '../lab_widgets.dart';
+import '../data_analyzer_screen.dart';
 
 class PerformanceDashboard extends ConsumerStatefulWidget {
   final ChartTab? initialTab;
@@ -85,6 +86,16 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: DataProcessorViewSwitcher(
+                isViewerActive: true,
+                onSwitch: () {
+                  Navigator.pushReplacement(context, MaterialPageRoute(builder: (c) => const DataAnalyzerScreen()));
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
             _buildGlobalTimeFilter(),
             TechnicalQuickTimeFilter(
               currentRange: _globalTimeRange,

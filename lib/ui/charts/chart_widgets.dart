@@ -325,3 +325,73 @@ class TechnicalBarChart extends StatelessWidget {
   }
 }
 
+/// Grouped R/L EORM bars per day, for LR.ALERT (DATA.NLZR) exercise detail.
+class LrAsymmetryChart extends StatelessWidget {
+  final List<({DateTime date, double rightEorm, double leftEorm})> data;
+  final Color rightColor;
+  final Color leftColor;
+
+  const LrAsymmetryChart({
+    super.key,
+    required this.data,
+    required this.rightColor,
+    required this.leftColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (data.isEmpty) return Center(child: Text("NO_DATA", style: LabStyles.mono(context)));
+
+    return BarChart(
+      BarChartData(
+        barGroups: data.asMap().entries.map((e) {
+          return BarChartGroupData(
+            x: e.key,
+            barsSpace: 4,
+            barRods: [
+              BarChartRodData(toY: e.value.rightEorm, color: rightColor, width: 6, borderRadius: BorderRadius.zero),
+              BarChartRodData(toY: e.value.leftEorm, color: leftColor, width: 6, borderRadius: BorderRadius.zero),
+            ],
+          );
+        }).toList(),
+        titlesData: FlTitlesData(
+          show: true,
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 30,
+              getTitlesWidget: (value, meta) {
+                final index = value.toInt();
+                if (index < 0 || index >= data.length) return const SizedBox();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(
+                    DateFormat('dd/MM').format(data[index].date),
+                    style: LabStyles.mono(context, fontSize: 8, color: LabColors.onSurfaceVariant),
+                  ),
+                );
+              },
+            ),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 36,
+              getTitlesWidget: (value, meta) =>
+                  Text(value.toInt().toString(), style: LabStyles.mono(context, fontSize: 8, color: LabColors.onSurfaceVariant)),
+            ),
+          ),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          getDrawingHorizontalLine: (value) => const FlLine(color: LabColors.surfaceBright, strokeWidth: 0.5),
+        ),
+        borderData: FlBorderData(show: true, border: Border.all(color: LabColors.cyanBorder, width: 0.5)),
+      ),
+    );
+  }
+}
+

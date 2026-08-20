@@ -8,7 +8,7 @@ import 'ledger_screen.dart';
 import 'workout_manager.dart';
 import 'anthropometric_data_screen.dart';
 import 'full_dataset_screen.dart';
-import 'charts/performance_dashboard.dart';
+import 'data_analyzer_screen.dart';
 import 'timeline_screen.dart';
 import 'theme_modding_screen.dart';
 import 'nexus_screen.dart';
@@ -230,8 +230,8 @@ class MainHubScreen extends ConsumerWidget {
         _buildModuleButton(context, '05', 'ANTRPMT.DT', Icons.straighten, settings, tC, lang, defaultColor: LabColors.biometricYellow, onTap: () {
           Navigator.push(context, MaterialPageRoute(builder: (context) => const AnthropometricDataScreen()));
         }),
-        _buildModuleButton(context, '06', 'VSR.STATS', Icons.query_stats, settings, tC, lang, defaultColor: LabColors.visualsNeon, onTap: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const PerformanceDashboard()));
+        _buildModuleButton(context, '06', 'DT.PRCSR', Icons.query_stats, settings, tC, lang, defaultColor: LabColors.visualsNeon, onTap: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const DataAnalyzerScreen()));
         }),
       ],
     );
@@ -242,12 +242,16 @@ class MainHubScreen extends ConsumerWidget {
         ? ["DASHBOARD_CARD_WO.BLKCS", "DASHBOARD_CARD_SESSION.BP"]
         : label == 'TMNLN'
             ? ["DASHBOARD_CARD_TIMELINE"]
-            : <String>[];
+            : label == 'DT.PRCSR'
+                ? ["DASHBOARD_CARD_VSR.STATS"]
+                : <String>[];
     final bgAliases = label == 'WO.BLCKS'
         ? ["DASHBOARD_CARD_WO.BLKCS_BG", "DASHBOARD_CARD_SESSION.BP_BG"]
         : label == 'TMNLN'
             ? ["DASHBOARD_CARD_TIMELINE_BG"]
-            : <String>[];
+            : label == 'DT.PRCSR'
+                ? ["DASHBOARD_CARD_VSR.STATS_BG"]
+                : <String>[];
     final color = tC.getColor(settings, "DASHBOARD_CARD_$label", defaultColor: defaultColor, aliases: aliases);
     final bgColor = tC.getColor(settings, "DASHBOARD_CARD_${label}_BG", defaultColor: (defaultColor ?? LabColors.surfaceContainerLow).withValues(alpha: 0.08), aliases: bgAliases);
 
