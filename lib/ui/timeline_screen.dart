@@ -127,33 +127,43 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
   }
 
   Widget _buildMonthNavigator(BuildContext context, DateTime selectedMonth) {
+    // Expanded + Flexible(ellipsis) instead of a fixed-width balancing
+    // SizedBox: some UI presets (THEME.MDFYR > CUSTOM_UI) use wider fonts
+    // or larger font-size multipliers than the default, and "SEPTEMBER
+    // 2026" + both chevrons + the switcher no longer reliably fits a
+    // fixed budget - this degrades to an ellipsis instead of overflowing.
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const SizedBox(width: 40),
-          Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.chevron_left, color: LabColors.primary, size: 20),
-                onPressed: () {
-                  ref.read(selectedMonthProvider.notifier).state =
-                      DateTime(selectedMonth.year, selectedMonth.month - 1, 1);
-                },
-              ),
-              Text(
-                DateFormat('MMMM yyyy').format(selectedMonth).toUpperCase(),
-                style: LabStyles.mono(context, fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              IconButton(
-                icon: const Icon(Icons.chevron_right, color: LabColors.primary, size: 20),
-                onPressed: () {
-                  ref.read(selectedMonthProvider.notifier).state =
-                      DateTime(selectedMonth.year, selectedMonth.month + 1, 1);
-                },
-              ),
-            ],
+          Expanded(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left, color: LabColors.primary, size: 20),
+                  onPressed: () {
+                    ref.read(selectedMonthProvider.notifier).state =
+                        DateTime(selectedMonth.year, selectedMonth.month - 1, 1);
+                  },
+                ),
+                Flexible(
+                  child: Text(
+                    DateFormat('MMMM yyyy').format(selectedMonth).toUpperCase(),
+                    style: LabStyles.mono(context, fontWeight: FontWeight.bold, fontSize: 14),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right, color: LabColors.primary, size: 20),
+                  onPressed: () {
+                    ref.read(selectedMonthProvider.notifier).state =
+                        DateTime(selectedMonth.year, selectedMonth.month + 1, 1);
+                  },
+                ),
+              ],
+            ),
           ),
           TimelineViewSwitcher(
             isMonthView: false,
