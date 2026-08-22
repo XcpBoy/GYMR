@@ -209,7 +209,7 @@ class _AsymmetryRow extends ConsumerWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.all(12),
-        decoration: LabStyles.hairlineBorder(
+        decoration: LabStyles.hairlineBorder(context, 
           color: isAlert ? alertColor.withValues(alpha: 0.6) : LabColors.primary.withValues(alpha: 0.2),
         ),
         child: Row(

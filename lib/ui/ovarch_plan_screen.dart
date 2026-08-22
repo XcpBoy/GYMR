@@ -327,7 +327,7 @@ class _OvarchPlanDetailScreenState
   Widget _buildWeekCard(PlanWeek week) {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      decoration: LabStyles.hairlineBorder(color: LabColors.cyanBorder),
+      decoration: LabStyles.hairlineBorder(context, color: LabColors.cyanBorder),
       child: InkWell(
         onTap: () => Navigator.push(
             context,
@@ -529,7 +529,7 @@ class _OvarchWeekDetailScreenState
     final lang = ref.watch(languageProvider).value ?? 'en';
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      decoration: LabStyles.hairlineBorder(color: LabColors.cyanBorder),
+      decoration: LabStyles.hairlineBorder(context, color: LabColors.cyanBorder),
       child: InkWell(
         onTap: () => Navigator.push(
             context,
@@ -763,7 +763,7 @@ class _OvarchDayDetailScreenState extends ConsumerState<OvarchDayDetailScreen> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      decoration: LabStyles.hairlineBorder(color: LabColors.cyanBorder),
+      decoration: LabStyles.hairlineBorder(context, color: LabColors.cyanBorder),
       child: InkWell(
         onTap: () => Navigator.push(
             context,

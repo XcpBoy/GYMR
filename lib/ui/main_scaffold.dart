@@ -2,7 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/theme_provider.dart';
+import '../providers/ui_tokens_provider.dart';
 import 'styles.dart';
+import 'ui_texture_painter.dart';
 
 class MainScaffold extends ConsumerWidget {
   final Widget body;
@@ -36,6 +38,8 @@ class MainScaffold extends ConsumerWidget {
       }
     }
 
+    final tokens = ref.watch(uiTokensProvider);
+
     return Scaffold(
       backgroundColor: LabColors.background,
       appBar: title.isEmpty
@@ -60,6 +64,7 @@ class MainScaffold extends ConsumerWidget {
             ),
       body: Stack(
         children: [
+          UiTexture(textureId: tokens.textureId, intensity: tokens.textureIntensity, color: LabColors.onSurface),
           if (wallpaperPath != null && wallpaperPath.isNotEmpty)
             Positioned.fill(
               child: Opacity(

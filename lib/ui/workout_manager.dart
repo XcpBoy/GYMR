@@ -3174,7 +3174,7 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
               const SizedBox(height: 8),
               Container(
                 constraints: const BoxConstraints(maxHeight: 200),
-                decoration: LabStyles.hairlineBorder(),
+                decoration: LabStyles.hairlineBorder(context, ),
                 child: ListView.builder(
                   shrinkWrap: true,
                   itemCount: others.length,

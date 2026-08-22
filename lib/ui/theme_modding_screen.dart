@@ -7,6 +7,7 @@ import '../database/database.dart';
 import '../localization/strings.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
+import 'custom_ui_screen.dart';
 
 // A single customizable color (or, for `isValueType` sections, file-path
 // value) group shown as one expandable swatch-grid card in the modding
@@ -413,6 +414,13 @@ class _ThemeModdingScreenState extends ConsumerState<ThemeModdingScreen>
             style: LabStyles.mono(context, fontWeight: FontWeight.bold)),
         centerTitle: true,
         iconTheme: const IconThemeData(color: LabColors.primary),
+        actions: [
+          IconButton(
+            tooltip: 'CUSTOM_UI',
+            icon: const Icon(Icons.style_outlined, color: LabColors.primary),
+            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (c) => const CustomUiScreen())),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: LabColors.primary,

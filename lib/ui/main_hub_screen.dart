@@ -17,6 +17,30 @@ import 'ovarch_plan_screen.dart';
 import 'somatic_spectrum_screen.dart' as somatic;
 import 'app_config_screen.dart';
 import '../localization/strings.dart';
+import '../providers/ui_tokens_provider.dart';
+
+// One entry per hub grid card: stable id (used for order/hidden persistence
+// - never renamed even if `label` changes) + how to render/navigate it.
+// THEME.MDFYR's hub layout editor reorders/hides these by id via
+// hubOrderFromSettings/hubHiddenFromSettings (ui_tokens_provider.dart).
+class HubModuleSpec {
+  final String id;
+  final String label;
+  final IconData icon;
+  final Color defaultColor;
+  final WidgetBuilder screenBuilder;
+
+  const HubModuleSpec({required this.id, required this.label, required this.icon, required this.defaultColor, required this.screenBuilder});
+}
+
+final List<HubModuleSpec> kHubModuleSpecs = [
+  HubModuleSpec(id: 'CRRNT_WO', label: 'CRRNT.WO', icon: Icons.fitness_center, defaultColor: LabColors.workoutRed, screenBuilder: (c) => const WorkoutManagerScreen()),
+  HubModuleSpec(id: 'KNS_INVTRY', label: 'KNS.INVTRY', icon: Icons.receipt_long, defaultColor: LabColors.inventoryOrange, screenBuilder: (c) => const LedgerScreen()),
+  HubModuleSpec(id: 'WO_BLCKS', label: 'WO.BLCKS', icon: Icons.view_module_rounded, defaultColor: LabColors.blueprintBlue, screenBuilder: (c) => const BlueprintManagerScreen()),
+  HubModuleSpec(id: 'TMNLN', label: 'TMNLN', icon: Icons.schedule, defaultColor: LabColors.timelineGrey, screenBuilder: (c) => const TimelineScreen()),
+  HubModuleSpec(id: 'ANTRPMT_DT', label: 'ANTRPMT.DT', icon: Icons.straighten, defaultColor: LabColors.biometricYellow, screenBuilder: (c) => const AnthropometricDataScreen()),
+  HubModuleSpec(id: 'DT_PRCSR', label: 'DT.PRCSR', icon: Icons.query_stats, defaultColor: LabColors.visualsNeon, screenBuilder: (c) => const DataAnalyzerScreen()),
+];
 
 class MainHubScreen extends ConsumerWidget {
   const MainHubScreen({super.key});
@@ -207,6 +231,11 @@ class MainHubScreen extends ConsumerWidget {
   */
 
   Widget _buildCoreModulesGrid(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC, String lang) {
+    final specs = kHubModuleSpecs;
+    final order = hubOrderFromSettings(settings, specs.map((s) => s.id).toList());
+    final hidden = hubHiddenFromSettings(settings);
+    final visible = order.map((id) => specs.firstWhere((s) => s.id == id)).where((s) => !hidden.contains(s.id)).toList();
+
     return GridView.count(
       crossAxisCount: 2,
       shrinkWrap: true,
@@ -215,24 +244,18 @@ class MainHubScreen extends ConsumerWidget {
       mainAxisSpacing: 12,
       childAspectRatio: 2.2,
       children: [
-        _buildModuleButton(context, '01', 'CRRNT.WO', Icons.fitness_center, settings, tC, lang, defaultColor: LabColors.workoutRed, onTap: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => WorkoutManagerScreen()));
-        }),
-        _buildModuleButton(context, '02', 'KNS.INVTRY', Icons.receipt_long, settings, tC, lang, defaultColor: LabColors.inventoryOrange, onTap: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const LedgerScreen()));
-        }),
-        _buildModuleButton(context, '03', 'WO.BLCKS', Icons.view_module_rounded, settings, tC, lang, defaultColor: LabColors.blueprintBlue, onTap: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const BlueprintManagerScreen()));
-        }),
-        _buildModuleButton(context, '04', 'TMNLN', Icons.schedule, settings, tC, lang, defaultColor: LabColors.timelineGrey, onTap: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const TimelineScreen()));
-        }),
-        _buildModuleButton(context, '05', 'ANTRPMT.DT', Icons.straighten, settings, tC, lang, defaultColor: LabColors.biometricYellow, onTap: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const AnthropometricDataScreen()));
-        }),
-        _buildModuleButton(context, '06', 'DT.PRCSR', Icons.query_stats, settings, tC, lang, defaultColor: LabColors.visualsNeon, onTap: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const DataAnalyzerScreen()));
-        }),
+        for (int i = 0; i < visible.length; i++)
+          _buildModuleButton(
+            context,
+            (i + 1).toString().padLeft(2, '0'),
+            visible[i].label,
+            visible[i].icon,
+            settings,
+            tC,
+            lang,
+            defaultColor: visible[i].defaultColor,
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: visible[i].screenBuilder)),
+          ),
       ],
     );
   }

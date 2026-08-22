@@ -125,7 +125,7 @@ class ExerciseHistoryScreen extends ConsumerWidget {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 24),
-      decoration: LabStyles.hairlineBorder(color: Colors.grey[900]!),
+      decoration: LabStyles.hairlineBorder(context, color: Colors.grey[900]!),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

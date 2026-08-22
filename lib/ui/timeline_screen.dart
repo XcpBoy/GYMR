@@ -225,7 +225,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(12),
-        decoration: LabStyles.hairlineBorder(color: day.hasPr ? LabColors.accent.withValues(alpha: 0.3) : LabColors.primary.withValues(alpha: 0.2)),
+        decoration: LabStyles.hairlineBorder(context, color: day.hasPr ? LabColors.accent.withValues(alpha: 0.3) : LabColors.primary.withValues(alpha: 0.2)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -321,7 +321,7 @@ class TimelineViewSwitcher extends StatelessWidget {
     }
 
     return Container(
-      decoration: LabStyles.hairlineBorder(color: LabColors.cyanBorder.withValues(alpha: 0.4)),
+      decoration: LabStyles.hairlineBorder(context, color: LabColors.cyanBorder.withValues(alpha: 0.4)),
       child: InkWell(
         onTap: onSwitch,
         child: Row(

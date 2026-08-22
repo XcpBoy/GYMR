@@ -391,7 +391,7 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-                    decoration: LabStyles.hairlineBorder(),
+                    decoration: LabStyles.hairlineBorder(context, ),
                     child: Text(_timeRange == null ? tr(lang, 'TIME_RANGE: ALL') : '${DateFormat('dd/MM').format(_timeRange!.start)} - ${DateFormat('dd/MM').format(_timeRange!.end)}', style: LabStyles.mono(context, fontSize: 9, color: LabColors.primary)),
                   ),
                 ),

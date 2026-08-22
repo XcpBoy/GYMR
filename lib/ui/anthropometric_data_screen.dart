@@ -168,7 +168,7 @@ class _AnthropometricDataScreenState extends ConsumerState<AnthropometricDataScr
     final isWeightTab = _activeTab == 0;
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: LabStyles.hairlineBorder(),
+      decoration: LabStyles.hairlineBorder(context, ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

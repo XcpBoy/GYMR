@@ -25,7 +25,7 @@ class LabChartContainer extends StatelessWidget {
     return Container(
       height: height,
       margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: LabStyles.hairlineBorder(),
+      decoration: LabStyles.hairlineBorder(context, ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

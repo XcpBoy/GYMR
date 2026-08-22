@@ -130,7 +130,7 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
       },
       child: Container(
         padding: const EdgeInsets.all(12),
-        decoration: LabStyles.hairlineBorder(color: LabColors.primary),
+        decoration: LabStyles.hairlineBorder(context, color: LabColors.primary),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -442,7 +442,7 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
           },
           child: Container(
             padding: const EdgeInsets.all(12),
-            decoration: LabStyles.hairlineBorder(color: LabColors.accent),
+            decoration: LabStyles.hairlineBorder(context, color: LabColors.accent),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [

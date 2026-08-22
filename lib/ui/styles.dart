@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../logic/ui_tokens.dart';
+import '../providers/ui_tokens_provider.dart';
+import 'ui_font_sets.dart';
 
 class LabColors {
   static const Color background = Color(0xFF000000);
@@ -39,9 +42,22 @@ class LabColors {
 }
 
 class LabStyles {
+  // Reads the derived UiTokens directly off the ProviderContainer instead
+  // of via ref.watch, so headline/mono/body/hairlineBorder keep their
+  // existing (context, ...) call signatures used across ~30 files. This
+  // relies on the calling widget already watching themeSettingsProvider
+  // (true nearly everywhere - every screen already reads it for
+  // tC.getColor), which is what actually triggers the rebuild that picks
+  // up a fresh read here; a screen that never watches theme settings at
+  // all won't repaint on a token change until its next rebuild for other
+  // reasons. Acceptable for v1 - see PNDEV for the tradeoff.
+  static UiFontSet _fontSet(BuildContext context) => uiFontSetOf(uiTokensOf(context).fontSetId);
+  static UiTokens uiTokensOf(BuildContext context) => ProviderScope.containerOf(context).read(uiTokensProvider);
+
   static TextStyle headline(BuildContext context, {Color? color}) {
-    return GoogleFonts.spaceGrotesk(
-      fontSize: 24,
+    final tokens = uiTokensOf(context);
+    return _fontSet(context).headline(
+      fontSize: 24 * tokens.headlineSizeMultiplier,
       fontWeight: FontWeight.bold,
       color: color ?? LabColors.onSurface,
       letterSpacing: -0.5,
@@ -49,8 +65,9 @@ class LabStyles {
   }
 
   static TextStyle mono(BuildContext context, {double fontSize = 12, Color? color, FontWeight? fontWeight, TextDecoration? decoration}) {
-    return GoogleFonts.jetBrainsMono(
-      fontSize: fontSize,
+    final tokens = uiTokensOf(context);
+    return _fontSet(context).primary(
+      fontSize: fontSize * tokens.monoSizeMultiplier,
       fontWeight: fontWeight ?? FontWeight.normal,
       color: color ?? LabColors.onSurface,
       decoration: decoration,
@@ -58,15 +75,18 @@ class LabStyles {
   }
 
   static TextStyle body(BuildContext context, {double fontSize = 14, Color? color}) {
-    return GoogleFonts.inter(
-      fontSize: fontSize,
+    final tokens = uiTokensOf(context);
+    return _fontSet(context).body(
+      fontSize: fontSize * tokens.bodySizeMultiplier,
       color: color ?? LabColors.onSurface,
     );
   }
 
-  static BoxDecoration hairlineBorder({Color color = LabColors.cyanBorder}) {
+  static BoxDecoration hairlineBorder(BuildContext context, {Color color = LabColors.cyanBorder}) {
+    final tokens = uiTokensOf(context);
     return BoxDecoration(
-      border: Border.all(color: color, width: 0.5),
+      border: Border.all(color: color, width: tokens.borderWidth),
+      borderRadius: tokens.cornerRadius > 0 ? BorderRadius.circular(tokens.cornerRadius) : null,
     );
   }
 
