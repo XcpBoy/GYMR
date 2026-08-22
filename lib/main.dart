@@ -39,9 +39,14 @@ class BeyondPerformanceApp extends ConsumerWidget {
           surface: LabColors.background,
         ),
         useMaterial3: true,
-        textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme).apply(
-          fontSizeFactor: tokens.bodySizeMultiplier,
-        ),
+        // Not using TextTheme.apply(fontSizeFactor:) here - some entries in
+        // interTextTheme have fontSize: null, and apply() asserts fontSize
+        // != null whenever the factor isn't exactly 1.0, crashing on any
+        // preset with a body multiplier != 1.0. The multiplier is already
+        // applied correctly through LabStyles.body/headline/mono, which is
+        // what actually renders ~all of the app's text; this ThemeData is
+        // only the fallback for stock Material widgets.
+        textTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
         primaryTextTheme: GoogleFonts.interTextTheme(ThemeData.dark().textTheme),
         // Material widgets (Slider, buttons, dialogs) rounding follows the
         // cornerRadius token so a warm/rounded preset feels consistent even
