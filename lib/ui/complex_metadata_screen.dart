@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/database_provider.dart';
 import '../database/database.dart';
-import '../logic/kns_search.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
+import 'wb_shared/wb_shared_widgets.dart';
 import '../localization/strings.dart';
 
 class ComplexMetadataScreen extends ConsumerStatefulWidget {
@@ -405,25 +405,15 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
     final all = await db.select(db.baseExercises).get();
 
     if (!mounted) return;
-    final lang = ref.read(languageProvider).value ?? 'en';
-    final muscleByName = {
-      for (final e in all) e.fullName: e.primaryMuscleGroup ?? 'GENERAL'
-    };
-    final shorthandByName = {for (final e in all) e.fullName: e.shorthand};
 
     showModalBottomSheet(
       context: context,
       backgroundColor: LabColors.background,
       isScrollControlled: true,
-      builder: (c) => QualitySearchPicker(
+      builder: (c) => ExerciseSearchPicker(
         title: 'SELECT_RELATION',
-        values: all.map((e) => e.fullName).toList(),
-        matchQuery: (name, query) => matchesKnsQuery(query, fullName: name, shorthand: shorthandByName[name]),
-        onSelected: (name) => _addRelation(category, name),
-        lang: lang,
-        heightFactor: 0.8,
-        hintText: 'Search exercise name...',
-        subtitleOf: (name) => muscleByName[name] ?? 'GENERAL',
+        exercises: all,
+        onSelected: (e) => _addRelation(category, e.fullName),
       ),
     );
   }

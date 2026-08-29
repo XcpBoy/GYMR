@@ -12,11 +12,11 @@ import '../providers/database_provider.dart';
 import '../database/database.dart';
 import '../services/export_service.dart';
 import '../providers/theme_provider.dart';
-import '../logic/kns_search.dart';
 import 'WO.Blocks.manager.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
+import 'wb_shared/wb_shared_widgets.dart';
 
 class NexusScreen extends ConsumerStatefulWidget {
   const NexusScreen({super.key});
@@ -1363,13 +1363,10 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
                     context: context,
                     backgroundColor: LabColors.background,
                     isScrollControlled: true,
-                    builder: (c2) => QualitySearchPicker(
+                    builder: (c2) => ExerciseSearchPicker(
                       title: 'SELECT_ROOT_EXERCISE',
-                      values: all.map((e) => e.fullName).toList(),
-                      matchQuery: (name, query) => matchesKnsQuery(query,
-                          fullName: name, shorthand: all.firstWhere((e) => e.fullName == name).shorthand),
-                      onSelected: (name) async {
-                        final root = all.firstWhere((e) => e.fullName == name);
+                      exercises: all,
+                      onSelected: (root) async {
                         final filePath = await _exportKnsTreePdfPath(
                             rootOnly: root, share: share);
                         if (filePath != null && !share) {

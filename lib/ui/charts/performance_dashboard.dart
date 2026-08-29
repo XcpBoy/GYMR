@@ -7,11 +7,11 @@ import '../../providers/database_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../database/database.dart';
 import '../../logic/chart_models.dart';
-import '../../logic/kns_search.dart';
 import '../styles.dart';
 import 'chart_widgets.dart';
 import '../lab_widgets.dart';
 import '../data_analyzer_screen.dart';
+import '../wb_shared/wb_shared_widgets.dart';
 
 class PerformanceDashboard extends ConsumerStatefulWidget {
   final ChartTab? initialTab;
@@ -314,7 +314,7 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
       case ChartTab.failure:
         return Column(
           children: [
-            _buildSearchableSelector(exercises, _failureExId, (val) => setState(() => _failureExId = val), allowAll: false),
+            _buildSearchableSelector(exercises, _failureExId, (val) => setState(() => _failureExId = val)),
             const SizedBox(height: 16),
             if (_failureExId == null)
               Center(child: Padding(padding: const EdgeInsets.all(32), child: Text("SELECT_EXERCISE_TO_VIEW_FAILURE_PHASES", style: LabStyles.mono(context, color: Colors.grey, fontSize: 10))))
@@ -386,12 +386,17 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
     }
   }
 
-  Widget _buildSearchableSelector(AsyncValue<List<BaseExercise>> exercises, int? currentId, Function(int?) onChanged, {bool allowAll = false}) {
+  // allowAll used to offer an "ALL_MOVEMENTS" entry, but neither of this
+  // screen's 2 call sites ever passed allowAll:true - dropped along with
+  // the bespoke _ExerciseSearchModal in favor of the shared
+  // ExerciseSearchPicker (wb_shared_widgets.dart), the same picker C.WO
+  // uses to inject a movement.
+  Widget _buildSearchableSelector(AsyncValue<List<BaseExercise>> exercises, int? currentId, Function(int?) onChanged) {
     return exercises.when(
       data: (list) {
-        final current = currentId == null ? (allowAll ? "ALL_MOVEMENTS" : "SELECT_EXERCISE") : list.firstWhere((e) => e.id == currentId).fullName;
+        final current = currentId == null ? "SELECT_EXERCISE" : list.firstWhere((e) => e.id == currentId).fullName;
         return InkWell(
-          onTap: () => _showExerciseSearch(context, list, onChanged, allowAll),
+          onTap: () => _showExerciseSearch(context, list, onChanged),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(border: Border.all(color: LabColors.primary.withValues(alpha: 0.3), width: 0.5)),
@@ -410,14 +415,16 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
     );
   }
 
-  void _showExerciseSearch(BuildContext context, List<BaseExercise> list, Function(int?) onSelect, bool allowAll) {
+  void _showExerciseSearch(BuildContext context, List<BaseExercise> list, Function(int?) onSelect) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: LabColors.background,
-      builder: (context) {
-        return _ExerciseSearchModal(list: list, onSelect: onSelect, allowAll: allowAll);
-      }
+      builder: (context) => ExerciseSearchPicker(
+        title: 'SELECT_EXERCISE',
+        exercises: list,
+        onSelected: (e) => onSelect(e.id),
+      ),
     );
   }
 
@@ -532,77 +539,6 @@ class _PerformanceDashboardState extends ConsumerState<PerformanceDashboard> {
           ),
         );
       }).toList(),
-    );
-  }
-}
-
-class _ExerciseSearchModal extends StatefulWidget {
-  final List<BaseExercise> list;
-  final Function(int?) onSelect;
-  final bool allowAll;
-
-  const _ExerciseSearchModal({required this.list, required this.onSelect, required this.allowAll});
-
-  @override
-  State<_ExerciseSearchModal> createState() => _ExerciseSearchModalState();
-}
-
-class _ExerciseSearchModalState extends State<_ExerciseSearchModal> {
-  final TextEditingController _controller = TextEditingController();
-  late List<BaseExercise> _filtered;
-
-  @override
-  void initState() {
-    super.initState();
-    _filtered = widget.list;
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, top: 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: LabTextField(
-              controller: _controller, 
-              label: "FILTER_MOVEMENTS", 
-              onChanged: (v) {
-                setState(() {
-                  _filtered = widget.list
-                      .where((e) => matchesKnsQuery(v, fullName: e.fullName, shorthand: e.shorthand))
-                      .toList();
-                });
-              }
-            ),
-          ),
-          const SizedBox(height: 16),
-          Flexible(
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                if (widget.allowAll)
-                  ListTile(
-                    title: Text("ALL_MOVEMENTS", style: LabStyles.mono(context, color: LabColors.primary, fontSize: 11)),
-                    onTap: () { widget.onSelect(null); Navigator.pop(context); },
-                  ),
-                ..._filtered.map((e) => ListTile(
-                  title: Text(e.fullName, style: LabStyles.mono(context, fontSize: 11)),
-                  onTap: () { widget.onSelect(e.id); Navigator.pop(context); },
-                )),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

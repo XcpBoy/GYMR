@@ -365,8 +365,13 @@ class _BlueprintSearchPickerState
 class ExerciseSearchPicker extends ConsumerStatefulWidget {
   final List<BaseExercise> exercises;
   final Function(BaseExercise) onSelected;
+  // Every non-workout use of this picker (NEXUS's KNS.TREE root exercise,
+  // complex_metadata_screen.dart's relation picker, DATA.VWR's exercise
+  // selector) wants its own header instead of the default C.WO-flavored
+  // "INJECT_MOVEMENT".
+  final String title;
   const ExerciseSearchPicker(
-      {super.key, required this.exercises, required this.onSelected});
+      {super.key, required this.exercises, required this.onSelected, this.title = 'INJECT_MOVEMENT'});
   @override
   ConsumerState<ExerciseSearchPicker> createState() =>
       _ExerciseSearchPickerState();
@@ -939,7 +944,7 @@ class _ExerciseSearchPickerState extends ConsumerState<ExerciseSearchPicker> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('INJECT_MOVEMENT',
+                    Text(widget.title,
                         style:
                             LabStyles.headline(context).copyWith(fontSize: 18)),
                     IconButton(

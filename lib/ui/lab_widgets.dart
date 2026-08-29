@@ -608,11 +608,6 @@ class QualitySearchPicker extends StatefulWidget {
   // list) - defaults to the original QualitySearchPicker's 0.6.
   final double heightFactor;
   final String hintText;
-  // Overrides the default `value.contains(query)` filter. Callers listing
-  // exercises pass one that also matches KNS.SHORTHAND (see
-  // lib/logic/kns_search.dart) so typing an alias like "WMU" surfaces
-  // "WEIGHTED MUSCLE UPS" even though the alias never appears in the name.
-  final bool Function(String value, String query)? matchQuery;
   const QualitySearchPicker({
     super.key,
     required this.title,
@@ -623,7 +618,6 @@ class QualitySearchPicker extends StatefulWidget {
     this.subtitleOf,
     this.heightFactor = 0.6,
     this.hintText = 'Filter...',
-    this.matchQuery,
   });
   @override State<QualitySearchPicker> createState() => _QualitySearchPickerState();
 }
@@ -636,11 +630,7 @@ class _QualitySearchPickerState extends State<QualitySearchPicker> {
     flt = widget.values;
     sC.addListener(() {
       setState(() {
-        flt = widget.values
-            .where((v) => widget.matchQuery != null
-                ? widget.matchQuery!(v, sC.text)
-                : v.toLowerCase().contains(sC.text.toLowerCase()))
-            .toList();
+        flt = widget.values.where((v) => v.toLowerCase().contains(sC.text.toLowerCase())).toList();
       });
     });
   }
