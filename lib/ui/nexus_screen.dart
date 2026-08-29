@@ -12,6 +12,7 @@ import '../providers/database_provider.dart';
 import '../database/database.dart';
 import '../services/export_service.dart';
 import '../providers/theme_provider.dart';
+import '../logic/kns_search.dart';
 import 'WO.Blocks.manager.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
@@ -1365,6 +1366,8 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
                     builder: (c2) => QualitySearchPicker(
                       title: 'SELECT_ROOT_EXERCISE',
                       values: all.map((e) => e.fullName).toList(),
+                      matchQuery: (name, query) => matchesKnsQuery(query,
+                          fullName: name, shorthand: all.firstWhere((e) => e.fullName == name).shorthand),
                       onSelected: (name) async {
                         final root = all.firstWhere((e) => e.fullName == name);
                         final filePath = await _exportKnsTreePdfPath(

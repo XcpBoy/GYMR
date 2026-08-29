@@ -53,6 +53,10 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
   late final TextEditingController _tissueNameController;
   late final TextEditingController _numPhasesController;
   late final TextEditingController _descriptionController;
+  // KNS.SHORTHAND: user-defined search alias (e.g. "WMU" for "WEIGHTED
+  // MUSCLE UPS"). Lives in complexMetadata, not the fullName pieces - see
+  // BaseExercise.shorthand (database.dart) and kns_search.dart.
+  late final TextEditingController _shorthandController;
   late final TextEditingController _bandTypeController;
   late final TextEditingController _bandTensionController;
 
@@ -201,6 +205,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
 
     _numPhasesController = TextEditingController(text: (e?.numPhases ?? 1).toString());
     _descriptionController = TextEditingController(text: e?.parsedComplexMetadata["description"] ?? "");
+    _shorthandController = TextEditingController(text: e?.shorthand ?? "");
     _bandTypeController = TextEditingController(text: e?.parsedComplexMetadata["bandType"] ?? "");
     _bandTensionController = TextEditingController(text: e?.parsedComplexMetadata["bandTension"] ?? "");
 
@@ -258,6 +263,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     _fieldController.dispose(); _intentionController.dispose(); _patternTypeController.dispose();
     _tissueTypeController.dispose(); _tissueNameController.dispose(); _numPhasesController.dispose();
     _descriptionController.dispose();
+    _shorthandController.dispose();
     _bandTypeController.dispose(); _bandTensionController.dispose();
     for (var c in [..._prefixControllers, ..._suffixControllers, ..._implementControllers, ..._bodyPositionControllers, ..._assistanceControllers, ..._implementPositionControllers, ..._phaseDescriptionControllers]) {
       c.dispose();
@@ -338,6 +344,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
       ..._complexMetadata,
       "classification": _classification,
       "description": _descriptionController.text.trim(),
+      "shorthand": _shorthandController.text.trim().toUpperCase(),
       "implement_position": implPosData,
       if (_loadType == 'BANDED') "bandType": _bandTypeController.text.trim(),
       if (_loadType == 'BANDED') "bandTension": _bandTensionController.text.trim(),
@@ -660,6 +667,12 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
               _buildToggleableList('ASSISTANCE_TYPE', _assistanceControllers, _assistanceShowInName,
                   () => setState(() { _assistanceControllers.add(_newPieceController()); _assistanceShowInName.add(true); }),
                   type: 'assistance', color: Colors.tealAccent),
+              const SizedBox(height: 16),
+              LabTextField(
+                controller: _shorthandController,
+                label: tr(lang, 'KNS.SHORTHAND'),
+                placeholder: 'e.g. WMU',
+              ),
 
               const SizedBox(height: 32),
               _buildSectionTitle('NOMENCLATURE_CONTROL'),

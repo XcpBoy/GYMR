@@ -550,7 +550,9 @@ class _ExerciseSearchPickerState extends ConsumerState<ExerciseSearchPicker> {
             ..write(' ')
             ..write((e.secondaryMuscleGroup ?? '').toLowerCase())
             ..write(' ')
-            ..write((e.field ?? '').toLowerCase());
+            ..write((e.field ?? '').toLowerCase())
+            ..write(' ')
+            ..write(e.shorthand.toLowerCase());
           if (!sb.toString().contains(q)) return false;
         }
         // 2. Load type filter

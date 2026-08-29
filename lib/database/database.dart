@@ -1062,7 +1062,12 @@ final Map<String, dynamic> _defaultComplexMetadata = {
   // bodyPositions/implements/etc - kept inside complexMetadata instead of
   // its own column to avoid a schema migration for a new nomenclature
   // piece; parsed the same way as the column-backed pieces.
-  "implement_position": []
+  "implement_position": [],
+  // User-defined search alias (e.g. "WMU" for "WEIGHTED MUSCLE UPS").
+  // Doesn't participate in fullName generation (unlike the pieces above) -
+  // purely a KNS-searcher alias, so it's a plain string, not a
+  // {"v":...,"s":...} piece. See kns_search.dart.
+  "shorthand": "",
 };
 
 // jsonDecode is synchronous and complexMetadata is read on every rebuild
@@ -1171,6 +1176,15 @@ extension BaseExerciseExtension on BaseExercise {
     }
     if (raw is String) return _parseNomenclaturePiece(raw);
     return [];
+  }
+
+  // KNS.SHORTHAND: user-defined search alias, e.g. "WMU" for "WEIGHTED
+  // MUSCLE UPS". Lives in complexMetadata (not a column) - see
+  // _defaultComplexMetadata above and kns_search.dart for where it's
+  // consumed.
+  String get shorthand {
+    final raw = parsedComplexMetadata["shorthand"];
+    return raw is String ? raw : '';
   }
 
   List<String> get bodyPositionTags {

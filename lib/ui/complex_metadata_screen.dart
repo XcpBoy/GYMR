@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/database_provider.dart';
 import '../database/database.dart';
+import '../logic/kns_search.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
@@ -408,6 +409,7 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
     final muscleByName = {
       for (final e in all) e.fullName: e.primaryMuscleGroup ?? 'GENERAL'
     };
+    final shorthandByName = {for (final e in all) e.fullName: e.shorthand};
 
     showModalBottomSheet(
       context: context,
@@ -416,6 +418,7 @@ class _ComplexMetadataScreenState extends ConsumerState<ComplexMetadataScreen> {
       builder: (c) => QualitySearchPicker(
         title: 'SELECT_RELATION',
         values: all.map((e) => e.fullName).toList(),
+        matchQuery: (name, query) => matchesKnsQuery(query, fullName: name, shorthand: shorthandByName[name]),
         onSelected: (name) => _addRelation(category, name),
         lang: lang,
         heightFactor: 0.8,

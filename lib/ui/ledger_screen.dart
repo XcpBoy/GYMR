@@ -449,6 +449,7 @@ class _LedgerScreenState extends ConsumerState<LedgerScreen> with SingleTickerPr
       e.intention,
       e.tissueType,
       e.field,
+      e.shorthand,
     ].any((value) => (value ?? '').toLowerCase().contains(q));
   }
 

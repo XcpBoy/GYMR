@@ -7,6 +7,7 @@ import '../../providers/database_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../database/database.dart';
 import '../../logic/chart_models.dart';
+import '../../logic/kns_search.dart';
 import '../styles.dart';
 import 'chart_widgets.dart';
 import '../lab_widgets.dart';
@@ -576,11 +577,9 @@ class _ExerciseSearchModalState extends State<_ExerciseSearchModal> {
               label: "FILTER_MOVEMENTS", 
               onChanged: (v) {
                 setState(() {
-                  final query = v.toLowerCase();
-                  _filtered = widget.list.where((e) {
-                    final fullName = e.fullName.toLowerCase();
-                    return fullName.contains(query);
-                  }).toList();
+                  _filtered = widget.list
+                      .where((e) => matchesKnsQuery(v, fullName: e.fullName, shorthand: e.shorthand))
+                      .toList();
                 });
               }
             ),
