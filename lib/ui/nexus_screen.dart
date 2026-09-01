@@ -1604,6 +1604,8 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       if (range == null) return;
     }
     setState(() => _isProcessing = true);
+    final sw = Stopwatch()..start();
+    debugPrint('[SYNTHESIS_EXPORT] START format=$format range=${range.start}..${range.end}');
     try {
       final db = ref.read(databaseProvider);
       final settings = ref.read(themeSettingsProvider).value ?? {};
@@ -1625,7 +1627,9 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
         OrderingTerm.asc(db.workoutSets.orderIndex),
         OrderingTerm.asc(db.workoutSets.timestamp)
       ]);
+      debugPrint('[SYNTHESIS_EXPORT] +${sw.elapsedMilliseconds}ms querying...');
       final rows = await query.get();
+      debugPrint('[SYNTHESIS_EXPORT] +${sw.elapsedMilliseconds}ms query done, rows=${rows.length}');
       final fileName = DateFormat('ddMMyy').format(range.start) !=
               DateFormat('ddMMyy').format(range.end)
           ? "WOLOG_${DateFormat('ddMMyy').format(range.start)}_${DateFormat('ddMMyy').format(range.end)}"
@@ -1642,11 +1646,17 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
         await ExportService.exportWorkoutsToMarkdown(rows, db, settings, tC,
             fileName: fileName);
       }
+      debugPrint('[SYNTHESIS_EXPORT] DONE +${sw.elapsedMilliseconds}ms total, format=$format');
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(const SnackBar(content: Text("EXPORT_SUCCESSFUL")));
       }
-    } catch (e) {
+    } catch (e, st) {
+      // Printed in full (not just the SnackBar, which truncates/vanishes
+      // before it can be screenshotted) so a failed export leaves a real
+      // trace in the flutter run terminal.
+      debugPrint('[SYNTHESIS_EXPORT] ERROR +${sw.elapsedMilliseconds}ms format=$format: $e');
+      debugPrint(st.toString());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text("EXPORT_FAILED: $e"),
@@ -1662,6 +1672,8 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
 
   Future<void> _downloadWorkoutFile(String format, {DateTimeRange? presetRange}) async {
     setState(() => _isProcessing = true);
+    final sw = Stopwatch()..start();
+    debugPrint('[SYNTHESIS_DOWNLOAD] START format=$format presetRange=${presetRange?.start}..${presetRange?.end}');
     try {
       final db = ref.read(databaseProvider);
       DateTimeRange? range = presetRange;
@@ -1700,7 +1712,9 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
         OrderingTerm.asc(db.workoutSets.orderIndex),
         OrderingTerm.asc(db.workoutSets.timestamp)
       ]);
+      debugPrint('[SYNTHESIS_DOWNLOAD] +${sw.elapsedMilliseconds}ms querying...');
       final rows = await query.get();
+      debugPrint('[SYNTHESIS_DOWNLOAD] +${sw.elapsedMilliseconds}ms query done, rows=${rows.length}');
       final fileName = DateFormat('ddMMyy').format(range.start) !=
               DateFormat('ddMMyy').format(range.end)
           ? "WOLOG_${DateFormat('ddMMyy').format(range.start)}_${DateFormat('ddMMyy').format(range.end)}"
@@ -1727,22 +1741,27 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
         await ExportService.exportWorkoutsToMarkdown(rows, db, settings, tC,
             fileName: fileName, share: false);
       }
+      debugPrint('[SYNTHESIS_DOWNLOAD] +${sw.elapsedMilliseconds}ms export done, reading temp file...');
       // Read temp file bytes and save via FilePicker (required on mobile)
       final tempDir = await getTemporaryDirectory();
       final tempFile = File("${tempDir.path}/$fileName.$ext");
       if (!await tempFile.exists()) throw Exception('Temp file not found');
       final bytes = await tempFile.readAsBytes();
+      debugPrint('[SYNTHESIS_DOWNLOAD] +${sw.elapsedMilliseconds}ms read ${bytes.length} bytes, opening save dialog...');
       final resultPath = await FilePicker.platform.saveFile(
         dialogTitle: 'Save $format file',
         fileName: '$fileName.$ext',
         bytes: bytes,
       );
+      debugPrint('[SYNTHESIS_DOWNLOAD] DONE +${sw.elapsedMilliseconds}ms saved=$resultPath');
 
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text("SAVED_TO: $resultPath")));
       }
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('[SYNTHESIS_DOWNLOAD] ERROR +${sw.elapsedMilliseconds}ms format=$format: $e');
+      debugPrint(st.toString());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text("DOWNLOAD_FAILED: $e"),

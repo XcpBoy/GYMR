@@ -1296,6 +1296,17 @@ LazyDatabase _openConnection() {
 
     // INFALIBLE: Drift crea el archivo si no existe.
     // Al ser una instalación nueva, onCreate() generará todas las tablas.
-    return NativeDatabase(file);
+    //
+    // createInBackground (not the plain NativeDatabase(file) this used to
+    // be) runs actual SQLite execution on a dedicated background isolate
+    // that Drift manages internally - every query in the app becomes a
+    // real async hop instead of a synchronous FFI call on whichever
+    // isolate awaited it. This was the actual remaining cause of the
+    // SYNTHESIS .md export ANR even after moving the markdown formatting
+    // to compute(): a 3-way JOIN over a year+ of workout_sets is itself
+    // slow enough (large TEXT columns, thousands of rows) to freeze the UI
+    // isolate for several seconds while it runs synchronously, regardless
+    // of what happens to the rows afterward. See PNDEV for the full trace.
+    return NativeDatabase.createInBackground(file);
   });
 }

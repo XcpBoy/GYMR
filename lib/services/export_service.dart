@@ -1444,12 +1444,25 @@ class ExportService {
       {String? fileName, bool share = true, String lang = 'en'}) async {
     // 1. PRE-FETCH DATA (BATCH) - needs the live `db` connection, so this
     // stays on the calling isolate.
+    //
+    // Logged phase-by-phase (per the user's request after a still-froze
+    // report post-compute()-fix, with no screenshot of the eventual
+    // "failed" toast) so a stuck/failing export shows exactly which phase
+    // it never got past in the `flutter run` terminal instead of only a
+    // generic ANR dialog on the phone.
+    final sw = Stopwatch()..start();
+    debugPrint('[MD_EXPORT] START rows=${rows.length}');
+
     final allDates =
         rows.map((r) => r.readTable(db.workoutLogs).date).toSet().toList();
     final allSetIds = rows.map((r) => r.readTable(db.workoutSets).id).toList();
+    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms uniqueDates=${allDates.length} setIds=${allSetIds.length}');
 
     final bwMap = await _batchFetchBodyweights(db, allDates);
+    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms bodyweights fetched=${bwMap.length}');
+
     final somaticMap = await _batchFetchSomatics(db, allSetIds);
+    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms somatics fetched=${somaticMap.length}');
 
     // Unwrap the join rows into plain Drift data classes (WorkoutSet/
     // BaseExercise/WorkoutLog - just field reads, no parsing) so the
@@ -1467,22 +1480,27 @@ class ExportService {
           r.readTable(db.workoutLogs),
         ),
     ];
+    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms plain rows extracted, entering compute()');
 
     final markdown = await compute(
       _buildWorkoutMarkdownSync,
       _MdExportArgs(plainRows, bwMap, somaticMap, lang),
       debugLabel: 'exportWorkoutsToMarkdown',
     );
+    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms compute() returned, markdown length=${markdown.length}');
 
     final output = await getTemporaryDirectory();
     final ts = DateTime.now().millisecondsSinceEpoch;
     final file = File("${output.path}/${fileName ?? 'gymr_report_$ts'}.md");
     await file.writeAsString(markdown);
+    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms file written: ${file.path}');
     if (share) {
       await SharePlus.instance.share(
           ShareParams(files: [XFile(file.path)],
               text: 'GYMR Markdown Report'));
+      debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms share sheet returned');
     }
+    debugPrint('[MD_EXPORT] DONE +${sw.elapsedMilliseconds}ms total');
   }
 
   // The actual heavy lifting for exportWorkoutsToMarkdown, split out so it
