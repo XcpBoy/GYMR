@@ -111,6 +111,10 @@ final Map<String, String> esTranslations = {
 
   // --- data_analyzer_screen.dart (LR.ALERT / DT.PRCSR) ---
   'THRESHOLD': 'UMBRAL',
+
+  // --- nexus_screen.dart (SYNTHESIS date range frame) ---
+  'FROM': 'DESDE',
+  'TO': 'HASTA',
   'FILTER_BY_MOVE_OR_FIELD': 'FILTRAR_POR_MOVIMIENTO_O_CAMPO',
   'PR_ONLY': 'SOLO_PR',
   'NO_DATA_FOR_THIS_PERIOD': 'SIN_DATOS_PARA_ESTE_PERÍODO',

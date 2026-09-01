@@ -35,6 +35,10 @@ dev_dependencies:
   build_runner: ^2.4.13
   drift_dev: ^2.24.0
   riverpod_generator: ^2.4.0
+  # Only used to fake path_provider's platform channel in
+  # test/export_markdown_test.dart (flutter_test has no real platform impl).
+  path_provider_platform_interface: ^2.1.2
+  plugin_platform_interface: ^2.1.8
   flutter_launcher_icons: ^0.13.1
 
 flutter_launcher_icons:

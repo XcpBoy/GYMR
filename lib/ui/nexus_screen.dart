@@ -38,10 +38,38 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
   bool _isExpectedInputsExpanded = false;
   bool _isOnlyOutputExpanded = false;
 
+  // SYNTHESIS date range: shared by all 3 synthesis cards (PDF/MD/XLSX)
+  // instead of each one prompting its own showDateRangePicker on every
+  // tap. Defaults to the full first-log..last-log span; null until that
+  // default finishes loading (each field then falls back to prompting a
+  // single-date picker independently rather than blocking the section).
+  DateTime? _synthesisStart;
+  DateTime? _synthesisEnd;
+
   @override
   void initState() {
     super.initState();
     _loadBackupFolder();
+    _loadSynthesisDefaultRange();
+  }
+
+  Future<void> _loadSynthesisDefaultRange() async {
+    final db = ref.read(databaseProvider);
+    final result = await db.customSelect(
+      'SELECT MIN(date) AS min_date, MAX(date) AS max_date FROM workout_logs',
+      readsFrom: {db.workoutLogs},
+    ).getSingleOrNull();
+    final minSeconds = result?.data['min_date'] as int?;
+    final maxSeconds = result?.data['max_date'] as int?;
+    if (!mounted) return;
+    setState(() {
+      _synthesisStart = minSeconds != null
+          ? DateTime.fromMillisecondsSinceEpoch(minSeconds * 1000)
+          : DateTime.now();
+      _synthesisEnd = maxSeconds != null
+          ? DateTime.fromMillisecondsSinceEpoch(maxSeconds * 1000)
+          : DateTime.now();
+    });
   }
 
   Future<void> _loadBackupFolder() async {
@@ -874,14 +902,16 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
           ),
           if (_isSynthesisExpanded) ...[
             const SizedBox(height: 24),
+            _buildSynthesisDateRangeFrame(context, lang),
+            const SizedBox(height: 16),
             _buildSynthesisCard(
                 title: "RENDER_WORKOUT_PDF",
                 description: tr(lang,
                     "Compiles training blocks into a technical diagnostic document."),
                 icon: Icons.picture_as_pdf,
                 color: LabColors.accent,
-                onShare: () => _exportWorkouts('pdf'),
-                onDownload: () => _downloadWorkoutFile('pdf'),
+                onShare: () => _exportWorkouts('pdf', presetRange: _synthesisRange()),
+                onDownload: () => _downloadWorkoutFile('pdf', presetRange: _synthesisRange()),
                 format: "PDF"),
             const SizedBox(height: 16),
             _buildSynthesisCard(
@@ -890,8 +920,8 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
                     "Generates a structured .md file replicating the PDF table architecture."),
                 icon: Icons.description,
                 color: Colors.orangeAccent,
-                onShare: () => _exportWorkouts('md'),
-                onDownload: () => _downloadWorkoutFile('md'),
+                onShare: () => _exportWorkouts('md', presetRange: _synthesisRange()),
+                onDownload: () => _downloadWorkoutFile('md', presetRange: _synthesisRange()),
                 format: "MD"),
             const SizedBox(height: 16),
             _buildSynthesisCard(
@@ -900,10 +930,86 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
                     "Generates a complete spreadsheet for deep data analysis."),
                 icon: Icons.table_chart,
                 color: Colors.greenAccent,
-                onShare: () => _exportWorkouts('xlsx'),
-                onDownload: () => _downloadWorkoutFile('xlsx'),
+                onShare: () => _exportWorkouts('xlsx', presetRange: _synthesisRange()),
+                onDownload: () => _downloadWorkoutFile('xlsx', presetRange: _synthesisRange()),
                 format: "XLSX"),
           ],
+        ],
+      ),
+    );
+  }
+
+  DateTimeRange? _synthesisRange() {
+    if (_synthesisStart == null || _synthesisEnd == null) return null;
+    // Guard against an inverted range (e.g. FROM picked past the current
+    // TO) instead of silently exporting nothing.
+    final start = _synthesisStart!.isAfter(_synthesisEnd!) ? _synthesisEnd! : _synthesisStart!;
+    final end = _synthesisStart!.isAfter(_synthesisEnd!) ? _synthesisStart! : _synthesisEnd!;
+    return DateTimeRange(start: start, end: end);
+  }
+
+  Widget _buildSynthesisDateRangeFrame(BuildContext context, String lang) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(border: Border.all(color: LabColors.accent.withValues(alpha: 0.4), width: 0.5)),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildSynthesisDateField(
+              context,
+              label: tr(lang, 'FROM'),
+              value: _synthesisStart,
+              onPicked: (d) => setState(() => _synthesisStart = d),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8),
+            child: Icon(Icons.arrow_forward, size: 14, color: Colors.grey),
+          ),
+          Expanded(
+            child: _buildSynthesisDateField(
+              context,
+              label: tr(lang, 'TO'),
+              value: _synthesisEnd,
+              onPicked: (d) => setState(() => _synthesisEnd = d),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSynthesisDateField(BuildContext context,
+      {required String label, required DateTime? value, required ValueChanged<DateTime> onPicked}) {
+    return InkWell(
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: value ?? DateTime.now(),
+          firstDate: DateTime(2015),
+          lastDate: DateTime.now().add(const Duration(days: 1)),
+          builder: (context, child) => Theme(
+            data: Theme.of(context).copyWith(
+                colorScheme: const ColorScheme.dark(
+                    primary: LabColors.accent,
+                    onPrimary: Colors.black,
+                    surface: Colors.black,
+                    onSurface: Colors.white),
+                dialogTheme: const DialogThemeData(backgroundColor: Colors.black)),
+            child: child!,
+          ),
+        );
+        if (picked != null) onPicked(picked);
+      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
+          const SizedBox(height: 2),
+          Text(
+            value != null ? DateFormat('dd/MM/yyyy').format(value) : '...',
+            style: LabStyles.mono(context, fontSize: 13, fontWeight: FontWeight.bold, color: LabColors.accent),
+          ),
         ],
       ),
     );
@@ -1473,24 +1579,30 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
     }
   }
 
-  Future<void> _generateWorkoutFile(String format) async {
-    DateTimeRange? range = await showDateRangePicker(
-        context: context,
-        firstDate: DateTime(2020),
-        lastDate: DateTime(2100),
-        builder: (context, child) {
-          return Theme(
-              data: Theme.of(context).copyWith(
-                  colorScheme: const ColorScheme.dark(
-                      primary: LabColors.primary,
-                      onPrimary: Colors.black,
-                      surface: Colors.black,
-                      onSurface: Colors.white),
-                  dialogTheme:
-                      const DialogThemeData(backgroundColor: Colors.black)),
-              child: child!);
-        });
-    if (range == null) return;
+  Future<void> _generateWorkoutFile(String format, {DateTimeRange? presetRange}) async {
+    // SYNTHESIS's 3 cards pass the shared date-range frame's value instead
+    // of prompting a picker on every tap - EXPORT ROUTINE (EXCHANGES) still
+    // calls this without presetRange and keeps its own per-tap picker.
+    DateTimeRange? range = presetRange;
+    if (range == null) {
+      range = await showDateRangePicker(
+          context: context,
+          firstDate: DateTime(2020),
+          lastDate: DateTime(2100),
+          builder: (context, child) {
+            return Theme(
+                data: Theme.of(context).copyWith(
+                    colorScheme: const ColorScheme.dark(
+                        primary: LabColors.primary,
+                        onPrimary: Colors.black,
+                        surface: Colors.black,
+                        onSurface: Colors.white),
+                    dialogTheme:
+                        const DialogThemeData(backgroundColor: Colors.black)),
+                child: child!);
+          });
+      if (range == null) return;
+    }
     setState(() => _isProcessing = true);
     try {
       final db = ref.read(databaseProvider);
@@ -1545,26 +1657,30 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
     }
   }
 
-  Future<void> _exportWorkouts(String format) => _generateWorkoutFile(format);
+  Future<void> _exportWorkouts(String format, {DateTimeRange? presetRange}) =>
+      _generateWorkoutFile(format, presetRange: presetRange);
 
-  Future<void> _downloadWorkoutFile(String format) async {
+  Future<void> _downloadWorkoutFile(String format, {DateTimeRange? presetRange}) async {
     setState(() => _isProcessing = true);
     try {
       final db = ref.read(databaseProvider);
-      DateTimeRange? range = await showDateRangePicker(
-        context: context,
-        firstDate: DateTime(2020),
-        lastDate: DateTime(2100),
-        builder: (context, child) => Theme(
-            data: Theme.of(context).copyWith(
-              colorScheme: const ColorScheme.dark(
-                  primary: LabColors.primary, onPrimary: Colors.black),
-            ),
-            child: child!),
-      );
+      DateTimeRange? range = presetRange;
       if (range == null) {
-        if (mounted) setState(() => _isProcessing = false);
-        return;
+        range = await showDateRangePicker(
+          context: context,
+          firstDate: DateTime(2020),
+          lastDate: DateTime(2100),
+          builder: (context, child) => Theme(
+              data: Theme.of(context).copyWith(
+                colorScheme: const ColorScheme.dark(
+                    primary: LabColors.primary, onPrimary: Colors.black),
+              ),
+              child: child!),
+        );
+        if (range == null) {
+          if (mounted) setState(() => _isProcessing = false);
+          return;
+        }
       }
       final settings = ref.read(themeSettingsProvider).value ?? {};
       final tC = ref.read(themeControllerProvider);
