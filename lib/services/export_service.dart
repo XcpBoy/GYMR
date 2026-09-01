@@ -1632,14 +1632,25 @@ class ExportService {
           }
 
           // 3. Particular Toggles
+          // Regression fix: the original (pre-isolate-rewrite) code wrapped
+          // this whole block in try/catch too - some exercises have a
+          // malformed particular_toggles (e.g. a list of maps instead of
+          // plain strings), which List<String>.from() throws on. That was
+          // always silently tolerated; splitting the jsonDecode into its
+          // own try/catch above accidentally left THIS cast unguarded,
+          // which is what turned a few bad rows into a crash of the whole
+          // export ("type '_Map<String, dynamic>' is not a subtype of
+          // type 'String'").
           String togglesText = "-";
           if (setMeta != null) {
-            final Map<String, dynamic> exMeta = ex.parsedComplexMetadata;
-            final List<String> availableToggles =
-                List<String>.from(exMeta["particular_toggles"] ?? []);
-            final activeToggles =
-                availableToggles.where((t) => setMeta![t] == true).toList();
-            if (activeToggles.isNotEmpty) togglesText = activeToggles.join(", ");
+            try {
+              final Map<String, dynamic> exMeta = ex.parsedComplexMetadata;
+              final List<String> availableToggles =
+                  List<String>.from(exMeta["particular_toggles"] ?? []);
+              final activeToggles =
+                  availableToggles.where((t) => setMeta![t] == true).toList();
+              if (activeToggles.isNotEmpty) togglesText = activeToggles.join(", ");
+            } catch (_) {}
           }
 
           // 4. Somatic Discomfort (Batch)

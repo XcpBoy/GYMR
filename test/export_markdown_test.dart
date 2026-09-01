@@ -141,4 +141,64 @@ void main() {
     expect(content, isNot(contains('25.3')),
         reason: 'would indicate the bodyweight lookup silently found nothing');
   });
+
+  test(
+      'exportWorkoutsToMarkdown tolerates a malformed particular_toggles '
+      '(list of maps instead of strings) instead of crashing the whole export',
+      () async {
+    // Regression test: splitting set.complexMetadata's jsonDecode into its
+    // own try/catch (for the perf fix above) initially left the
+    // particular_toggles List<String>.from() cast unguarded, so a single
+    // exercise with malformed toggle data crashed the ENTIRE export with
+    // "type '_Map<String, dynamic>' is not a subtype of type 'String'" -
+    // exactly what a real user hit exporting ~14 months of real data.
+    final db = _testDb();
+    addTearDown(db.close);
+
+    final exerciseId = await db.into(db.baseExercises).insert(
+          BaseExercisesCompanion.insert(
+            name: 'Bad Toggles Exercise',
+            // Malformed on purpose: a list of maps, not plain strings -
+            // the shape every OTHER nomenclature piece uses
+            // ({"v":...,"s":...}), which particular_toggles never should.
+            complexMetadata: const drift.Value(
+                '{"particular_toggles": [{"v": "DROPSET", "s": true}]}'),
+          ),
+        );
+    final logId = await db.into(db.workoutLogs).insert(
+          WorkoutLogsCompanion.insert(date: DateTime(2025, 1, 1)),
+        );
+    await db.into(db.workoutSets).insert(
+          WorkoutSetsCompanion.insert(
+            logId: logId,
+            baseExerciseId: exerciseId,
+            weight: 10.0,
+            reps: 5.0,
+            complexMetadata: const drift.Value('{"DROPSET": true}'),
+          ),
+        );
+
+    final query = db.select(db.workoutSets).join([
+      drift.innerJoin(db.baseExercises,
+          db.baseExercises.id.equalsExp(db.workoutSets.baseExerciseId)),
+      drift.innerJoin(
+          db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId)),
+    ]);
+    final rows = await query.get();
+
+    // Must not throw.
+    await ExportService.exportWorkoutsToMarkdown(
+      rows,
+      db,
+      {},
+      ThemeController(db),
+      fileName: 'gymr_bad_toggles_test',
+      share: false,
+    );
+
+    final file = File('${tempDir.path}/gymr_bad_toggles_test.md');
+    expect(await file.exists(), isTrue);
+    final content = await file.readAsString();
+    expect(content, contains('BAD TOGGLES EXERCISE'));
+  });
 }

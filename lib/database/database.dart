@@ -973,6 +973,46 @@ class AppDatabase extends _$AppDatabase {
         await _addColumnIfMissing('workout_block_sets', 'metadata', 'TEXT');
         await _backfillFolderFromLegacyWbStore();
         await _normalizeAnthropometricLabels();
+
+        // Safety net for somatic_logs (legacy DBs that predate this table
+        // - it was only ever created inside an `onUpgrade` `if (from < X)`
+        // step, never added to onCreate's m.createAll(), so a genuinely
+        // fresh install skips it entirely and the first read/write throws
+        // "no such table: somatic_logs". Found while writing
+        // test/export_markdown_test.dart. Same schema as the onUpgrade
+        // version.
+        await customStatement('''
+          CREATE TABLE IF NOT EXISTS somatic_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            set_id INTEGER REFERENCES workout_sets(id) ON DELETE CASCADE,
+            description TEXT NOT NULL,
+            spectrum_value INTEGER NOT NULL DEFAULT 0,
+            tags TEXT,
+            created_at INTEGER NOT NULL DEFAULT 0
+          )
+        ''');
+
+        // Performance indexes - the schema had NONE beyond implicit
+        // PRIMARY KEY indexes, meaning every join/filter on these columns
+        // (which is most of the app: injecting a set, Timeline, DATA.VWR,
+        // SYNTHESIS exports, ...) was a full table scan. This was the
+        // actual root cause of a SYNTHESIS export over ~14 months of
+        // history taking 47+ seconds just to run its query (see PNDEV) -
+        // CREATE INDEX IF NOT EXISTS is idempotent and cheap to check on
+        // every launch, so it lives here rather than gated behind a
+        // version bump.
+        await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_workout_sets_log_id ON workout_sets(log_id)');
+        await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_workout_sets_base_exercise_id ON workout_sets(base_exercise_id)');
+        await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_workout_logs_date ON workout_logs(date)');
+        try {
+          await customStatement(
+              'CREATE INDEX IF NOT EXISTS idx_somatic_logs_set_id ON somatic_logs(set_id)');
+        } catch (_) {}
+        await customStatement(
+            'CREATE INDEX IF NOT EXISTS idx_anthropometric_logs_label_date ON anthropometric_logs(label, date)');
       },
     );
   }
