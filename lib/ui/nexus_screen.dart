@@ -1622,10 +1622,17 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       final endOfDay =
           DateTime(range.end.year, range.end.month, range.end.day, 23, 59, 59);
       query.where(db.workoutLogs.date.isBetweenValues(startOfDay, endOfDay));
+      // timestamp (real creation time) is the primary within-day sort key,
+      // not orderIndex (the exercise's position in the workout) - orderIndex
+      // grouped every set of one exercise into a block regardless of when
+      // they were actually done, so alternating/circuit-style sessions
+      // showed exercise-A-then-exercise-B instead of the real chronological
+      // order. orderIndex stays as a tiebreaker for the rare exact-same-
+      // timestamp case.
       query.orderBy([
         OrderingTerm.asc(db.workoutLogs.date),
+        OrderingTerm.asc(db.workoutSets.timestamp),
         OrderingTerm.asc(db.workoutSets.orderIndex),
-        OrderingTerm.asc(db.workoutSets.timestamp)
       ]);
       debugPrint('[SYNTHESIS_EXPORT] +${sw.elapsedMilliseconds}ms querying...');
       final rows = await query.get();
@@ -1707,10 +1714,17 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
             db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId))
       ]);
       query.where(db.workoutLogs.date.isBetweenValues(startOfDay, endOfDay));
+      // timestamp (real creation time) is the primary within-day sort key,
+      // not orderIndex (the exercise's position in the workout) - orderIndex
+      // grouped every set of one exercise into a block regardless of when
+      // they were actually done, so alternating/circuit-style sessions
+      // showed exercise-A-then-exercise-B instead of the real chronological
+      // order. orderIndex stays as a tiebreaker for the rare exact-same-
+      // timestamp case.
       query.orderBy([
         OrderingTerm.asc(db.workoutLogs.date),
+        OrderingTerm.asc(db.workoutSets.timestamp),
         OrderingTerm.asc(db.workoutSets.orderIndex),
-        OrderingTerm.asc(db.workoutSets.timestamp)
       ]);
       debugPrint('[SYNTHESIS_DOWNLOAD] +${sw.elapsedMilliseconds}ms querying...');
       final rows = await query.get();

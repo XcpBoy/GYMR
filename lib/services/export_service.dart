@@ -454,15 +454,18 @@ class ExportService {
   // NEXUS_CONFIG > PDF_COLUMNS (app_config_screen.dart) to let the user
   // toggle which columns get rendered, persisted as APPCFG_PDF_COL_<key>
   // bools (default true - nothing changes for existing users).
+  // TIME appended at the end (not inserted after SET) so every other
+  // column's fixed positional index - used throughout this function for
+  // widths/visibility filtering - didn't need renumbering.
   static const List<String> kPdfColumnKeys = [
     'SET', 'EXERCISE', 'UTIL', 'LR', 'NAT', 'LOAD', 'REPS', 'EORM', 'PR',
-    'RPE', 'RIR', 'TECH', 'FAIL', 'TOGGLES', 'NOTES'
+    'RPE', 'RIR', 'TECH', 'FAIL', 'TOGGLES', 'NOTES', 'TIME'
   ];
   static const Map<String, String> kPdfColumnLabels = {
     'SET': 'SET', 'EXERCISE': 'EXERCISE', 'UTIL': 'UTIL.', 'LR': 'L/R',
     'NAT': 'NAT.', 'LOAD': 'LOAD', 'REPS': 'REPS/SECS', 'EORM': 'EORM',
     'PR': 'PR', 'RPE': 'RPE', 'RIR': 'RIR', 'TECH': 'TECH', 'FAIL': 'FAIL',
-    'TOGGLES': 'TOGGLES', 'NOTES': 'NOTES'
+    'TOGGLES': 'TOGGLES', 'NOTES': 'NOTES', 'TIME': 'TIME'
   };
 
   static Future<void> exportWorkoutsToPdf(List<TypedResult> rows,
@@ -605,6 +608,7 @@ class ExportService {
                 // Increment absolute set counter for the day
                 daySetCounter++;
                 final setNumber = daySetCounter;
+                final timeText = DateFormat('HH:mm').format(set.timestamp);
 
                 // 1. Technique
                 final techText = set.technique?.toString() ?? "-";
@@ -729,7 +733,8 @@ class ExportService {
                     '',
                     '',
                     '',
-                    ''
+                    '',
+                    '',
                   ]);
                 } else if (currentBatch == null && lastBatch != null) {
                   lastBatch = null;
@@ -751,6 +756,7 @@ class ExportService {
                   failureText,
                   togglesText,
                   set.notes ?? "-",
+                  timeText,
                 ]);
 
                 // Global Collections
@@ -799,7 +805,8 @@ class ExportService {
                   'TECH',
                   'FAIL',
                   tr(lang, 'TOGGLES'),
-                  tr(lang, 'NOTES')
+                  tr(lang, 'NOTES'),
+                  'TIME',
                 ];
                 final allColumnWidths = <int, pw.TableColumnWidth>{
                   0: const pw.FixedColumnWidth(20),
@@ -817,6 +824,7 @@ class ExportService {
                   12: const pw.FixedColumnWidth(35),
                   13: const pw.FlexColumnWidth(0.4),
                   14: const pw.FlexColumnWidth(0.8),
+                  15: const pw.FixedColumnWidth(30),
                 };
                 content.add(pw.TableHelper.fromTextArray(
                   headers: segmentStartRow == 0
@@ -1080,6 +1088,7 @@ class ExportService {
       sheet.appendRow([
         TextCellValue(tr(lang, 'SET #')),
         TextCellValue(tr(lang, 'DATE')),
+        TextCellValue('TIME'),
         TextCellValue(tr(lang, 'EXERCISE')),
         TextCellValue('L/R'),
         TextCellValue(tr(lang, 'NATURE')),
@@ -1194,6 +1203,7 @@ class ExportService {
         sheet.appendRow([
           IntCellValue(setNumber),
           TextCellValue(DateFormat('yyyy-MM-dd').format(log.date)),
+          TextCellValue(DateFormat('HH:mm').format(set.timestamp)),
           TextCellValue(fullName),
           TextCellValue(sideText),
           TextCellValue(loadNature),
@@ -1560,9 +1570,9 @@ class ExportService {
         buffer.writeln("### $displayDate");
         buffer.writeln();
         buffer.writeln(
-            "| ${tr(lang, 'SET')} | ${tr(lang, 'EXERCISE')} | UTIL. | L/R | NAT. | ${tr(lang, 'LOAD')} | REPS/SECS | EORM | PR | RPE | RIR | TECH | FAIL | ${tr(lang, 'TOGGLES')} | ${tr(lang, 'NOTES')} |");
+            "| ${tr(lang, 'SET')} | TIME | ${tr(lang, 'EXERCISE')} | UTIL. | L/R | NAT. | ${tr(lang, 'LOAD')} | REPS/SECS | EORM | PR | RPE | RIR | TECH | FAIL | ${tr(lang, 'TOGGLES')} | ${tr(lang, 'NOTES')} |");
         buffer.writeln(
-            "|:---|:---|:---:|:---:|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---|:---|:---|");
+            "|:---|:---:|:---|:---:|:---:|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---|:---|:---|");
 
         int daySetCounter = 0;
 
@@ -1686,8 +1696,9 @@ class ExportService {
             }
           }
 
+          final timeText = DateFormat('HH:mm').format(set.timestamp);
           buffer.writeln(
-              "| $setNumber | $fullName${isUnilateral ? ' (UNI)' : ''} | ${set.priority?.toUpperCase() ?? "-"} | $sideText | $loadNature | ${set.weight}KG | ${set.reps.toString().replaceAll(_trailingZeroRegex, '')}${details.isIsometric ? 's' : ''} | ${eorm.toStringAsFixed(1)} | ${set.isPr ? "**YES**" : ""} | ${set.rpe?.toString() ?? "-"} | ${set.rir?.toString() ?? "-"} | $techText | $failureText | $togglesText | ${set.notes?.replaceAll('\n', ' ') ?? "-"} |");
+              "| $setNumber | $timeText | $fullName${isUnilateral ? ' (UNI)' : ''} | ${set.priority?.toUpperCase() ?? "-"} | $sideText | $loadNature | ${set.weight}KG | ${set.reps.toString().replaceAll(_trailingZeroRegex, '')}${details.isIsometric ? 's' : ''} | ${eorm.toStringAsFixed(1)} | ${set.isPr ? "**YES**" : ""} | ${set.rpe?.toString() ?? "-"} | ${set.rir?.toString() ?? "-"} | $techText | $failureText | $togglesText | ${set.notes?.replaceAll('\n', ' ') ?? "-"} |");
 
           // Global Collections
           if (!processedExerciseIds.contains(ex.id)) {

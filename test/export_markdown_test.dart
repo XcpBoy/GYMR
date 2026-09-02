@@ -143,6 +143,94 @@ void main() {
   });
 
   test(
+      'rows sort by real timestamp across exercises, not grouped by '
+      'orderIndex (circuit-training / alternating-exercise sessions), and '
+      'the TIME column reflects when each set was actually created',
+      () async {
+    final db = _testDb();
+    addTearDown(db.close);
+
+    final exA = await db.into(db.baseExercises).insert(
+          BaseExercisesCompanion.insert(name: 'Exercise A'),
+        );
+    final exB = await db.into(db.baseExercises).insert(
+          BaseExercisesCompanion.insert(name: 'Exercise B'),
+        );
+    final logId = await db.into(db.workoutLogs).insert(
+          WorkoutLogsCompanion.insert(date: DateTime(2025, 3, 1)),
+        );
+
+    // A was added to the workout first (orderIndex 0), B second
+    // (orderIndex 1) - but in real life the sets were done alternating
+    // (circuit-style): A 10:00, B 10:05, A 10:10, B 10:15. Sorting by
+    // orderIndex first (the old behavior) would wrongly group both of A's
+    // sets before either of B's.
+    Future<void> insertSet(int exerciseId, int orderIndex, int hour, int minute) {
+      return db.into(db.workoutSets).insert(
+            WorkoutSetsCompanion.insert(
+              logId: logId,
+              baseExerciseId: exerciseId,
+              weight: 10.0,
+              reps: 5.0,
+              orderIndex: drift.Value(orderIndex),
+              timestamp: drift.Value(DateTime(2025, 3, 1, hour, minute)),
+            ),
+          );
+    }
+
+    await insertSet(exA, 0, 10, 0);
+    await insertSet(exB, 1, 10, 5);
+    await insertSet(exA, 0, 10, 10);
+    await insertSet(exB, 1, 10, 15);
+
+    // Same orderBy as nexus_screen.dart's _generateWorkoutFile/
+    // _downloadWorkoutFile after the fix: timestamp primary, orderIndex
+    // only as a tiebreaker.
+    final query = db.select(db.workoutSets).join([
+      drift.innerJoin(db.baseExercises,
+          db.baseExercises.id.equalsExp(db.workoutSets.baseExerciseId)),
+      drift.innerJoin(
+          db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId)),
+    ])
+      ..orderBy([
+        drift.OrderingTerm.asc(db.workoutLogs.date),
+        drift.OrderingTerm.asc(db.workoutSets.timestamp),
+        drift.OrderingTerm.asc(db.workoutSets.orderIndex),
+      ]);
+    final rows = await query.get();
+
+    await ExportService.exportWorkoutsToMarkdown(
+      rows,
+      db,
+      {},
+      ThemeController(db),
+      fileName: 'gymr_chrono_order_test',
+      share: false,
+    );
+
+    final file = File('${tempDir.path}/gymr_chrono_order_test.md');
+    final content = await file.readAsString();
+
+    // Each row starts with "| <setNumber> | <HH:mm> | <EXERCISE NAME>" -
+    // matching on the full prefix ties the position check to the actual
+    // set number and time together, not just exercise name order.
+    final posA1 = content.indexOf('| 1 | 10:00 | EXERCISE A');
+    final posB1 = content.indexOf('| 2 | 10:05 | EXERCISE B');
+    final posA2 = content.indexOf('| 3 | 10:10 | EXERCISE A');
+    final posB2 = content.indexOf('| 4 | 10:15 | EXERCISE B');
+
+    expect(posA1, greaterThanOrEqualTo(0), reason: 'first A row not found as expected');
+    expect(posB1, greaterThanOrEqualTo(0), reason: 'first B row not found as expected');
+    expect(posA2, greaterThanOrEqualTo(0), reason: 'second A row not found as expected');
+    expect(posB2, greaterThanOrEqualTo(0), reason: 'second B row not found as expected');
+
+    expect(posA1, lessThan(posB1),
+        reason: 'rows must be in real chronological order, not grouped by exercise/orderIndex');
+    expect(posB1, lessThan(posA2));
+    expect(posA2, lessThan(posB2));
+  });
+
+  test(
       'exportWorkoutsToMarkdown tolerates a malformed particular_toggles '
       '(list of maps instead of strings) instead of crashing the whole export',
       () async {
