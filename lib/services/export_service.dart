@@ -519,6 +519,65 @@ class ExportService {
     'TOGGLES': 'TOGGLES', 'NOTES': 'NOTES', 'TIME': 'TIME'
   };
 
+  // Per-exercise data shared by PDF/Excel row loops - fullName re-decodes
+  // six nomenclature JSON blobs and parsedComplexMetadata decodes+clones
+  // another, and both were previously recomputed on every SET instead of
+  // once per distinct exercise (same fix already applied to the .md
+  // export). PDF's toggle list additionally tolerates legacy entries
+  // shaped as {"name": ...} instead of a plain string, which is why this
+  // is a separate helper from the .md export's _buildExerciseData rather
+  // than a shared one.
+  static ({
+    String fullName,
+    String loadType,
+    bool isIsometric,
+    bool isUnilateral,
+    String loadNature,
+    String description,
+    Map<String, String> phaseLabels,
+    List<String> availableToggles,
+  }) _buildPdfExcelExerciseData(BaseExercise ex,
+      {required bool allowMapToggles}) {
+    final details = _detectLoadDetails(ex);
+    final meta = ex.parsedComplexMetadata;
+
+    final classification = meta["classification"] ?? "C";
+    final classShort = classification.toString().startsWith('I') ? 'I' : 'C';
+
+    List<String> availableToggles = const [];
+    try {
+      final List<dynamic> raw = meta["particular_toggles"] ?? [];
+      availableToggles = allowMapToggles
+          ? raw
+              .map((t) => (t is Map) ? (t["name"] as String) : (t as String))
+              .toList()
+          : List<String>.from(raw);
+    } catch (_) {}
+
+    Map<String, String> phaseLabels = const {};
+    if (ex.phaseDescriptions != null) {
+      try {
+        final Map<String, dynamic> decoded = jsonDecode(ex.phaseDescriptions!);
+        final phs = decoded["phases"] as Map<String, dynamic>? ?? {};
+        phaseLabels = {
+          for (final e in phs.entries) e.key: e.value.toString().toUpperCase()
+        };
+      } catch (_) {}
+    }
+
+    return (
+      fullName: ex.fullName,
+      loadType: details.type,
+      isIsometric: details.isIsometric,
+      isUnilateral: ex.isUnilateral,
+      loadNature:
+          "[$classShort] ${details.isIsometric ? 'ISO+' : ''}${details.type}",
+      description: meta["description"]?.toString() ?? "",
+      phaseLabels: phaseLabels,
+      availableToggles: availableToggles,
+    );
+  }
+
   static Future<void> exportWorkoutsToPdf(List<TypedResult> rows,
       AppDatabase db, Map<String, ThemeSetting> settings, ThemeController tC,
       {String? fileName, bool share = true, String lang = 'en'}) async {
@@ -541,6 +600,19 @@ class ExportService {
 
     final bwMap = await _batchFetchBodyweights(db, allDates);
     final somaticMap = await _batchFetchSomatics(db, allSetIds);
+
+    final exDataCache = <int, ({
+      String fullName,
+      String loadType,
+      bool isIsometric,
+      bool isUnilateral,
+      String loadNature,
+      String description,
+      Map<String, String> phaseLabels,
+      List<String> availableToggles,
+    })>{};
+    ({String fullName, String loadType, bool isIsometric, bool isUnilateral, String loadNature, String description, Map<String, String> phaseLabels, List<String> availableToggles}) exDataFor(BaseExercise ex) => exDataCache.putIfAbsent(
+        ex.id, () => _buildPdfExcelExerciseData(ex, allowMapToggles: true));
 
     // Grouping by Month/Year and then by Day
     final Map<String, Map<String, List<TypedResult>>> groupedData = {};
@@ -629,29 +701,27 @@ class ExportService {
                 final set = r.readTable(db.workoutSets);
                 final ex = r.readTable(db.baseExercises);
                 final log = r.readTable(db.workoutLogs);
+                final exData = exDataFor(ex);
 
                 final dateKey = DateFormat('yyyy-MM-dd').format(log.date);
                 final bw = bwMap[dateKey];
-                final details = _detectLoadDetails(ex);
 
                 double? totalLoad;
-                if (details.type == 'LASTRE') {
-                  totalLoad = (bw ?? 0) + set.weight;
-                } else if (details.type == 'EXT.LOAD') {
-                  totalLoad = set.weight;
-                } else if (details.type == 'JST.BW') {
-                  totalLoad = bw ?? 0;
-                } else if (details.type == 'UNMOVABLE') {
-                  totalLoad = (bw ?? 0) + set.weight;
+                switch (exData.loadType) {
+                  case 'LASTRE':
+                  case 'UNMOVABLE':
+                    totalLoad = (bw ?? 0) + set.weight;
+                    break;
+                  case 'EXT.LOAD':
+                    totalLoad = set.weight;
+                    break;
+                  case 'JST.BW':
+                    totalLoad = bw ?? 0;
+                    break;
                 }
 
-                final fullName = ex.fullName;
-                final classification =
-                    ex.parsedComplexMetadata["classification"] ?? "C";
-                final classShort =
-                    classification.toString().startsWith('I') ? 'I' : 'C';
-                final loadNature =
-                    "[$classShort] ${details.isIsometric ? 'ISO+' : ''}${details.type}";
+                final fullName = exData.fullName;
+                final loadNature = exData.loadNature;
 
                 final eorm = WorkoutCalculator.calculateEpley1RM(
                     totalLoad ?? set.weight, set.reps);
@@ -667,42 +737,31 @@ class ExportService {
                 // 2. Failure Phase
                 String failureText = "-";
                 if (set.failurePhase != null) {
-                  Map<String, dynamic> phs = {};
-                  if (ex.phaseDescriptions != null) {
-                    try {
-                      final Map<String, dynamic> meta =
-                          jsonDecode(ex.phaseDescriptions!);
-                      phs = meta["phases"] as Map<String, dynamic>? ?? {};
-                    } catch (_) {}
-                  }
-                  failureText = (phs[set.failurePhase.toString()] ??
-                          "PHASE ${set.failurePhase}")
-                      .toString()
-                      .toUpperCase();
+                  final phaseKey = set.failurePhase.toString();
+                  failureText =
+                      exData.phaseLabels[phaseKey] ?? "PHASE $phaseKey";
                 }
 
-                // 3. Particular Toggles
-                String togglesText = "-";
+                // set.complexMetadata is decoded ONCE and reused for both
+                // toggles and side detection.
+                Map<String, dynamic>? setMeta;
                 if (set.complexMetadata != null) {
                   try {
-                    final Map<String, dynamic> setMeta =
-                        jsonDecode(set.complexMetadata!);
-                    final Map<String, dynamic> exMeta =
-                        ex.parsedComplexMetadata;
-                    final List<dynamic> rawToggles =
-                        exMeta["particular_toggles"] ?? [];
-                    final List<String> availableToggles = rawToggles
-                        .map((t) =>
-                            (t is Map) ? (t["name"] as String) : (t as String))
-                        .toList();
-
-                    final activeToggles = availableToggles
-                        .where((t) => setMeta[t] == true)
-                        .toList();
-                    if (activeToggles.isNotEmpty) {
-                      togglesText = activeToggles.join(", ");
-                    }
+                    setMeta =
+                        jsonDecode(set.complexMetadata!) as Map<String, dynamic>;
                   } catch (_) {}
+                }
+
+                // 3. Particular Toggles (available list precomputed per
+                // exercise)
+                String togglesText = "-";
+                if (setMeta != null && exData.availableToggles.isNotEmpty) {
+                  final activeToggles = exData.availableToggles
+                      .where((t) => setMeta![t] == true)
+                      .toList();
+                  if (activeToggles.isNotEmpty) {
+                    togglesText = activeToggles.join(", ");
+                  }
                 }
 
                 // 4. Somatic Discomfort (Batch)
@@ -728,18 +787,14 @@ class ExportService {
                 // 5. Unilateral side detection
                 String sideText = "-";
                 bool isUnilateral = false;
-                if (ex.isUnilateral && set.complexMetadata != null) {
-                  try {
-                    final Map<String, dynamic> meta =
-                        jsonDecode(set.complexMetadata!);
-                    if (meta["side"] == "RIGHT") {
-                      sideText = "R";
-                      isUnilateral = true;
-                    } else if (meta["side"] == "LEFT") {
-                      sideText = "L";
-                      isUnilateral = true;
-                    }
-                  } catch (_) {}
+                if (exData.isUnilateral && setMeta != null) {
+                  if (setMeta["side"] == "RIGHT") {
+                    sideText = "R";
+                    isUnilateral = true;
+                  } else if (setMeta["side"] == "LEFT") {
+                    sideText = "L";
+                    isUnilateral = true;
+                  }
                 }
                 isUnilateralRow.add(isUnilateral);
 
@@ -755,15 +810,10 @@ class ExportService {
 
                 // 7. Batch detection for export headers
                 String? currentBatch;
-                if (set.complexMetadata != null) {
-                  try {
-                    final Map<String, dynamic> cm =
-                        jsonDecode(set.complexMetadata!);
-                    if (cm['batch'] != null &&
-                        cm['batch'].toString().isNotEmpty) {
-                      currentBatch = cm['batch'].toString();
-                    }
-                  } catch (_) {}
+                if (setMeta != null &&
+                    setMeta['batch'] != null &&
+                    setMeta['batch'].toString().isNotEmpty) {
+                  currentBatch = setMeta['batch'].toString();
                 }
                 // Track batch changes across rows (uses a static-like pattern via closure)
                 // Compare with previous row's batch via the lastBatch variable
@@ -798,7 +848,7 @@ class ExportService {
                   sideText,
                   loadNature,
                   "${set.weight}KG",
-                  "${set.reps.toString().replaceAll(RegExp(r'\.0$'), '')}${details.isIsometric ? 's' : ''}",
+                  "${set.reps.toString().replaceAll(RegExp(r'\.0$'), '')}${exData.isIsometric ? 's' : ''}",
                   eorm.toStringAsFixed(1),
                   set.isPr ? "YES" : "",
                   set.rpe?.toString() ?? "-",
@@ -811,24 +861,19 @@ class ExportService {
                 ]);
 
                 // Global Collections
-                if (!processedExerciseIds.contains(ex.id)) {
-                  final desc =
-                      ex.parsedComplexMetadata["description"]?.toString() ?? "";
-                  if (desc.isNotEmpty) {
-                    exerciseDescriptions
-                        .add({'name': ex.fullName, 'desc': desc});
-                  }
-                  processedExerciseIds.add(ex.id);
+                if (processedExerciseIds.add(ex.id) &&
+                    exData.description.isNotEmpty) {
+                  exerciseDescriptions
+                      .add({'name': fullName, 'desc': exData.description});
                 }
 
                 if (set.supersetGroupId != null) {
                   final dateKeySup = DateFormat('dd/MM/yy').format(log.date);
                   final groupKey = "${dateKeySup}_${set.supersetGroupId}";
-                  supersetGroups.putIfAbsent(groupKey, () => []);
-                  if (!supersetGroups[groupKey]!
-                      .any((e) => e['name'] == ex.fullName)) {
-                    supersetGroups[groupKey]!.add({
-                      'name': ex.fullName,
+                  final group = supersetGroups.putIfAbsent(groupKey, () => []);
+                  if (!group.any((e) => e['name'] == fullName)) {
+                    group.add({
+                      'name': fullName,
                       'supersetName': set.supersetName ?? 'SUPERSET',
                       'date': dateKeySup
                     });
@@ -1113,6 +1158,19 @@ class ExportService {
     final bwMap = await _batchFetchBodyweights(db, allDates);
     final somaticMap = await _batchFetchSomatics(db, allSetIds);
 
+    final exDataCache = <int, ({
+      String fullName,
+      String loadType,
+      bool isIsometric,
+      bool isUnilateral,
+      String loadNature,
+      String description,
+      Map<String, String> phaseLabels,
+      List<String> availableToggles,
+    })>{};
+    ({String fullName, String loadType, bool isIsometric, bool isUnilateral, String loadNature, String description, Map<String, String> phaseLabels, List<String> availableToggles}) exDataFor(BaseExercise ex) => exDataCache.putIfAbsent(
+        ex.id, () => _buildPdfExcelExerciseData(ex, allowMapToggles: false));
+
     // Grouping by Day
     final Map<String, List<TypedResult>> groupedByDay = {};
     for (var r in rows) {
@@ -1162,29 +1220,27 @@ class ExportService {
         final set = r.readTable(db.workoutSets);
         final ex = r.readTable(db.baseExercises);
         final log = r.readTable(db.workoutLogs);
+        final exData = exDataFor(ex);
 
         final dateKey = DateFormat('yyyy-MM-dd').format(log.date);
         final bw = bwMap[dateKey];
-        final details = _detectLoadDetails(ex);
 
         double? totalLoad;
-        if (details.type == 'LASTRE') {
-          totalLoad = (bw ?? 0) + set.weight;
-        } else if (details.type == 'EXT.LOAD') {
-          totalLoad = set.weight;
-        } else if (details.type == 'JST.BW') {
-          totalLoad = bw ?? 0;
-        } else if (details.type == 'UNMOVABLE') {
-          totalLoad = (bw ?? 0) + set.weight;
+        switch (exData.loadType) {
+          case 'LASTRE':
+          case 'UNMOVABLE':
+            totalLoad = (bw ?? 0) + set.weight;
+            break;
+          case 'EXT.LOAD':
+            totalLoad = set.weight;
+            break;
+          case 'JST.BW':
+            totalLoad = bw ?? 0;
+            break;
         }
 
-        final fullName = ex.fullName;
-        final classification =
-            ex.parsedComplexMetadata["classification"] ?? "C";
-        final classShort =
-            classification.toString().startsWith('I') ? 'I' : 'C';
-        final loadNature =
-            "[$classShort] ${details.isIsometric ? 'ISO+' : ''}${details.type}";
+        final fullName = exData.fullName;
+        final loadNature = exData.loadNature;
 
         final eorm = WorkoutCalculator.calculateEpley1RM(
             totalLoad ?? set.weight, set.reps);
@@ -1194,33 +1250,24 @@ class ExportService {
 
         String failureText = "";
         if (set.failurePhase != null) {
-          Map<String, dynamic> phs = {};
-          if (ex.phaseDescriptions != null) {
-            try {
-              final Map<String, dynamic> meta =
-                  jsonDecode(ex.phaseDescriptions!);
-              phs = meta["phases"] as Map<String, dynamic>? ?? {};
-            } catch (_) {}
-          }
-          failureText =
-              (phs[set.failurePhase.toString()] ?? "PHASE ${set.failurePhase}")
-                  .toString()
-                  .toUpperCase();
+          final phaseKey = set.failurePhase.toString();
+          failureText = exData.phaseLabels[phaseKey] ?? "PHASE $phaseKey";
+        }
+
+        // set.complexMetadata is decoded ONCE and reused for both toggles
+        // and side detection.
+        Map<String, dynamic>? setMeta;
+        if (set.complexMetadata != null) {
+          try {
+            setMeta = jsonDecode(set.complexMetadata!) as Map<String, dynamic>;
+          } catch (_) {}
         }
 
         String togglesText = "";
-        if (set.complexMetadata != null) {
-          try {
-            final Map<String, dynamic> setMeta =
-                jsonDecode(set.complexMetadata!);
-            final Map<String, dynamic> exMeta = ex.parsedComplexMetadata;
-            final List<String> availableToggles =
-                List<String>.from(exMeta["particular_toggles"] ?? []);
-            final activeToggles =
-                availableToggles.where((t) => setMeta[t] == true).toList();
-            if (activeToggles.isNotEmpty)
-              togglesText = activeToggles.join(", ");
-          } catch (_) {}
+        if (setMeta != null && exData.availableToggles.isNotEmpty) {
+          final activeToggles =
+              exData.availableToggles.where((t) => setMeta![t] == true).toList();
+          if (activeToggles.isNotEmpty) togglesText = activeToggles.join(", ");
         }
 
         final somatics = somaticMap[set.id] ?? [];
@@ -1229,15 +1276,12 @@ class ExportService {
             .join(" | ");
 
         String sideText = "-";
-        if (ex.isUnilateral && set.complexMetadata != null) {
-          try {
-            final Map<String, dynamic> meta = jsonDecode(set.complexMetadata!);
-            if (meta["side"] == "RIGHT") {
-              sideText = "R";
-            } else if (meta["side"] == "LEFT") {
-              sideText = "L";
-            }
-          } catch (_) {}
+        if (exData.isUnilateral && setMeta != null) {
+          if (setMeta["side"] == "RIGHT") {
+            sideText = "R";
+          } else if (setMeta["side"] == "LEFT") {
+            sideText = "L";
+          }
         }
 
         String? priority = set.priority;
@@ -1260,7 +1304,7 @@ class ExportService {
           TextCellValue(loadNature),
           DoubleCellValue(set.weight),
           TextCellValue(
-              "${set.reps.toString().replaceAll(RegExp(r'\.0$'), '')}${details.isIsometric ? 's' : ''}"),
+              "${set.reps.toString().replaceAll(RegExp(r'\.0$'), '')}${exData.isIsometric ? 's' : ''}"),
           DoubleCellValue(double.parse(eorm.toStringAsFixed(2))),
           TextCellValue(set.isPr ? "YES" : ""),
           TextCellValue(set.rpe?.toString() ?? ""),
