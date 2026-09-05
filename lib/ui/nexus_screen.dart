@@ -1611,16 +1611,36 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       final settings = ref.read(themeSettingsProvider).value ?? {};
       final tC = ref.read(themeControllerProvider);
 
+      final startOfDay =
+          DateTime(range.start.year, range.start.month, range.start.day);
+      final endOfDay =
+          DateTime(range.end.year, range.end.month, range.end.day, 23, 59, 59);
+      final fileName = DateFormat('ddMMyy').format(range.start) !=
+              DateFormat('ddMMyy').format(range.end)
+          ? "WOLOG_${DateFormat('ddMMyy').format(range.start)}_${DateFormat('ddMMyy').format(range.end)}"
+          : "WOLOG_${DateFormat('ddMMyy').format(range.start)}";
+
+      if (format == 'md') {
+        // Markdown fetches its own rows: the wide join below carries a full
+        // copy of every base_exercises row per set, which is what made a
+        // multi-year .md export drag the UI isolate down before formatting
+        // even started.
+        await ExportService.exportWorkoutsToMarkdownRange(db, settings, tC,
+            start: startOfDay, end: endOfDay, fileName: fileName);
+        debugPrint('[SYNTHESIS_EXPORT] DONE +${sw.elapsedMilliseconds}ms total, format=$format');
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(const SnackBar(content: Text("EXPORT_SUCCESSFUL")));
+        }
+        return;
+      }
+
       var query = db.select(db.workoutSets).join([
         innerJoin(db.baseExercises,
             db.baseExercises.id.equalsExp(db.workoutSets.baseExerciseId)),
         innerJoin(
             db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId))
       ]);
-      final startOfDay =
-          DateTime(range.start.year, range.start.month, range.start.day);
-      final endOfDay =
-          DateTime(range.end.year, range.end.month, range.end.day, 23, 59, 59);
       query.where(db.workoutLogs.date.isBetweenValues(startOfDay, endOfDay));
       // timestamp (real creation time) is the primary within-day sort key,
       // not orderIndex (the exercise's position in the workout) - orderIndex
@@ -1637,10 +1657,6 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       debugPrint('[SYNTHESIS_EXPORT] +${sw.elapsedMilliseconds}ms querying...');
       final rows = await query.get();
       debugPrint('[SYNTHESIS_EXPORT] +${sw.elapsedMilliseconds}ms query done, rows=${rows.length}');
-      final fileName = DateFormat('ddMMyy').format(range.start) !=
-              DateFormat('ddMMyy').format(range.end)
-          ? "WOLOG_${DateFormat('ddMMyy').format(range.start)}_${DateFormat('ddMMyy').format(range.end)}"
-          : "WOLOG_${DateFormat('ddMMyy').format(range.start)}";
       if (format == 'pdf') {
         await ExportService.exportWorkoutsToPdf(rows, db, settings, tC,
             fileName: fileName);
@@ -1649,9 +1665,6 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
             fileName: fileName);
       } else if (format == 'csv') {
         await ExportService.exportWorkoutsToCsv(rows, db, fileName: fileName);
-      } else if (format == 'md') {
-        await ExportService.exportWorkoutsToMarkdown(rows, db, settings, tC,
-            fileName: fileName);
       }
       debugPrint('[SYNTHESIS_EXPORT] DONE +${sw.elapsedMilliseconds}ms total, format=$format');
       if (mounted) {
@@ -1707,28 +1720,6 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
           DateTime(range.start.year, range.start.month, range.start.day);
       final endOfDay =
           DateTime(range.end.year, range.end.month, range.end.day, 23, 59, 59);
-      var query = db.select(db.workoutSets).join([
-        innerJoin(db.baseExercises,
-            db.baseExercises.id.equalsExp(db.workoutSets.baseExerciseId)),
-        innerJoin(
-            db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId))
-      ]);
-      query.where(db.workoutLogs.date.isBetweenValues(startOfDay, endOfDay));
-      // timestamp (real creation time) is the primary within-day sort key,
-      // not orderIndex (the exercise's position in the workout) - orderIndex
-      // grouped every set of one exercise into a block regardless of when
-      // they were actually done, so alternating/circuit-style sessions
-      // showed exercise-A-then-exercise-B instead of the real chronological
-      // order. orderIndex stays as a tiebreaker for the rare exact-same-
-      // timestamp case.
-      query.orderBy([
-        OrderingTerm.asc(db.workoutLogs.date),
-        OrderingTerm.asc(db.workoutSets.timestamp),
-        OrderingTerm.asc(db.workoutSets.orderIndex),
-      ]);
-      debugPrint('[SYNTHESIS_DOWNLOAD] +${sw.elapsedMilliseconds}ms querying...');
-      final rows = await query.get();
-      debugPrint('[SYNTHESIS_DOWNLOAD] +${sw.elapsedMilliseconds}ms query done, rows=${rows.length}');
       final fileName = DateFormat('ddMMyy').format(range.start) !=
               DateFormat('ddMMyy').format(range.end)
           ? "WOLOG_${DateFormat('ddMMyy').format(range.start)}_${DateFormat('ddMMyy').format(range.end)}"
@@ -1742,18 +1733,45 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
                   ? 'csv'
                   : 'md';
 
-      if (format == 'pdf') {
-        await ExportService.exportWorkoutsToPdf(rows, db, settings, tC,
-            fileName: fileName, share: false);
-      } else if (format == 'xlsx') {
-        await ExportService.exportWorkoutsToExcel(rows, db, settings, tC,
-            fileName: fileName, share: false);
-      } else if (format == 'csv') {
-        await ExportService.exportWorkoutsToCsv(rows, db,
-            fileName: fileName, share: false);
-      } else if (format == 'md') {
-        await ExportService.exportWorkoutsToMarkdown(rows, db, settings, tC,
-            fileName: fileName, share: false);
+      if (format == 'md') {
+        // See _generateWorkoutFile: markdown runs its own narrow query
+        // instead of the wide per-set exercise join.
+        await ExportService.exportWorkoutsToMarkdownRange(db, settings, tC,
+            start: startOfDay, end: endOfDay, fileName: fileName, share: false);
+      } else {
+        var query = db.select(db.workoutSets).join([
+          innerJoin(db.baseExercises,
+              db.baseExercises.id.equalsExp(db.workoutSets.baseExerciseId)),
+          innerJoin(
+              db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId))
+        ]);
+        query.where(db.workoutLogs.date.isBetweenValues(startOfDay, endOfDay));
+        // timestamp (real creation time) is the primary within-day sort key,
+        // not orderIndex (the exercise's position in the workout) - orderIndex
+        // grouped every set of one exercise into a block regardless of when
+        // they were actually done, so alternating/circuit-style sessions
+        // showed exercise-A-then-exercise-B instead of the real chronological
+        // order. orderIndex stays as a tiebreaker for the rare exact-same-
+        // timestamp case.
+        query.orderBy([
+          OrderingTerm.asc(db.workoutLogs.date),
+          OrderingTerm.asc(db.workoutSets.timestamp),
+          OrderingTerm.asc(db.workoutSets.orderIndex),
+        ]);
+        debugPrint('[SYNTHESIS_DOWNLOAD] +${sw.elapsedMilliseconds}ms querying...');
+        final rows = await query.get();
+        debugPrint('[SYNTHESIS_DOWNLOAD] +${sw.elapsedMilliseconds}ms query done, rows=${rows.length}');
+
+        if (format == 'pdf') {
+          await ExportService.exportWorkoutsToPdf(rows, db, settings, tC,
+              fileName: fileName, share: false);
+        } else if (format == 'xlsx') {
+          await ExportService.exportWorkoutsToExcel(rows, db, settings, tC,
+              fileName: fileName, share: false);
+        } else if (format == 'csv') {
+          await ExportService.exportWorkoutsToCsv(rows, db,
+              fileName: fileName, share: false);
+        }
       }
       debugPrint('[SYNTHESIS_DOWNLOAD] +${sw.elapsedMilliseconds}ms export done, reading temp file...');
       // Read temp file bytes and save via FilePicker (required on mobile)

@@ -231,6 +231,120 @@ void main() {
   });
 
   test(
+      'exportWorkoutsToMarkdownRange (the narrow-query path SYNTHESIS now '
+      'uses) produces byte-identical output to the wide-join path', () async {
+    // The markdown export no longer consumes the 3-table join the PDF/XLSX
+    // exporters use - it queries sets+logs and matches exercises by ID, so
+    // a multi-year export stops carrying one full copy of base_exercises
+    // per set. This pins the two paths to the same output so that
+    // optimization can't silently change the report.
+    final db = _testDb();
+    addTearDown(db.close);
+
+    final exA = await db.into(db.baseExercises).insert(
+          BaseExercisesCompanion.insert(
+            name: 'Weighted Muscle Up',
+            field: const drift.Value('LASTRE'),
+            isUnilateral: const drift.Value(true),
+            complexMetadata: const drift.Value(
+                '{"particular_toggles": ["DROPSET"], "classification": "ISOLATION", "description": "KEEP HOLLOW"}'),
+          ),
+        );
+    final exB = await db.into(db.baseExercises).insert(
+          BaseExercisesCompanion.insert(name: 'Exercise B'),
+        );
+
+    final start = DateTime(2025, 1, 1);
+    for (int i = 0; i < 40; i++) {
+      final date = start.add(Duration(days: i * 3));
+      final logId = await db.into(db.workoutLogs).insert(
+            WorkoutLogsCompanion.insert(
+              date: date,
+              notes: drift.Value(i.isEven ? 'FELT STRONG [S:2.0]' : null),
+            ),
+          );
+      // Alternating exercises within the session, so grouping/ordering and
+      // the per-day set counter are both exercised.
+      for (int s = 0; s < 4; s++) {
+        await db.into(db.workoutSets).insert(
+              WorkoutSetsCompanion.insert(
+                logId: logId,
+                baseExerciseId: s.isEven ? exA : exB,
+                weight: 20.0 + s,
+                reps: 8.0,
+                orderIndex: drift.Value(s.isEven ? 0 : 1),
+                timestamp: drift.Value(
+                    DateTime(date.year, date.month, date.day, 10, s * 5)),
+                complexMetadata: drift.Value(
+                    s == 0 ? '{"side": "LEFT", "DROPSET": true}' : null),
+              ),
+            );
+      }
+      await db.customStatement(
+        "INSERT INTO anthropometric_logs (label, value, unit, date) VALUES ('WEIGHT', ?, 'KG', ?)",
+        [80.0, date.millisecondsSinceEpoch ~/ 1000],
+      );
+    }
+
+    final rangeStart = DateTime(2025, 1, 1);
+    final rangeEnd = DateTime(2025, 12, 31, 23, 59, 59);
+
+    await ExportService.exportWorkoutsToMarkdownRange(
+      db,
+      {},
+      ThemeController(db),
+      start: rangeStart,
+      end: rangeEnd,
+      fileName: 'gymr_range_path',
+      share: false,
+    );
+
+    final wideQuery = db.select(db.workoutSets).join([
+      drift.innerJoin(db.baseExercises,
+          db.baseExercises.id.equalsExp(db.workoutSets.baseExerciseId)),
+      drift.innerJoin(
+          db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId)),
+    ])
+      ..where(db.workoutLogs.date.isBetweenValues(rangeStart, rangeEnd))
+      ..orderBy([
+        drift.OrderingTerm.asc(db.workoutLogs.date),
+        drift.OrderingTerm.asc(db.workoutSets.timestamp),
+        drift.OrderingTerm.asc(db.workoutSets.orderIndex),
+      ]);
+    await ExportService.exportWorkoutsToMarkdown(
+      await wideQuery.get(),
+      db,
+      {},
+      ThemeController(db),
+      fileName: 'gymr_wide_path',
+      share: false,
+    );
+
+    final rangeOut =
+        await File('${tempDir.path}/gymr_range_path.md').readAsString();
+    final wideOut =
+        await File('${tempDir.path}/gymr_wide_path.md').readAsString();
+
+    // The "Generated on" line carries a wall-clock minute, so compare
+    // everything else.
+    List<String> body(String s) =>
+        s.split('\n').where((l) => !l.startsWith('Generated on:')).toList();
+    expect(body(rangeOut), equals(body(wideOut)));
+
+    // Sanity-check that the shared output is actually the real report and
+    // not two identically-empty files.
+    expect(rangeOut, contains('WEIGHTED MUSCLE UP (UNI)'));
+    expect(rangeOut, contains('DROPSET'));
+    expect(rangeOut, contains('KEEP HOLLOW'));
+    expect(rangeOut, contains('SESSION_GENERAL_NOTES'));
+    expect(rangeOut, isNot(contains('[S:2.0]')));
+    expect(rangeOut, contains('126.7'),
+        reason: 'LASTRE bodyweight (80) + 20kg at 8 reps');
+    // Per-day set numbering stays absolute across the alternating exercises.
+    expect(rangeOut, contains('| 4 | 10:15 |'));
+  });
+
+  test(
       'exportWorkoutsToMarkdown tolerates a malformed particular_toggles '
       '(list of maps instead of strings) instead of crashing the whole export',
       () async {

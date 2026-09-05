@@ -36,29 +36,80 @@ class SomaticLogEntry {
 
 // Plain per-row bundle used to hand the markdown export's formatting pass
 // off to a background isolate via compute() - see
-// ExportService._buildWorkoutMarkdownSync. WorkoutSet/BaseExercise/
+// ExportService._buildWorkoutMarkdownBytes. WorkoutSet/BaseExercise/
 // WorkoutLog are Drift-generated plain data classes (no live DB/executor
 // reference), so they're safe to send across an isolate boundary; the
 // TypedResult join row they came from is not.
-class _WorkoutExportRow {
+//
+// The row holds only IDs for its exercise and log, never the objects: a
+// join row materializes a SEPARATE BaseExercise/WorkoutLog instance per
+// set, so a multi-year export used to ship ~20k copies of a few hundred
+// distinct exercises (each carrying its full complexMetadata /
+// nomenclature JSON) across the isolate boundary. That copy runs ON the
+// calling isolate, which made the isolate hand-off itself an ANR source
+// even though the formatting had already been moved off the UI thread.
+class _MdRow {
   final WorkoutSet set;
-  final BaseExercise ex;
-  final WorkoutLog log;
-  const _WorkoutExportRow(this.set, this.ex, this.log);
+  final int exId;
+  final int logId;
+  const _MdRow(this.set, this.exId, this.logId);
 }
 
 class _MdExportArgs {
-  final List<_WorkoutExportRow> rows;
+  final List<_MdRow> rows;
+  final Map<int, BaseExercise> exercises;
+  final Map<int, WorkoutLog> logs;
   final Map<String, double> bwMap;
   final Map<int, List<SomaticLogEntry>> somaticMap;
   final String lang;
-  const _MdExportArgs(this.rows, this.bwMap, this.somaticMap, this.lang);
+  const _MdExportArgs(this.rows, this.exercises, this.logs, this.bwMap,
+      this.somaticMap, this.lang);
+}
+
+// Everything derived from a BaseExercise that the row loop needs, computed
+// ONCE per distinct exercise instead of once per set. Each of these fields
+// is expensive: `fullName` re-decodes six separate nomenclature JSON blobs
+// and reassembles the name, and `parsedComplexMetadata` decodes + deep-
+// clones another. The row loop touched them 3-5 times per set, so a
+// ~19k-set export did hundreds of thousands of jsonDecodes to produce a
+// few hundred distinct answers.
+class _MdExerciseData {
+  final String fullName;
+  final String loadType;
+  final bool isIsometric;
+  final bool isUnilateral;
+  final String loadNature;
+  final List<String> toggles;
+  final Map<String, String> phaseLabels;
+  final String description;
+  const _MdExerciseData({
+    required this.fullName,
+    required this.loadType,
+    required this.isIsometric,
+    required this.isUnilateral,
+    required this.loadNature,
+    required this.toggles,
+    required this.phaseLabels,
+    required this.description,
+  });
 }
 
 // Compiled once (module load) instead of once per row/day - see the loop
-// in _buildWorkoutMarkdownSync.
+// in _buildWorkoutMarkdownBytes.
 final RegExp _trailingZeroRegex = RegExp(r'\.0$');
 final RegExp _sessionSpectrumTagRegex = RegExp(r'\[S:[\d.]+\]');
+
+// DateFormat construction parses the pattern and resolves locale data, so
+// it is far from free - these used to be built inside the per-row loop
+// (five per set), which at multi-year scale cost more than the formatting
+// itself. Top-level finals are lazily initialized per isolate, so the
+// compute() isolate builds its own copies once.
+final DateFormat _mdMonthFormat = DateFormat('MMMM yyyy');
+final DateFormat _mdDayKeyFormat = DateFormat('yyyy-MM-dd');
+final DateFormat _mdDisplayDateFormat = DateFormat('EEEE, MMM d, yyyy');
+final DateFormat _mdTimeFormat = DateFormat('HH:mm');
+final DateFormat _mdShortDateFormat = DateFormat('dd/MM/yy');
+final DateFormat _mdGeneratedAtFormat = DateFormat('yyyy-MM-dd HH:mm');
 
 Future<pw.Font> _loadUnicodeFont() async {
   // Try system fonts with Unicode support (Android paths)
@@ -321,7 +372,7 @@ class ExportService {
         logIdx++;
       }
       if (best != null) {
-        dateToWeight[DateFormat('yyyy-MM-dd').format(date)] = best;
+        dateToWeight[_mdDayKeyFormat.format(date)] = best;
       }
     }
     return dateToWeight;
@@ -1449,12 +1500,73 @@ class ExportService {
     await Share.shareXFiles([XFile(file.path)], text: 'Workouts CSV');
   }
 
+  // Preferred entry point for the SYNTHESIS markdown export: fetches its
+  // own rows instead of taking the wide 3-table join the other formats
+  // use.
+  //
+  // The join the PDF/XLSX path builds pulls every base_exercises column
+  // ALONGSIDE every set - so a ~19k-set export drags ~19k copies of the
+  // nomenclature/complexMetadata JSON of a few hundred exercises out of
+  // SQLite, across Drift's background-isolate boundary, and into the UI
+  // isolate's heap before a single character is formatted. Exercises are
+  // fetched once here and matched by ID instead, which is where most of
+  // the pre-formatting wall time (and heap churn) went at multi-year
+  // scale.
+  static Future<void> exportWorkoutsToMarkdownRange(
+      AppDatabase db, Map<String, ThemeSetting> settings, ThemeController tC,
+      {required DateTime start,
+      required DateTime end,
+      String? fileName,
+      bool share = true,
+      String lang = 'en'}) async {
+    final sw = Stopwatch()..start();
+    debugPrint('[MD_EXPORT] START range=$start..$end (narrow query)');
+
+    final joined = db.select(db.workoutSets).join([
+      innerJoin(db.workoutLogs, db.workoutLogs.id.equalsExp(db.workoutSets.logId))
+    ])
+      ..where(db.workoutLogs.date.isBetweenValues(start, end))
+      ..orderBy([
+        OrderingTerm.asc(db.workoutLogs.date),
+        OrderingTerm.asc(db.workoutSets.timestamp),
+        OrderingTerm.asc(db.workoutSets.orderIndex),
+      ]);
+    final rows = await joined.get();
+    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms sets fetched=${rows.length}');
+
+    // One small query for the whole inventory (hundreds of rows) instead of
+    // one exercise copy per set.
+    final allExercises = await db.select(db.baseExercises).get();
+    final inventoryById = {for (final e in allExercises) e.id: e};
+
+    final mdRows = <_MdRow>[];
+    final setIds = <int>[];
+    final logsById = <int, WorkoutLog>{};
+    final exercisesById = <int, BaseExercise>{};
+    for (final r in rows) {
+      final set = r.readTable(db.workoutSets);
+      final exercise = inventoryById[set.baseExerciseId];
+      // A set pointing at a deleted exercise is dropped, exactly as the
+      // inner join the other exporters use would drop it.
+      if (exercise == null) continue;
+      final log = r.readTable(db.workoutLogs);
+      logsById.putIfAbsent(log.id, () => log);
+      exercisesById.putIfAbsent(exercise.id, () => exercise);
+      mdRows.add(_MdRow(set, exercise.id, log.id));
+      setIds.add(set.id);
+    }
+    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms rows=${mdRows.length} exercises=${exercisesById.length} logs=${logsById.length}');
+
+    await _runMarkdownExport(db, mdRows, exercisesById, logsById, setIds, sw,
+        fileName: fileName, share: share, lang: lang);
+  }
+
+  // Kept for callers that already hold a wide join result (and for the
+  // regression tests, which build their rows directly). Deduplicates the
+  // per-row exercise/log copies before handing off to the shared path.
   static Future<void> exportWorkoutsToMarkdown(List<TypedResult> rows,
       AppDatabase db, Map<String, ThemeSetting> settings, ThemeController tC,
       {String? fileName, bool share = true, String lang = 'en'}) async {
-    // 1. PRE-FETCH DATA (BATCH) - needs the live `db` connection, so this
-    // stays on the calling isolate.
-    //
     // Logged phase-by-phase (per the user's request after a still-froze
     // report post-compute()-fix, with no screenshot of the eventual
     // "failed" toast) so a stuck/failing export shows exactly which phase
@@ -1463,46 +1575,66 @@ class ExportService {
     final sw = Stopwatch()..start();
     debugPrint('[MD_EXPORT] START rows=${rows.length}');
 
-    final allDates =
-        rows.map((r) => r.readTable(db.workoutLogs).date).toSet().toList();
-    final allSetIds = rows.map((r) => r.readTable(db.workoutSets).id).toList();
-    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms uniqueDates=${allDates.length} setIds=${allSetIds.length}');
+    // Single pass: the previous version walked `rows` three times calling
+    // readTable on each (once for dates, once for set ids, once to build
+    // the plain rows).
+    final mdRows = <_MdRow>[];
+    final setIds = <int>[];
+    final exercisesById = <int, BaseExercise>{};
+    final logsById = <int, WorkoutLog>{};
+    for (final r in rows) {
+      final set = r.readTable(db.workoutSets);
+      final ex = r.readTable(db.baseExercises);
+      final log = r.readTable(db.workoutLogs);
+      exercisesById.putIfAbsent(ex.id, () => ex);
+      logsById.putIfAbsent(log.id, () => log);
+      mdRows.add(_MdRow(set, ex.id, log.id));
+      setIds.add(set.id);
+    }
+    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms exercises=${exercisesById.length} logs=${logsById.length}');
 
-    final bwMap = await _batchFetchBodyweights(db, allDates);
+    await _runMarkdownExport(db, mdRows, exercisesById, logsById, setIds, sw,
+        fileName: fileName, share: share, lang: lang);
+  }
+
+  static Future<void> _runMarkdownExport(
+      AppDatabase db,
+      List<_MdRow> mdRows,
+      Map<int, BaseExercise> exercisesById,
+      Map<int, WorkoutLog> logsById,
+      List<int> setIds,
+      Stopwatch sw,
+      {String? fileName,
+      bool share = true,
+      String lang = 'en'}) async {
+    // PRE-FETCH DATA (BATCH) - needs the live `db` connection, so this
+    // stays on the calling isolate. Dates come from the deduplicated logs,
+    // not from every row.
+    final bwMap = await _batchFetchBodyweights(
+        db, logsById.values.map((l) => l.date).toList());
     debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms bodyweights fetched=${bwMap.length}');
 
-    final somaticMap = await _batchFetchSomatics(db, allSetIds);
+    final somaticMap = await _batchFetchSomatics(db, setIds);
     debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms somatics fetched=${somaticMap.length}');
+    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms entering compute() rows=${mdRows.length}');
 
-    // Unwrap the join rows into plain Drift data classes (WorkoutSet/
-    // BaseExercise/WorkoutLog - just field reads, no parsing) so the
-    // actual formatting pass below can run in a background isolate. A
-    // multi-year export is thousands of sets, each going through regex +
-    // 2-3 jsonDecode calls + string building; doing that synchronously on
-    // the UI isolate is exactly what produced the "GYMR no responde" ANR
-    // reported exporting Jan'24-Aug'26 - the isolate was blocked long
-    // enough for Android to kill the render/input pipeline.
-    final plainRows = [
-      for (final r in rows)
-        _WorkoutExportRow(
-          r.readTable(db.workoutSets),
-          r.readTable(db.baseExercises),
-          r.readTable(db.workoutLogs),
-        ),
-    ];
-    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms plain rows extracted, entering compute()');
-
-    final markdown = await compute(
-      _buildWorkoutMarkdownSync,
-      _MdExportArgs(plainRows, bwMap, somaticMap, lang),
+    // The whole formatting pass runs in a background isolate: a multi-year
+    // export is thousands of sets, each going through regex + jsonDecode
+    // calls + string building, and doing that on the UI isolate is what
+    // produced the original "GYMR no responde" ANR.
+    final bytes = await compute(
+      _buildWorkoutMarkdownBytes,
+      _MdExportArgs(mdRows, exercisesById, logsById, bwMap, somaticMap, lang),
       debugLabel: 'exportWorkoutsToMarkdown',
     );
-    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms compute() returned, markdown length=${markdown.length}');
+    debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms compute() returned, bytes=${bytes.length}');
 
     final output = await getTemporaryDirectory();
     final ts = DateTime.now().millisecondsSinceEpoch;
     final file = File("${output.path}/${fileName ?? 'gymr_report_$ts'}.md");
-    await file.writeAsString(markdown);
+    // Bytes, not a String: the isolate already encoded the report as UTF-8,
+    // so this skips re-encoding several MB of text on the UI isolate.
+    await file.writeAsBytes(bytes, flush: true);
     debugPrint('[MD_EXPORT] +${sw.elapsedMilliseconds}ms file written: ${file.path}');
     if (share) {
       await SharePlus.instance.share(
@@ -1519,29 +1651,78 @@ class ExportService {
   // _MdExportArgs must be safely sendable across the isolate boundary -
   // Drift's generated row classes (WorkoutSet/BaseExercise/WorkoutLog) and
   // SomaticLogEntry are plain immutable data classes, so they qualify.
-  static String _buildWorkoutMarkdownSync(_MdExportArgs args) {
+  // Everything a single exercise contributes to the report, derived once
+  // and reused by every set that references it (see _MdExerciseData).
+  static _MdExerciseData _buildExerciseData(BaseExercise ex) {
+    final details = _detectLoadDetails(ex);
+    final meta = ex.parsedComplexMetadata;
+
+    final classification = meta["classification"] ?? "C";
+    final classShort = classification.toString().startsWith('I') ? 'I' : 'C';
+
+    // Guarded exactly like the original per-row code: some exercises have a
+    // malformed particular_toggles (a list of {"v":...,"s":...} maps rather
+    // than plain strings), which List<String>.from() throws on. That must
+    // degrade to "-" for those rows, never take out the whole export.
+    List<String> toggles = const [];
+    try {
+      toggles = List<String>.from(meta["particular_toggles"] ?? []);
+    } catch (_) {}
+
+    Map<String, String> phaseLabels = const {};
+    if (ex.phaseDescriptions != null) {
+      try {
+        final Map<String, dynamic> decoded = jsonDecode(ex.phaseDescriptions!);
+        final phs = decoded["phases"] as Map<String, dynamic>? ?? {};
+        phaseLabels = {
+          for (final e in phs.entries) e.key: e.value.toString().toUpperCase()
+        };
+      } catch (_) {}
+    }
+
+    return _MdExerciseData(
+      fullName: ex.fullName,
+      loadType: details.type,
+      isIsometric: details.isIsometric,
+      isUnilateral: ex.isUnilateral,
+      loadNature:
+          "[$classShort] ${details.isIsometric ? 'ISO+' : ''}${details.type}",
+      toggles: toggles,
+      phaseLabels: phaseLabels,
+      description: meta["description"]?.toString() ?? "",
+    );
+  }
+
+  static Uint8List _buildWorkoutMarkdownBytes(_MdExportArgs args) {
     final rows = args.rows;
+    final exercises = args.exercises;
+    final logs = args.logs;
     final bwMap = args.bwMap;
     final somaticMap = args.somaticMap;
     final lang = args.lang;
     final buffer = StringBuffer();
 
-    // Grouping by Month/Year and then by Day
-    final Map<String, Map<String, List<_WorkoutExportRow>>> groupedData = {};
-    for (var r in rows) {
-      final monthKey = DateFormat('MMMM yyyy').format(r.log.date);
-      final dayKey = DateFormat('yyyy-MM-dd').format(r.log.date);
-
-      groupedData.putIfAbsent(monthKey, () => {});
-      groupedData[monthKey]!.putIfAbsent(dayKey, () => []).add(r);
+    final Map<int, _MdExerciseData> exDataCache = {};
+    _MdExerciseData exDataFor(int id) {
+      final cached = exDataCache[id];
+      if (cached != null) return cached;
+      final built = _buildExerciseData(exercises[id]!);
+      exDataCache[id] = built;
+      return built;
     }
 
-    final sortedMonths = groupedData.keys.toList()
-      ..sort((a, b) {
-        final dateA = DateFormat('MMMM yyyy').parse(a);
-        final dateB = DateFormat('MMMM yyyy').parse(b);
-        return dateA.compareTo(dateB);
-      });
+    // Grouped by calendar day directly (DateTime keys), not by formatted
+    // month/day strings: the old version formatted two date strings per ROW
+    // just to bucket it, then re-PARSED every month key inside the sort
+    // comparator. Month headers now fall out of the sorted day list.
+    final Map<DateTime, List<_MdRow>> byDay = {};
+    for (final r in rows) {
+      final d = logs[r.logId]!.date;
+      byDay
+          .putIfAbsent(DateTime(d.year, d.month, d.day), () => [])
+          .add(r);
+    }
+    final sortedDays = byDay.keys.toList()..sort();
 
     List<Map<String, dynamic>> somaticAnomalies = [];
     List<Map<String, dynamic>> somaticRecoveries = [];
@@ -1551,198 +1732,170 @@ class ExportService {
 
     buffer.writeln("# GYMR // TECHNICAL_WORKOUT_REPORT");
     buffer.writeln(
-        "${tr(lang, 'Generated on:')} ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}");
+        "${tr(lang, 'Generated on:')} ${_mdGeneratedAtFormat.format(DateTime.now())}");
     buffer.writeln();
 
-    for (var monthKey in sortedMonths) {
-      buffer.writeln("## ${monthKey.toUpperCase()}");
-      buffer.writeln();
+    // Header strings are identical for every day, so they are built once
+    // (16 tr() lookups + interpolation per day adds up over ~800 days).
+    final tableHeader =
+        "| ${tr(lang, 'SET')} | TIME | ${tr(lang, 'EXERCISE')} | UTIL. | L/R | NAT. | ${tr(lang, 'LOAD')} | REPS/SECS | EORM | PR | RPE | RIR | TECH | FAIL | ${tr(lang, 'TOGGLES')} | ${tr(lang, 'NOTES')} |";
+    const tableSeparator =
+        "|:---|:---:|:---|:---:|:---:|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---|:---|:---|";
 
-      final monthDays = groupedData[monthKey]!;
-      final sortedDays = monthDays.keys.toList()..sort();
+    int currentYear = -1;
+    int currentMonth = -1;
 
-      for (var dayKey in sortedDays) {
-        final dayRows = monthDays[dayKey]!;
-        final displayDate = DateFormat('EEEE, MMM d, yyyy')
-            .format(DateTime.parse(dayKey))
-            .toUpperCase();
-
-        buffer.writeln("### $displayDate");
+    for (final day in sortedDays) {
+      if (day.year != currentYear || day.month != currentMonth) {
+        currentYear = day.year;
+        currentMonth = day.month;
+        buffer.writeln("## ${_mdMonthFormat.format(day).toUpperCase()}");
         buffer.writeln();
-        buffer.writeln(
-            "| ${tr(lang, 'SET')} | TIME | ${tr(lang, 'EXERCISE')} | UTIL. | L/R | NAT. | ${tr(lang, 'LOAD')} | REPS/SECS | EORM | PR | RPE | RIR | TECH | FAIL | ${tr(lang, 'TOGGLES')} | ${tr(lang, 'NOTES')} |");
-        buffer.writeln(
-            "|:---|:---:|:---|:---:|:---:|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---|:---|:---|");
+      }
 
-        int daySetCounter = 0;
+      final dayRows = byDay[day]!;
+      // Date strings are per-DAY values that the old code recomputed on
+      // every row (bodyweight key, superset key, somatic date).
+      final dayKey = _mdDayKeyFormat.format(day);
+      final shortDate = _mdShortDateFormat.format(day);
+      final bw = bwMap[dayKey];
 
-        for (var r in dayRows) {
-          final set = r.set;
-          final ex = r.ex;
-          final log = r.log;
+      buffer.writeln("### ${_mdDisplayDateFormat.format(day).toUpperCase()}");
+      buffer.writeln();
+      buffer.writeln(tableHeader);
+      buffer.writeln(tableSeparator);
 
-          final dateKey = DateFormat('yyyy-MM-dd').format(log.date);
-          final bw = bwMap[dateKey];
-          final details = _detectLoadDetails(ex);
+      int daySetCounter = 0;
 
-          double? totalLoad;
-          if (details.type == 'LASTRE') {
+      for (var r in dayRows) {
+        final set = r.set;
+        final exData = exDataFor(r.exId);
+
+        double? totalLoad;
+        switch (exData.loadType) {
+          case 'LASTRE':
+          case 'UNMOVABLE':
             totalLoad = (bw ?? 0) + set.weight;
-          } else if (details.type == 'EXT.LOAD') {
+            break;
+          case 'EXT.LOAD':
             totalLoad = set.weight;
-          } else if (details.type == 'JST.BW') {
+            break;
+          case 'JST.BW':
             totalLoad = bw ?? 0;
-          } else if (details.type == 'UNMOVABLE') {
-            totalLoad = (bw ?? 0) + set.weight;
-          }
+            break;
+        }
 
-          final fullName = ex.fullName;
-          final classification =
-              ex.parsedComplexMetadata["classification"] ?? "C";
-          final classShort =
-              classification.toString().startsWith('I') ? 'I' : 'C';
-          final loadNature =
-              "[$classShort] ${details.isIsometric ? 'ISO+' : ''}${details.type}";
+        final fullName = exData.fullName;
+        final eorm = WorkoutCalculator.calculateEpley1RM(
+            totalLoad ?? set.weight, set.reps);
 
-          final eorm = WorkoutCalculator.calculateEpley1RM(
-              totalLoad ?? set.weight, set.reps);
+        daySetCounter++;
+        final setNumber = daySetCounter;
 
-          daySetCounter++;
-          final setNumber = daySetCounter;
+        // 1. Technique
+        final techText = set.technique?.toString() ?? "-";
 
-          // 1. Technique
-          final techText = set.technique?.toString() ?? "-";
+        // 2. Failure Phase
+        String failureText = "-";
+        if (set.failurePhase != null) {
+          final phaseKey = set.failurePhase.toString();
+          failureText = exData.phaseLabels[phaseKey] ?? "PHASE $phaseKey";
+        }
 
-          // 2. Failure Phase
-          String failureText = "-";
-          if (set.failurePhase != null) {
-            Map<String, dynamic> phs = {};
-            if (ex.phaseDescriptions != null) {
-              try {
-                final Map<String, dynamic> meta =
-                    jsonDecode(ex.phaseDescriptions!);
-                phs = meta["phases"] as Map<String, dynamic>? ?? {};
-              } catch (_) {}
-            }
-            failureText = (phs[set.failurePhase.toString()] ??
-                    "PHASE ${set.failurePhase}")
-                .toString()
-                .toUpperCase();
-          }
+        // set.complexMetadata is decoded ONCE and reused for both toggles
+        // (3) and side detection (5).
+        Map<String, dynamic>? setMeta;
+        if (set.complexMetadata != null) {
+          try {
+            setMeta = jsonDecode(set.complexMetadata!) as Map<String, dynamic>;
+          } catch (_) {}
+        }
 
-          // set.complexMetadata is decoded ONCE and reused for both
-          // toggles (3) and side detection (5) - the original decoded it
-          // twice per row, doubling JSON-parse cost across the whole
-          // export for no reason.
-          Map<String, dynamic>? setMeta;
-          if (set.complexMetadata != null) {
-            try {
-              setMeta = jsonDecode(set.complexMetadata!) as Map<String, dynamic>;
-            } catch (_) {}
-          }
+        // 3. Particular Toggles (the available list is precomputed per
+        // exercise, including the guard against malformed toggle data that
+        // once crashed the whole export).
+        String togglesText = "-";
+        if (setMeta != null && exData.toggles.isNotEmpty) {
+          final activeToggles =
+              exData.toggles.where((t) => setMeta![t] == true).toList();
+          if (activeToggles.isNotEmpty) togglesText = activeToggles.join(", ");
+        }
 
-          // 3. Particular Toggles
-          // Regression fix: the original (pre-isolate-rewrite) code wrapped
-          // this whole block in try/catch too - some exercises have a
-          // malformed particular_toggles (e.g. a list of maps instead of
-          // plain strings), which List<String>.from() throws on. That was
-          // always silently tolerated; splitting the jsonDecode into its
-          // own try/catch above accidentally left THIS cast unguarded,
-          // which is what turned a few bad rows into a crash of the whole
-          // export ("type '_Map<String, dynamic>' is not a subtype of
-          // type 'String'").
-          String togglesText = "-";
-          if (setMeta != null) {
-            try {
-              final Map<String, dynamic> exMeta = ex.parsedComplexMetadata;
-              final List<String> availableToggles =
-                  List<String>.from(exMeta["particular_toggles"] ?? []);
-              final activeToggles =
-                  availableToggles.where((t) => setMeta![t] == true).toList();
-              if (activeToggles.isNotEmpty) togglesText = activeToggles.join(", ");
-            } catch (_) {}
-          }
-
-          // 4. Somatic Discomfort (Batch)
-          final somatics = somaticMap[set.id] ?? [];
-          if (somatics.isNotEmpty) {
-            for (final s in somatics) {
-              if (s.spectrumValue < 0) {
-                somaticAnomalies.add({
-                  'date': DateFormat('dd/MM/yy').format(log.date),
-                  'exercise': fullName,
-                  'logs': "${s.description} (Spectrum:${s.spectrumValue})"
-                });
-              } else if (s.spectrumValue > 0) {
-                somaticRecoveries.add({
-                  'date': DateFormat('dd/MM/yy').format(log.date),
-                  'exercise': fullName,
-                  'logs': "${s.description} (Spectrum:${s.spectrumValue})"
-                });
-              }
-            }
-          }
-
-          // 5. Unilateral side detection
-          String sideText = "-";
-          bool isUnilateral = false;
-          if (ex.isUnilateral && setMeta != null) {
-            if (setMeta["side"] == "RIGHT") {
-              sideText = "R";
-              isUnilateral = true;
-            } else if (setMeta["side"] == "LEFT") {
-              sideText = "L";
-              isUnilateral = true;
-            }
-          }
-
-          final timeText = DateFormat('HH:mm').format(set.timestamp);
-          buffer.writeln(
-              "| $setNumber | $timeText | $fullName${isUnilateral ? ' (UNI)' : ''} | ${set.priority?.toUpperCase() ?? "-"} | $sideText | $loadNature | ${set.weight}KG | ${set.reps.toString().replaceAll(_trailingZeroRegex, '')}${details.isIsometric ? 's' : ''} | ${eorm.toStringAsFixed(1)} | ${set.isPr ? "**YES**" : ""} | ${set.rpe?.toString() ?? "-"} | ${set.rir?.toString() ?? "-"} | $techText | $failureText | $togglesText | ${set.notes?.replaceAll('\n', ' ') ?? "-"} |");
-
-          // Global Collections
-          if (!processedExerciseIds.contains(ex.id)) {
-            final desc =
-                ex.parsedComplexMetadata["description"]?.toString() ?? "";
-            if (desc.isNotEmpty)
-              exerciseDescriptions.add({'name': ex.fullName, 'desc': desc});
-            processedExerciseIds.add(ex.id);
-          }
-
-          if (set.supersetGroupId != null) {
-            final dateKeySup = DateFormat('dd/MM/yy').format(log.date);
-            final groupKey = "${dateKeySup}_${set.supersetGroupId}";
-            supersetGroups.putIfAbsent(groupKey, () => []);
-            if (!supersetGroups[groupKey]!
-                .any((e) => e['name'] == ex.fullName)) {
-              supersetGroups[groupKey]!.add({
-                'name': ex.fullName,
-                'supersetName': set.supersetName ?? 'SUPERSET',
-                'date': dateKeySup
+        // 4. Somatic Discomfort (Batch)
+        final somatics = somaticMap[set.id];
+        if (somatics != null && somatics.isNotEmpty) {
+          for (final s in somatics) {
+            if (s.spectrumValue < 0) {
+              somaticAnomalies.add({
+                'date': shortDate,
+                'exercise': fullName,
+                'logs': "${s.description} (Spectrum:${s.spectrumValue})"
+              });
+            } else if (s.spectrumValue > 0) {
+              somaticRecoveries.add({
+                'date': shortDate,
+                'exercise': fullName,
+                'logs': "${s.description} (Spectrum:${s.spectrumValue})"
               });
             }
           }
         }
 
-        final dayLog = dayRows.first.log;
-        final rawNotes = dayLog.notes ?? "";
-        final cleanNotes =
-            rawNotes.replaceAll(_sessionSpectrumTagRegex, '').trim();
-        final noteBlocks = cleanNotes
-            .split('||NOTE||')
-            .map((n) => n.trim())
-            .where((n) => n.isNotEmpty)
-            .toList();
-        if (noteBlocks.isNotEmpty) {
-          buffer.writeln("**SESSION_GENERAL_NOTES:**");
-          for (var ni = 0; ni < noteBlocks.length; ni++) {
-            buffer.writeln("- **[${ni + 1}]** ${noteBlocks[ni].toUpperCase()}");
+        // 5. Unilateral side detection
+        String sideText = "-";
+        bool isUnilateral = false;
+        if (exData.isUnilateral && setMeta != null) {
+          if (setMeta["side"] == "RIGHT") {
+            sideText = "R";
+            isUnilateral = true;
+          } else if (setMeta["side"] == "LEFT") {
+            sideText = "L";
+            isUnilateral = true;
           }
-          buffer.writeln();
         }
 
+        final timeText = _mdTimeFormat.format(set.timestamp);
+        buffer.writeln(
+            "| $setNumber | $timeText | $fullName${isUnilateral ? ' (UNI)' : ''} | ${set.priority?.toUpperCase() ?? "-"} | $sideText | ${exData.loadNature} | ${set.weight}KG | ${set.reps.toString().replaceAll(_trailingZeroRegex, '')}${exData.isIsometric ? 's' : ''} | ${eorm.toStringAsFixed(1)} | ${set.isPr ? "**YES**" : ""} | ${set.rpe?.toString() ?? "-"} | ${set.rir?.toString() ?? "-"} | $techText | $failureText | $togglesText | ${set.notes?.replaceAll('\n', ' ') ?? "-"} |");
+
+        // Global Collections
+        if (processedExerciseIds.add(r.exId) &&
+            exData.description.isNotEmpty) {
+          exerciseDescriptions
+              .add({'name': fullName, 'desc': exData.description});
+        }
+
+        if (set.supersetGroupId != null) {
+          final groupKey = "${shortDate}_${set.supersetGroupId}";
+          final group = supersetGroups.putIfAbsent(groupKey, () => []);
+          if (!group.any((e) => e['name'] == fullName)) {
+            group.add({
+              'name': fullName,
+              'supersetName': set.supersetName ?? 'SUPERSET',
+              'date': shortDate
+            });
+          }
+        }
+      }
+
+      final dayLog = logs[dayRows.first.logId]!;
+      final rawNotes = dayLog.notes ?? "";
+      final cleanNotes =
+          rawNotes.replaceAll(_sessionSpectrumTagRegex, '').trim();
+      final noteBlocks = cleanNotes
+          .split('||NOTE||')
+          .map((n) => n.trim())
+          .where((n) => n.isNotEmpty)
+          .toList();
+      if (noteBlocks.isNotEmpty) {
+        buffer.writeln("**SESSION_GENERAL_NOTES:**");
+        for (var ni = 0; ni < noteBlocks.length; ni++) {
+          buffer.writeln("- **[${ni + 1}]** ${noteBlocks[ni].toUpperCase()}");
+        }
         buffer.writeln();
       }
+
+      buffer.writeln();
     }
 
     if (somaticAnomalies.isNotEmpty) {
@@ -1791,7 +1944,10 @@ class ExportService {
       buffer.writeln();
     }
 
-    return buffer.toString();
+    // Encoded here rather than on the calling isolate: the report is
+    // several MB of text at multi-year scale, and returning bytes means the
+    // UI isolate only has to write them to disk.
+    return const Utf8Encoder().convert(buffer.toString());
   }
 
   // Shared with kns_tree_manager_screen.dart (KNST.FIXER/KNST.ALERT), so
