@@ -15,12 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqlite3/sqlite3.dart';
 import '../providers/theme_provider.dart';
 import '../localization/strings.dart';
-
-class LoadDetails {
-  final String type;
-  final bool isIsometric;
-  LoadDetails({required this.type, required this.isIsometric});
-}
+import '../logic/load_math.dart';
 
 class SomaticLogEntry {
   final int id;
@@ -411,34 +406,15 @@ class ExportService {
     return map;
   }
 
-  // Compiled once instead of on every _detectLoadDetails call - this runs
-  // once per exported set, so a multi-year export recompiling it per row
-  // adds up.
-  static final RegExp _loadTypeRegex = RegExp(r'\[NT:(.*)\|ISO:(.*)\]');
-
-  static LoadDetails _detectLoadDetails(BaseExercise ex) {
-    final intentionText = ex.intention ?? '';
-    final metaMatch = _loadTypeRegex.firstMatch(intentionText);
-
-    if (metaMatch != null) {
-      return LoadDetails(
-        type: metaMatch.group(1) ?? 'EXT.LOAD',
-        isIsometric: metaMatch.group(2) == 'true',
+  // Load-type detection lives in lib/logic/load_math.dart now - shared
+  // with workout_manager.dart, WB.editor.dart, charts_provider.dart and
+  // full_dataset_screen.dart, which each used to carry their own
+  // (silently diverging) copy of this exact regex+fallback logic.
+  static LoadDetails _detectLoadDetails(BaseExercise ex) => detectLoadDetails(
+        intention: ex.intention,
+        tissueName: ex.tissueName,
+        field: ex.field,
       );
-    }
-
-    String type = 'EXT.LOAD';
-    if (['LASTRE', 'EXT.LOAD', 'JST.BW'].contains(ex.tissueName)) {
-      type = ex.tissueName!;
-    } else if (['LASTRE', 'EXT.LOAD', 'JST.BW'].contains(ex.field)) {
-      type = ex.field!;
-    }
-
-    return LoadDetails(
-      type: type,
-      isIsometric: intentionText.startsWith('[ISO]'),
-    );
-  }
 
   static String _encodeCsv(List<List<dynamic>> rows) {
     return rows.map((row) {
@@ -510,13 +486,17 @@ class ExportService {
   // widths/visibility filtering - didn't need renumbering.
   static const List<String> kPdfColumnKeys = [
     'SET', 'EXERCISE', 'UTIL', 'LR', 'NAT', 'LOAD', 'REPS', 'EORM', 'PR',
-    'RPE', 'RIR', 'TECH', 'FAIL', 'TOGGLES', 'NOTES', 'TIME'
+    'RPE', 'RIR', 'TECH', 'FAIL', 'TOGGLES', 'NOTES', 'TIME', 'MOD'
   ];
   static const Map<String, String> kPdfColumnLabels = {
     'SET': 'SET', 'EXERCISE': 'EXERCISE', 'UTIL': 'UTIL.', 'LR': 'L/R',
     'NAT': 'NAT.', 'LOAD': 'LOAD', 'REPS': 'REPS/SECS', 'EORM': 'EORM',
     'PR': 'PR', 'RPE': 'RPE', 'RIR': 'RIR', 'TECH': 'TECH', 'FAIL': 'FAIL',
-    'TOGGLES': 'TOGGLES', 'NOTES': 'NOTES', 'TIME': 'TIME'
+    'TOGGLES': 'TOGGLES', 'NOTES': 'NOTES', 'TIME': 'TIME',
+    // Resistance modifier (negative = assisted, positive = added band
+    // resistance) - captured on every set but never surfaced in any export
+    // before this.
+    'MOD': 'MOD',
   };
 
   // Per-exercise data shared by PDF/Excel row loops - fullName re-decodes
@@ -706,25 +686,18 @@ class ExportService {
                 final dateKey = DateFormat('yyyy-MM-dd').format(log.date);
                 final bw = bwMap[dateKey];
 
-                double? totalLoad;
-                switch (exData.loadType) {
-                  case 'LASTRE':
-                  case 'UNMOVABLE':
-                    totalLoad = (bw ?? 0) + set.weight;
-                    break;
-                  case 'EXT.LOAD':
-                    totalLoad = set.weight;
-                    break;
-                  case 'JST.BW':
-                    totalLoad = bw ?? 0;
-                    break;
-                }
+                final totalLoad = computeEffectiveLoad(
+                  loadType: exData.loadType,
+                  rawWeight: set.weight,
+                  bodyweight: bw ?? 0,
+                  resistanceModifier: set.assistanceValue,
+                );
 
                 final fullName = exData.fullName;
                 final loadNature = exData.loadNature;
 
                 final eorm = WorkoutCalculator.calculateEpley1RM(
-                    totalLoad ?? set.weight, set.reps);
+                    totalLoad, set.reps);
 
                 // Increment absolute set counter for the day
                 daySetCounter++;
@@ -836,10 +809,18 @@ class ExportService {
                     '',
                     '',
                     '',
+                    '',
                   ]);
                 } else if (currentBatch == null && lastBatch != null) {
                   lastBatch = null;
                 }
+
+                // Resistance modifier: captured on every set but never
+                // surfaced in any export before this - negative = assisted,
+                // positive = added band resistance.
+                final modText = set.assistanceValue == null
+                    ? "-"
+                    : "${set.assistanceValue! > 0 ? '+' : ''}${set.assistanceValue}${set.assistanceType != null ? ' ${set.assistanceType}' : ''}";
 
                 tableData.add([
                   setNumber.toString(),
@@ -858,6 +839,7 @@ class ExportService {
                   togglesText,
                   set.notes ?? "-",
                   timeText,
+                  modText,
                 ]);
 
                 // Global Collections
@@ -903,6 +885,7 @@ class ExportService {
                   tr(lang, 'TOGGLES'),
                   tr(lang, 'NOTES'),
                   'TIME',
+                  'MOD',
                 ];
                 final allColumnWidths = <int, pw.TableColumnWidth>{
                   0: const pw.FixedColumnWidth(20),
@@ -921,6 +904,7 @@ class ExportService {
                   13: const pw.FlexColumnWidth(0.4),
                   14: const pw.FlexColumnWidth(0.8),
                   15: const pw.FixedColumnWidth(30),
+                  16: const pw.FixedColumnWidth(45),
                 };
                 content.add(pw.TableHelper.fromTextArray(
                   headers: segmentStartRow == 0
@@ -1149,6 +1133,7 @@ class ExportService {
     sheet.setColumnWidth(14, 15); // TOGGLES
     sheet.setColumnWidth(15, 25); // NOTES
     sheet.setColumnWidth(16, 25); // SOMATIC
+    sheet.setColumnWidth(17, 15); // MOD
 
     // 1. PRE-FETCH DATA (BATCH)
     final allDates =
@@ -1211,7 +1196,11 @@ class ExportService {
         TextCellValue('FAILURE_PHASE'),
         TextCellValue(tr(lang, 'TOGGLES')),
         TextCellValue(tr(lang, 'NOTES')),
-        TextCellValue(tr(lang, 'SOMATIC'))
+        TextCellValue(tr(lang, 'SOMATIC')),
+        // Resistance modifier - captured on every set but never surfaced
+        // in any export before this. Negative = assisted, positive =
+        // added band resistance.
+        TextCellValue('MOD'),
       ]);
 
       int daySetCounter = 0;
@@ -1225,25 +1214,23 @@ class ExportService {
         final dateKey = DateFormat('yyyy-MM-dd').format(log.date);
         final bw = bwMap[dateKey];
 
-        double? totalLoad;
-        switch (exData.loadType) {
-          case 'LASTRE':
-          case 'UNMOVABLE':
-            totalLoad = (bw ?? 0) + set.weight;
-            break;
-          case 'EXT.LOAD':
-            totalLoad = set.weight;
-            break;
-          case 'JST.BW':
-            totalLoad = bw ?? 0;
-            break;
-        }
+        // computeEffectiveLoad folds in the set's resistance modifier
+        // (assisted machine/band = negative, added band resistance =
+        // positive) - the per-format switches this replaced never applied
+        // it, so EORM/totals were computed on the pre-modifier weight even
+        // though workout_manager's live display already accounted for it.
+        final totalLoad = computeEffectiveLoad(
+          loadType: exData.loadType,
+          rawWeight: set.weight,
+          bodyweight: bw ?? 0,
+          resistanceModifier: set.assistanceValue,
+        );
 
         final fullName = exData.fullName;
         final loadNature = exData.loadNature;
 
         final eorm = WorkoutCalculator.calculateEpley1RM(
-            totalLoad ?? set.weight, set.reps);
+            totalLoad, set.reps);
 
         daySetCounter++;
         final setNumber = daySetCounter;
@@ -1313,12 +1300,15 @@ class ExportService {
           TextCellValue(failureText),
           TextCellValue(togglesText),
           TextCellValue(set.notes ?? ""),
-          TextCellValue(somaticText)
+          TextCellValue(somaticText),
+          TextCellValue(set.assistanceValue == null
+              ? ""
+              : "${set.assistanceValue! > 0 ? '+' : ''}${set.assistanceValue}${set.assistanceType != null ? ' ${set.assistanceType}' : ''}"),
         ]);
 
         if (priorityStyle != null) {
           final rowIdx = sheet.maxRows - 1;
-          for (var colIdx = 0; colIdx < 17; colIdx++) {
+          for (var colIdx = 0; colIdx < 18; colIdx++) {
             sheet
                 .cell(CellIndex.indexByColumnRow(
                     columnIndex: colIdx, rowIndex: rowIdx))
@@ -1426,17 +1416,12 @@ class ExportService {
         final dateKey = DateFormat('yyyy-MM-dd').format(log.date);
         final bw = bwMap[dateKey];
         final details = _detectLoadDetails(ex);
-
-        double? totalLoad;
-        if (details.type == 'LASTRE') {
-          totalLoad = (bw ?? 0) + set.weight;
-        } else if (details.type == 'EXT.LOAD') {
-          totalLoad = set.weight;
-        } else if (details.type == 'JST.BW') {
-          totalLoad = bw ?? 0;
-        } else if (details.type == 'UNMOVABLE') {
-          totalLoad = (bw ?? 0) + set.weight;
-        }
+        final totalLoad = computeEffectiveLoad(
+          loadType: details.type,
+          rawWeight: set.weight,
+          bodyweight: bw ?? 0,
+          resistanceModifier: set.assistanceValue,
+        );
 
         final fullName = ex.fullName;
         final classification =
@@ -1447,7 +1432,7 @@ class ExportService {
             "[$classShort] ${details.isIsometric ? 'ISO+' : ''}${details.type}";
 
         final eorm = WorkoutCalculator.calculateEpley1RM(
-            totalLoad ?? set.weight, set.reps);
+            totalLoad, set.reps);
 
         daySetCounter++;
         final setNumber = daySetCounter;
@@ -1782,9 +1767,9 @@ class ExportService {
     // Header strings are identical for every day, so they are built once
     // (16 tr() lookups + interpolation per day adds up over ~800 days).
     final tableHeader =
-        "| ${tr(lang, 'SET')} | TIME | ${tr(lang, 'EXERCISE')} | UTIL. | L/R | NAT. | ${tr(lang, 'LOAD')} | REPS/SECS | EORM | PR | RPE | RIR | TECH | FAIL | ${tr(lang, 'TOGGLES')} | ${tr(lang, 'NOTES')} |";
+        "| ${tr(lang, 'SET')} | TIME | ${tr(lang, 'EXERCISE')} | UTIL. | L/R | NAT. | ${tr(lang, 'LOAD')} | REPS/SECS | EORM | PR | RPE | RIR | TECH | FAIL | ${tr(lang, 'TOGGLES')} | ${tr(lang, 'NOTES')} | MOD |";
     const tableSeparator =
-        "|:---|:---:|:---|:---:|:---:|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---|:---|:---|";
+        "|:---|:---:|:---|:---:|:---:|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---|:---|:---|:---:|";
 
     int currentYear = -1;
     int currentMonth = -1;
@@ -1815,23 +1800,21 @@ class ExportService {
         final set = r.set;
         final exData = exDataFor(r.exId);
 
-        double? totalLoad;
-        switch (exData.loadType) {
-          case 'LASTRE':
-          case 'UNMOVABLE':
-            totalLoad = (bw ?? 0) + set.weight;
-            break;
-          case 'EXT.LOAD':
-            totalLoad = set.weight;
-            break;
-          case 'JST.BW':
-            totalLoad = bw ?? 0;
-            break;
-        }
+        // computeEffectiveLoad folds in the set's resistance modifier
+        // (assisted machine/band = negative, added band resistance =
+        // positive) - the per-format switches this replaced never applied
+        // it, so EORM/totals were computed on the pre-modifier weight even
+        // though workout_manager's live display already accounted for it.
+        final totalLoad = computeEffectiveLoad(
+          loadType: exData.loadType,
+          rawWeight: set.weight,
+          bodyweight: bw ?? 0,
+          resistanceModifier: set.assistanceValue,
+        );
 
         final fullName = exData.fullName;
         final eorm = WorkoutCalculator.calculateEpley1RM(
-            totalLoad ?? set.weight, set.reps);
+            totalLoad, set.reps);
 
         daySetCounter++;
         final setNumber = daySetCounter;
@@ -1899,8 +1882,14 @@ class ExportService {
         }
 
         final timeText = _mdTimeFormat.format(set.timestamp);
+        // Resistance modifier: was captured on every set but never
+        // surfaced in any export before this - negative = assisted,
+        // positive = added band resistance.
+        final modText = set.assistanceValue == null
+            ? "-"
+            : "${set.assistanceValue! > 0 ? '+' : ''}${set.assistanceValue}${set.assistanceType != null ? ' ${set.assistanceType}' : ''}";
         buffer.writeln(
-            "| $setNumber | $timeText | $fullName${isUnilateral ? ' (UNI)' : ''} | ${set.priority?.toUpperCase() ?? "-"} | $sideText | ${exData.loadNature} | ${set.weight}KG | ${set.reps.toString().replaceAll(_trailingZeroRegex, '')}${exData.isIsometric ? 's' : ''} | ${eorm.toStringAsFixed(1)} | ${set.isPr ? "**YES**" : ""} | ${set.rpe?.toString() ?? "-"} | ${set.rir?.toString() ?? "-"} | $techText | $failureText | $togglesText | ${set.notes?.replaceAll('\n', ' ') ?? "-"} |");
+            "| $setNumber | $timeText | $fullName${isUnilateral ? ' (UNI)' : ''} | ${set.priority?.toUpperCase() ?? "-"} | $sideText | ${exData.loadNature} | ${set.weight}KG | ${set.reps.toString().replaceAll(_trailingZeroRegex, '')}${exData.isIsometric ? 's' : ''} | ${eorm.toStringAsFixed(1)} | ${set.isPr ? "**YES**" : ""} | ${set.rpe?.toString() ?? "-"} | ${set.rir?.toString() ?? "-"} | $techText | $failureText | $togglesText | ${set.notes?.replaceAll('\n', ' ') ?? "-"} | $modText |");
 
         // Global Collections
         if (processedExerciseIds.add(r.exId) &&
@@ -2494,8 +2483,16 @@ class ExportService {
         "COMPLEX_METADATA",
         "IS_UNILATERAL",
         "DESCRIPTION",
+        // ASSISTANCE_TYPE now sources the exercise's single default
+        // resistance-modifier label (schema v34+) instead of the raw
+        // assistanceTypes JSON blob - every exercise only ever used one
+        // entry in practice, so this is now a plain human-readable string.
+        // RESISTANCE_MODIFIER is the signed default value (negative =
+        // assisted, positive = added band resistance), appended at the end
+        // to avoid renumbering every column after it.
         "ASSISTANCE_TYPE",
-        "NAME_ORDER"
+        "NAME_ORDER",
+        "RESISTANCE_MODIFIER",
       ]
     ];
 
@@ -2519,8 +2516,9 @@ class ExportService {
         ex.complexMetadata ?? "",
         ex.isUnilateral ? 1 : 0,
         desc,
-        ex.assistanceTypes ?? "",
+        ex.defaultResistanceLabel ?? "",
         ex.nameOrder ?? "",
+        ex.defaultResistanceValue?.toString() ?? "",
       ]);
     }
 
@@ -2562,8 +2560,9 @@ class ExportService {
       TextCellValue("DESCRIPTION"),
       TextCellValue("ASSISTANCE_TYPE"),
       TextCellValue("NAME_ORDER"),
+      TextCellValue("RESISTANCE_MODIFIER"),
     ]);
-    for (int ci = 0; ci < 19; ci++) {
+    for (int ci = 0; ci < 20; ci++) {
       sheet
           .cell(CellIndex.indexByColumnRow(columnIndex: ci, rowIndex: 0))
           .cellStyle = headerStyle;
@@ -2589,8 +2588,9 @@ class ExportService {
         TextCellValue(ex.complexMetadata ?? ""),
         IntCellValue(ex.isUnilateral ? 1 : 0),
         TextCellValue(desc),
-        TextCellValue(ex.assistanceTypes ?? ""),
+        TextCellValue(ex.defaultResistanceLabel ?? ""),
         TextCellValue(ex.nameOrder ?? ""),
+        TextCellValue(ex.defaultResistanceValue?.toString() ?? ""),
       ]);
     }
 
@@ -2677,8 +2677,11 @@ class ExportService {
         patternType: Value(cell(13)),
         complexMetadata: Value(complexMeta),
         isUnilateral: Value(isUnilateral),
-        assistanceTypes: Value(cell(17)),
+        // cell(17)/ASSISTANCE_TYPE is the plain label now (schema v34+),
+        // not a JSON blob - see exportExercisesToCsv/Excel.
+        defaultResistanceLabel: Value(cell(17)),
         nameOrder: Value(cell(18)),
+        defaultResistanceValue: Value(double.tryParse(cell(19) ?? '')),
       );
 
       if (existing != null) {
@@ -2757,7 +2760,8 @@ class ExportService {
         "IS_UNILATERAL",
         "DESCRIPTION",
         "ASSISTANCE_TYPE",
-        "NAME_ORDER"
+        "NAME_ORDER",
+        "RESISTANCE_MODIFIER",
       ],
       [
         "PULL UP",
@@ -2777,6 +2781,7 @@ class ExportService {
         "",
         "0",
         "Weighted pull up focused on latissimus dorsi development.",
+        "",
         "",
         ""
       ]

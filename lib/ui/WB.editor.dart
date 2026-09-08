@@ -9,6 +9,7 @@ import '../providers/database_provider.dart';
 import '../providers/theme_provider.dart';
 import '../database/database.dart';
 import '../logic/calculator.dart';
+import '../logic/load_math.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
 import 'main_scaffold.dart';
@@ -2046,17 +2047,10 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
   Widget build(BuildContext context) {
     final lang = ref.watch(languageProvider).value ?? 'en';
     final e = widget.exercise;
-    final intentionText = e.intention ?? '';
-    final metaMatch =
-        RegExp(r'\[NT:(.*)\|ISO:(.*)\]').firstMatch(intentionText);
-    String loadType = 'EXT.LOAD';
-    bool isIso = intentionText.startsWith('[ISO]');
-    if (metaMatch != null) {
-      loadType = metaMatch.group(1) ?? 'EXT.LOAD';
-      isIso = metaMatch.group(2) == 'true';
-    } else if (['LASTRE', 'EXT.LOAD', 'JST.BW', 'BANDED', 'UNMOVABLE'].contains(e.field)) {
-      loadType = e.field!;
-    }
+    final loadDetails = detectLoadDetails(
+        intention: e.intention, tissueName: e.tissueName, field: e.field);
+    final loadType = loadDetails.type;
+    final isIso = loadDetails.isIsometric;
 
     final settings = ref.watch(themeSettingsProvider).value ?? {};
     final tC = ref.read(themeControllerProvider);
@@ -2114,14 +2108,18 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
       case 'EXT.LOAD':
         typeColor = uiTagExtload;
         break;
-      case 'BANDED':
-        typeColor = uiTagBanded;
-        break;
       case 'UNMOVABLE':
         typeColor = uiTagUnmovable;
         break;
       default:
         typeColor = LabColors.primary;
+    }
+    // See workout_manager.dart's identical repurposing: BANDED stopped
+    // being its own load type (schema v34) and became a resistance
+    // modifier any load type can carry - UI_TAG_BANDED now flags "this
+    // exercise has a configured default modifier" instead.
+    if (e.defaultResistanceValue != null) {
+      typeColor = uiTagBanded;
     }
     final isoColor = uiTagIso;
 

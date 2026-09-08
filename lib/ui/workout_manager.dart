@@ -10,6 +10,7 @@ import '../providers/database_provider.dart';
 import '../providers/theme_provider.dart';
 import '../database/database.dart';
 import '../logic/calculator.dart';
+import '../logic/load_math.dart';
 import '../services/ovarch_plan_injection_service.dart';
 import 'styles.dart';
 import 'lab_widgets.dart';
@@ -1188,20 +1189,11 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
           ...group.map((exId) {
             final exSets = groupedByEx[exId]!.length;
             final ex = groupedByEx[exId]!.first.readTable(db.baseExercises);
-            final exIntention = ex.intention ?? '';
-            final exMetaMatch =
-                RegExp(r'\[NT:(.*)\|ISO:(.*)\]').firstMatch(exIntention);
-            String exLoadType = 'EXT.LOAD';
-            bool exIsIso = exIntention.startsWith('[ISO]');
-            bool exIsJst = false;
-            if (exMetaMatch != null) {
-              exLoadType = exMetaMatch.group(1) ?? 'EXT.LOAD';
-              exIsIso = exMetaMatch.group(2) == 'true';
-              exIsJst = exLoadType == 'JST.BW';
-            } else if (['LASTRE', 'EXT.LOAD', 'JST.BW', 'BANDED'].contains(ex.field)) {
-              exLoadType = ex.field!;
-              exIsJst = exLoadType == 'JST.BW';
-            }
+            final exDetails = detectLoadDetails(
+                intention: ex.intention, tissueName: ex.tissueName, field: ex.field);
+            final exLoadType = exDetails.type;
+            final exIsIso = exDetails.isIsometric;
+            final exIsJst = exLoadType == 'JST.BW';
             final exerciseKey = 'ex_${firstExId}_$exId';
             final mod = _ExerciseModule(
               key: ValueKey(exerciseKey),
@@ -1933,6 +1925,11 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
               reps: 0,
               orderIndex: drift.Value(nextOrder),
               complexMetadata: drift.Value(jsonEncode(rightMeta)),
+              // Copied once at set-creation time, same as the timestamp -
+              // changing the exercise's default afterward never rewrites
+              // this set.
+              assistanceValue: drift.Value(e.defaultResistanceValue),
+              assistanceType: drift.Value(e.defaultResistanceLabel),
               timestamp: drift.Value(DateTime(
                   d.year,
                   d.month,
@@ -1957,6 +1954,8 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
               reps: 0,
               orderIndex: drift.Value(nextOrder),
               complexMetadata: drift.Value(jsonEncode(leftMeta)),
+              assistanceValue: drift.Value(e.defaultResistanceValue),
+              assistanceType: drift.Value(e.defaultResistanceLabel),
               timestamp: drift.Value(DateTime(
                       d.year,
                       d.month,
@@ -1974,6 +1973,8 @@ class _WorkoutDayPageState extends ConsumerState<_WorkoutDayPage> {
             reps: 0,
             orderIndex: drift.Value(nextOrder),
             complexMetadata: drift.Value(initialMetadata),
+            assistanceValue: drift.Value(e.defaultResistanceValue),
+            assistanceType: drift.Value(e.defaultResistanceLabel),
             timestamp: drift.Value(DateTime(
                 d.year,
                 d.month,
@@ -2238,11 +2239,18 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
       case 'EXT.LOAD':
         typeColor = uiTagExtload;
         break;
-      case 'BANDED':
-        typeColor = uiTagBanded;
-        break;
       default:
         typeColor = LabColors.primary;
+    }
+    // BANDED stopped being its own load type (schema v34, assistance/bands
+    // overhaul - it never had distinct math anyway) and became a
+    // resistance modifier any load type can carry. UI_TAG_BANDED is
+    // repurposed to flag that instead: it now overrides the type color
+    // whenever this exercise has a configured default modifier, so a
+    // band-assisted/banded exercise still reads visually distinct
+    // regardless of its underlying LASTRE/EXT.LOAD/JST.BW/UNMOVABLE shape.
+    if (e.defaultResistanceValue != null) {
+      typeColor = uiTagBanded;
     }
     final isoColor = uiTagIso;
     final moduleBorderColor = tC.getColor(settings, 'UI_TAG_MODULE_BORDER',
@@ -3503,6 +3511,11 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
             complexMetadata: drift.Value(jsonEncode({"side": "RIGHT"})),
             priority: drift.Value(fS.priority),
             orderIndex: drift.Value(fS.orderIndex),
+            // Carries forward whatever modifier the group's first set has -
+            // same pattern as weight (stays consistent across sets of one
+            // exercise, editable per set).
+            assistanceValue: drift.Value(fS.assistanceValue),
+            assistanceType: drift.Value(fS.assistanceType),
           ));
       await db.into(db.workoutSets).insert(WorkoutSetsCompanion.insert(
             logId: fS.logId,
@@ -3514,6 +3527,8 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
             complexMetadata: drift.Value(jsonEncode({"side": "LEFT"})),
             priority: drift.Value(fS.priority),
             orderIndex: drift.Value(fS.orderIndex),
+            assistanceValue: drift.Value(fS.assistanceValue),
+            assistanceType: drift.Value(fS.assistanceType),
           ));
     } else {
       await db.into(db.workoutSets).insert(WorkoutSetsCompanion.insert(
@@ -3525,6 +3540,8 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
             priority: drift.Value(fS.priority),
             complexMetadata: drift.Value(fS.complexMetadata),
             orderIndex: drift.Value(fS.orderIndex),
+            assistanceValue: drift.Value(fS.assistanceValue),
+            assistanceType: drift.Value(fS.assistanceType),
           ));
     }
   }
@@ -3602,6 +3619,14 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
   bool _exp = false;
   bool _isIso = false;
   bool _isAssisted = false;
+  // Sign of the modifier (schema v34+): true = added resistance (a band
+  // providing accommodating resistance increases effective load), false =
+  // assistance subtracted (an assisted machine/band reduces it). _assistC
+  // always holds the unsigned magnitude - this is the sign toggle next to
+  // it. BANDED used to be its own separate load type that did nothing
+  // mathematically; it's now just this modifier applied on top of
+  // whatever the exercise's real load type is.
+  bool _modifierAdds = false;
   bool _hasVpPr = false;
   double _vpValue = 0;
   Timer? _vpTimer;
@@ -3614,15 +3639,17 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     return value.toString();
   }
 
-  // Subtracts the assisted amount (assisted pull-up/dip machine, band,
-  // etc.) from a raw load value. Works for any NAT.LOAD type: for JST.BW
-  // pass bodyweight, for everything else pass the typed weight - the
-  // subtraction happens before LASTRE/UNMOVABLE add bodyweight back in
-  // elsewhere, so it still nets out correctly. Never negative.
+  // Applies the signed resistance modifier (negative = assisted
+  // machine/band, positive = added band resistance) to a raw load value.
+  // Works for any NAT.LOAD type: for JST.BW pass bodyweight, for everything
+  // else pass the typed weight - this happens before LASTRE/UNMOVABLE add
+  // bodyweight back in elsewhere (see _computeVp/actualWeight below), so it
+  // still nets out correctly. Never negative.
   double _applyAssistance(double raw) {
     if (!_isAssisted) return raw;
-    final assist = double.tryParse(_assistC.text) ?? 0;
-    final eff = raw - assist;
+    final magnitude = double.tryParse(_assistC.text) ?? 0;
+    final signed = _modifierAdds ? magnitude : -magnitude;
+    final eff = raw + signed;
     return eff < 0 ? 0 : eff;
   }
 
@@ -3651,9 +3678,10 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     _techC =
         TextEditingController(text: widget.set.technique?.toString() ?? '');
     _isAssisted = widget.set.assistanceValue != null;
+    _modifierAdds = (widget.set.assistanceValue ?? 0) > 0;
     _assistC = TextEditingController(
         text: widget.set.assistanceValue != null
-            ? _formatInputValue(widget.set.assistanceValue!)
+            ? _formatInputValue(widget.set.assistanceValue!.abs())
             : '');
     _assistTypeC = TextEditingController(text: widget.set.assistanceType ?? '');
 
@@ -3737,8 +3765,9 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
     final actualWeight = _applyAssistance(isJst ? widget.bodyWeight : w);
     final rest = widget.set.restTimeSeconds ?? 120;
     final track = (widget.set.trackName ?? '').replaceFirst('[RED_PR]', '').trim();
-    final assistValue =
-        _isAssisted ? (double.tryParse(_assistC.text) ?? 0) : null;
+    final assistValue = _isAssisted
+        ? (_modifierAdds ? 1.0 : -1.0) * (double.tryParse(_assistC.text) ?? 0)
+        : null;
     final assistType = _isAssisted && _assistTypeC.text.trim().isNotEmpty
         ? _assistTypeC.text.trim().toUpperCase()
         : null;
@@ -4438,7 +4467,7 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
         children: [
           Row(
             children: [
-              Text('ASSISTED', style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
+              Text('RESISTANCE_MOD', style: LabStyles.mono(context, fontSize: 9, color: Colors.grey)),
               const Spacer(),
               Switch.adaptive(
                 value: _isAssisted,
@@ -4457,6 +4486,38 @@ class _WorkoutSetInstanceState extends ConsumerState<_WorkoutSetInstance> {
               ),
               if (_isAssisted) ...[
                 const SizedBox(width: 8),
+                // Sign toggle: "-" (assisted, subtracts) vs "+" (added band
+                // resistance) - the same field used to only ever subtract,
+                // since BANDED (a band adding resistance) used to be a
+                // separate load type with no math of its own.
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      _modifierAdds = !_modifierAdds;
+                      _onChanged();
+                    });
+                    modalSetState?.call(() {});
+                  },
+                  child: Container(
+                    width: 28,
+                    height: 36,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                        border: Border.all(
+                            color: _modifierAdds
+                                ? LabColors.accent
+                                : LabColors.primary,
+                            width: 0.5)),
+                    child: Text(_modifierAdds ? '+' : '-',
+                        style: LabStyles.mono(context,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: _modifierAdds
+                                ? LabColors.accent
+                                : LabColors.primary)),
+                  ),
+                ),
+                const SizedBox(width: 4),
                 SizedBox(
                   width: 60,
                   height: 36,

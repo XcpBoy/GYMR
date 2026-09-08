@@ -31,10 +31,29 @@ class BaseExercises extends Table {
   TextColumn get patternType => text().nullable()();
   TextColumn get complexMetadata => text().nullable()();
   BoolColumn get isUnilateral => boolean().withDefault(const Constant(false))();
-  // JSON [{"v":<value>,"s":<bool>}], same shape as bodyPositions - list of
-  // assistance types (BAND, MACHINE ASSIST, PARTNER, etc.) with a per-item
-  // "show in name" flag.
+  // DEPRECATED (schema v34, assistance/bands overhaul): JSON
+  // [{"v":<value>,"s":<bool>}] list of assistance-type name strings. Only
+  // ever had ONE real entry in practice (confirmed: every exercise uses a
+  // single consistent assistance type), so it's replaced by the three
+  // single-value columns below. Column kept (not dropped) so old data
+  // isn't destroyed; migrated into defaultResistance* on upgrade, never
+  // read or written by new code.
   TextColumn get assistanceTypes => text().nullable()();
+  // The exercise's default resistance modifier: a signed value any load
+  // type can carry (negative = assistance subtracted - assisted
+  // machine/band; positive = accommodating resistance added - a band that
+  // adds tension). Copied into a new set's own value at creation time
+  // (never re-read afterward), same as bodyweight is snapshotted per set -
+  // so changing an exercise's default later never rewrites past sets. See
+  // lib/logic/load_math.dart for where this is applied.
+  RealColumn get defaultResistanceValue => real().nullable()();
+  // Free-text label for the modifier (e.g. "BAND", "MACHINE", "PARTNER").
+  // Doubles as the nomenclature piece previously covered by
+  // assistanceTypes - one label, used both for the calculation default AND
+  // (if defaultResistanceShowInName is set) as a token in fullName.
+  TextColumn get defaultResistanceLabel => text().nullable()();
+  BoolColumn get defaultResistanceShowInName =>
+      boolean().withDefault(const Constant(false))();
   // JSON list of piece keys (BODY_POSITION/IMPLEMENTS/PREFIXES/NAME/
   // SUFFIXES/ASSISTANCE/IMPLEMENT_POSITION) controlling the order fullName
   // assembles them in. Null means "use the default order" (see
@@ -83,12 +102,19 @@ class WorkoutSets extends Table {
   TextColumn get priority => text().nullable()();
   TextColumn get supersetGroupId => text().nullable()();
   TextColumn get supersetName => text().nullable()();
-  // Assisted-training input (e.g. assisted pull-up/dip machine or band):
-  // amount subtracted from the set's effective load, for any NAT.LOAD
-  // type. Null = not assisted.
+  // Resistance modifier (schema v34+: SIGNED - negative = assistance
+  // subtracted from the set's effective load, e.g. an assisted pull-up/dip
+  // machine or band; positive = accommodating resistance ADDED, e.g. a
+  // band on a barbell lift). Applies to any NAT.LOAD type. Null = no
+  // modifier. Pre-v34 rows only ever stored a positive "amount subtracted"
+  // value - the v34 migration negates them to fit this convention. See
+  // lib/logic/load_math.dart for where this is applied; copied from the
+  // exercise's defaultResistanceValue at set-creation time, then never
+  // re-read from the exercise afterward.
   RealColumn get assistanceValue => real().nullable()();
   // Free-text, searchable-across-past-sets label for what kind of
-  // assistance was used (e.g. "BAND", "MACHINE", "PARTNER").
+  // modifier was used (e.g. "BAND", "MACHINE", "PARTNER"). Pre-filled from
+  // the exercise's defaultResistanceLabel at set-creation time.
   TextColumn get assistanceType => text().nullable()();
 }
 
@@ -275,7 +301,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 33;
+  int get schemaVersion => 34;
 
   // --- Bidirectional Relational Integrity ---
 
@@ -786,6 +812,101 @@ class AppDatabase extends _$AppDatabase {
           } catch (_) {}
         }
 
+        if (from < 34) {
+          // Assistance/Bands overhaul: BANDED stops being a parallel load
+          // type (it never had its own load math anywhere - every
+          // totalLoad calc across the app silently treated it identically
+          // to EXT.LOAD) and becomes a resistance modifier that can apply
+          // to ANY load type. workout_sets.assistanceValue changes from
+          // "always-positive amount subtracted" to a signed value
+          // (negative = assistance, positive = added band resistance), so
+          // one field/one shared calc (lib/logic/load_math.dart) handles
+          // both physical directions instead of BANDED doing nothing and
+          // assistance being subtract-only.
+          try {
+            await customStatement(
+                'ALTER TABLE base_exercises ADD COLUMN default_resistance_value REAL');
+          } catch (_) {}
+          try {
+            await customStatement(
+                'ALTER TABLE base_exercises ADD COLUMN default_resistance_label TEXT');
+          } catch (_) {}
+          try {
+            await customStatement(
+                'ALTER TABLE base_exercises ADD COLUMN default_resistance_show_in_name INTEGER NOT NULL DEFAULT 0');
+          } catch (_) {}
+
+          // Pre-v34 assistanceValue was always a positive "amount
+          // subtracted" - negate it to fit the new signed convention.
+          try {
+            await customStatement(
+                'UPDATE workout_sets SET assistance_value = -assistance_value WHERE assistance_value IS NOT NULL');
+          } catch (_) {}
+
+          // Per-exercise: pull a default label out of whichever legacy
+          // source has one - the assistance_types nomenclature list (first
+          // entry; confirmed via audit that every exercise only ever used
+          // one) or, for BANDED exercises, fall back to "BAND" (the
+          // bandType/bandTension complexMetadata fields were write-only -
+          // never read anywhere else in the app - so there's nothing
+          // meaningful to carry over from them beyond the fact that the
+          // exercise WAS banded). Also rewrites BANDED to EXT.LOAD in
+          // `intention`, since BANDED never had distinct load math to
+          // begin with.
+          try {
+            final rows = await customSelect(
+                    'SELECT id, assistance_types, intention FROM base_exercises')
+                .get();
+            for (final row in rows) {
+              final id = row.data['id'] as int;
+              String? label;
+              bool showInName = false;
+
+              final rawAssistTypes = row.data['assistance_types'] as String?;
+              if (rawAssistTypes != null && rawAssistTypes.isNotEmpty) {
+                try {
+                  final decoded = jsonDecode(rawAssistTypes);
+                  if (decoded is List && decoded.isNotEmpty) {
+                    final first = decoded.first;
+                    if (first is Map) {
+                      final v = first['v']?.toString();
+                      if (v != null && v.isNotEmpty) {
+                        label = v;
+                        showInName = first['s'] == true;
+                      }
+                    } else if (first is String && first.isNotEmpty) {
+                      label = first;
+                    }
+                  }
+                } catch (_) {}
+              }
+
+              final intentionText = row.data['intention'] as String? ?? '';
+              if (intentionText.contains('[NT:BANDED|')) {
+                label ??= 'BAND';
+                final newIntention =
+                    intentionText.replaceFirst('[NT:BANDED|', '[NT:EXT.LOAD|');
+                await customStatement(
+                    'UPDATE base_exercises SET intention = ? WHERE id = ?',
+                    [newIntention, id]);
+              }
+
+              if (label != null) {
+                await customStatement(
+                    'UPDATE base_exercises SET default_resistance_label = ?, default_resistance_show_in_name = ? WHERE id = ?',
+                    [label, showInName ? 1 : 0, id]);
+              }
+            }
+          } catch (_) {}
+
+          // Legacy rows whose load type lived in `field` rather than the
+          // intention bracket (pre-dates the bracket format entirely).
+          try {
+            await customStatement(
+                "UPDATE base_exercises SET field = 'EXT.LOAD' WHERE field = 'BANDED'");
+          } catch (_) {}
+        }
+
         // Ejecutar alterTable al final si venimos de una versión donde se necesitaba (v18)
         if (from < 18) {
           try {
@@ -1199,8 +1320,19 @@ extension BaseExerciseExtension on BaseExercise {
       _parseNomenclaturePiece(prefixes);
   List<Map<String, dynamic>> get parsedSuffixes =>
       _parseNomenclaturePiece(suffixes);
-  List<Map<String, dynamic>> get parsedAssistanceTypes =>
-      _parseNomenclaturePiece(assistanceTypes);
+  // Single-value stand-in for the old list-based assistanceTypes piece
+  // (schema v34+): every exercise only ever used one assistance/band
+  // label in practice, so defaultResistanceLabel/defaultResistanceShowInName
+  // replace the list, wrapped as a length-0-or-1 "piece" so the existing
+  // per-string token/reorder machinery below (_liveNameTokens, fullName)
+  // doesn't need its own separate code path for this one piece.
+  List<Map<String, dynamic>> get _resistanceNamePiece {
+    final label = defaultResistanceLabel;
+    if (label == null || label.isEmpty) return [];
+    return [
+      {"v": label, "s": defaultResistanceShowInName}
+    ];
+  }
   // Lives inside complexMetadata (key "implement_position") rather than its
   // own column - already decoded to a List by parsedComplexMetadata, so this
   // just normalizes entries to the {"v":...,"s":...} shape (or accepts a
@@ -1269,7 +1401,7 @@ extension BaseExerciseExtension on BaseExercise {
           addTokens('SUFFIXES', parsedSuffixes);
           break;
         case 'ASSISTANCE':
-          addTokens('ASSISTANCE', parsedAssistanceTypes);
+          addTokens('ASSISTANCE', _resistanceNamePiece);
           break;
       }
     }
@@ -1318,7 +1450,7 @@ extension BaseExerciseExtension on BaseExercise {
     addTexts('IMPLEMENT_POSITION', parsedImplementPosition);
     addTexts('PREFIXES', parsedPrefixes);
     addTexts('SUFFIXES', parsedSuffixes);
-    addTexts('ASSISTANCE', parsedAssistanceTypes);
+    addTexts('ASSISTANCE', _resistanceNamePiece);
 
     final parts = <String>[];
     for (final token in nameOrderResolved) {

@@ -38,7 +38,7 @@ class WbSet {
   final double? rpeGoal;
   final double? rirGoal;
   final String? setIntention;
-  final Map<String, dynamic> metadata; // tag: top_set/backoff, type: main_lift/assistance/weakness
+  final Map<String, dynamic> metadata; // tag: top_set/backoff
   WbSet({
     required this.id, required this.knsId, required this.setNumber,
     this.repsMin, this.repsMax, this.rpeGoal, this.rirGoal,

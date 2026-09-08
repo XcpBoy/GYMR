@@ -8,6 +8,7 @@ import 'styles.dart';
 import 'main_scaffold.dart';
 import 'lab_widgets.dart';
 import '../logic/calculator.dart';
+import '../logic/load_math.dart';
 import '../localization/strings.dart';
 
 enum DatasetCategory { sets, notes, weight, anthropometric }
@@ -195,14 +196,16 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
       future: _getBWAtDate(db, log.date),
       builder: (context, bwSnapshot) {
         final bw = bwSnapshot.data ?? 0.0;
-        final isLastre = details.type == 'LASTRE';
-        final isJst = details.type == 'JST.BW';
-        final isU = details.type == 'UNMOVABLE';
-        
-        double totalLoad = set.weight;
-        if (isLastre) totalLoad = set.weight + bw;
-        if (isJst) totalLoad = bw;
-        if (isU) totalLoad = set.weight + bw;
+        // computeEffectiveLoad folds in the resistance modifier (assisted
+        // machine/band = negative, added band resistance = positive) -
+        // this card's TOTAL never accounted for it before, showing the
+        // pre-modifier number even on assisted/banded sets.
+        final totalLoad = computeEffectiveLoad(
+          loadType: details.type,
+          rawWeight: set.weight,
+          bodyweight: bw,
+          resistanceModifier: set.assistanceValue,
+        );
 
         final eORM = WorkoutCalculator.calculateEpley1RM(totalLoad, set.reps);
         final fullName = ex.fullName;
@@ -304,14 +307,13 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
     return (row?.data['value'] as num?)?.toDouble();
   }
 
-  _LoadDetails _detectLoadDetails(BaseExercise ex) {
-    final intentionText = ex.intention ?? '';
-    final metaMatch = RegExp(r'\[NT:(.*)\|ISO:(.*)\]').firstMatch(intentionText);
-    if (metaMatch != null) {
-      return _LoadDetails(type: metaMatch.group(1) ?? 'EXT.LOAD', isIsometric: metaMatch.group(2) == 'true');
-    }
-    return _LoadDetails(type: 'EXT.LOAD', isIsometric: intentionText.startsWith('[ISO]'));
-  }
+  // Was its own private copy of the regex+fallback logic (missing the
+  // tissueName/field fallback the other four copies had, so a legacy
+  // exercise without the [NT:...] bracket always fell through to
+  // EXT.LOAD here specifically) - now routes through the shared
+  // lib/logic/load_math.dart implementation.
+  LoadDetails _detectLoadDetails(BaseExercise ex) => detectLoadDetails(
+      intention: ex.intention, tissueName: ex.tissueName, field: ex.field);
 
 
   Stream<List<QueryRow>> _watchAnthropometricRaw(AppDatabase db,
@@ -474,11 +476,5 @@ class _FullDatasetScreenState extends ConsumerState<FullDatasetScreen> {
       ),
     );
   }
-}
-
-class _LoadDetails {
-  final String type;
-  final bool isIsometric;
-  _LoadDetails({required this.type, required this.isIsometric});
 }
 

@@ -132,6 +132,29 @@ class $BaseExercisesTable extends BaseExercises
   late final GeneratedColumn<String> assistanceTypes = GeneratedColumn<String>(
       'assistance_types', aliasedName, true,
       type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _defaultResistanceValueMeta =
+      const VerificationMeta('defaultResistanceValue');
+  @override
+  late final GeneratedColumn<double> defaultResistanceValue =
+      GeneratedColumn<double>('default_resistance_value', aliasedName, true,
+          type: DriftSqlType.double, requiredDuringInsert: false);
+  static const VerificationMeta _defaultResistanceLabelMeta =
+      const VerificationMeta('defaultResistanceLabel');
+  @override
+  late final GeneratedColumn<String> defaultResistanceLabel =
+      GeneratedColumn<String>('default_resistance_label', aliasedName, true,
+          type: DriftSqlType.string, requiredDuringInsert: false);
+  static const VerificationMeta _defaultResistanceShowInNameMeta =
+      const VerificationMeta('defaultResistanceShowInName');
+  @override
+  late final GeneratedColumn<bool> defaultResistanceShowInName =
+      GeneratedColumn<bool>(
+          'default_resistance_show_in_name', aliasedName, false,
+          type: DriftSqlType.bool,
+          requiredDuringInsert: false,
+          defaultConstraints: GeneratedColumn.constraintIsAlways(
+              'CHECK ("default_resistance_show_in_name" IN (0, 1))'),
+          defaultValue: const Constant(false));
   static const VerificationMeta _nameOrderMeta =
       const VerificationMeta('nameOrder');
   @override
@@ -159,6 +182,9 @@ class $BaseExercisesTable extends BaseExercises
         complexMetadata,
         isUnilateral,
         assistanceTypes,
+        defaultResistanceValue,
+        defaultResistanceLabel,
+        defaultResistanceShowInName,
         nameOrder
       ];
   @override
@@ -272,6 +298,25 @@ class $BaseExercisesTable extends BaseExercises
           assistanceTypes.isAcceptableOrUnknown(
               data['assistance_types']!, _assistanceTypesMeta));
     }
+    if (data.containsKey('default_resistance_value')) {
+      context.handle(
+          _defaultResistanceValueMeta,
+          defaultResistanceValue.isAcceptableOrUnknown(
+              data['default_resistance_value']!, _defaultResistanceValueMeta));
+    }
+    if (data.containsKey('default_resistance_label')) {
+      context.handle(
+          _defaultResistanceLabelMeta,
+          defaultResistanceLabel.isAcceptableOrUnknown(
+              data['default_resistance_label']!, _defaultResistanceLabelMeta));
+    }
+    if (data.containsKey('default_resistance_show_in_name')) {
+      context.handle(
+          _defaultResistanceShowInNameMeta,
+          defaultResistanceShowInName.isAcceptableOrUnknown(
+              data['default_resistance_show_in_name']!,
+              _defaultResistanceShowInNameMeta));
+    }
     if (data.containsKey('name_order')) {
       context.handle(_nameOrderMeta,
           nameOrder.isAcceptableOrUnknown(data['name_order']!, _nameOrderMeta));
@@ -324,6 +369,15 @@ class $BaseExercisesTable extends BaseExercises
           .read(DriftSqlType.bool, data['${effectivePrefix}is_unilateral'])!,
       assistanceTypes: attachedDatabase.typeMapping.read(
           DriftSqlType.string, data['${effectivePrefix}assistance_types']),
+      defaultResistanceValue: attachedDatabase.typeMapping.read(
+          DriftSqlType.double,
+          data['${effectivePrefix}default_resistance_value']),
+      defaultResistanceLabel: attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}default_resistance_label']),
+      defaultResistanceShowInName: attachedDatabase.typeMapping.read(
+          DriftSqlType.bool,
+          data['${effectivePrefix}default_resistance_show_in_name'])!,
       nameOrder: attachedDatabase.typeMapping
           .read(DriftSqlType.string, data['${effectivePrefix}name_order']),
     );
@@ -355,6 +409,9 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
   final String? complexMetadata;
   final bool isUnilateral;
   final String? assistanceTypes;
+  final double? defaultResistanceValue;
+  final String? defaultResistanceLabel;
+  final bool defaultResistanceShowInName;
   final String? nameOrder;
   const BaseExercise(
       {required this.id,
@@ -376,6 +433,9 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
       this.complexMetadata,
       required this.isUnilateral,
       this.assistanceTypes,
+      this.defaultResistanceValue,
+      this.defaultResistanceLabel,
+      required this.defaultResistanceShowInName,
       this.nameOrder});
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -429,6 +489,16 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
     if (!nullToAbsent || assistanceTypes != null) {
       map['assistance_types'] = Variable<String>(assistanceTypes);
     }
+    if (!nullToAbsent || defaultResistanceValue != null) {
+      map['default_resistance_value'] =
+          Variable<double>(defaultResistanceValue);
+    }
+    if (!nullToAbsent || defaultResistanceLabel != null) {
+      map['default_resistance_label'] =
+          Variable<String>(defaultResistanceLabel);
+    }
+    map['default_resistance_show_in_name'] =
+        Variable<bool>(defaultResistanceShowInName);
     if (!nullToAbsent || nameOrder != null) {
       map['name_order'] = Variable<String>(nameOrder);
     }
@@ -485,6 +555,13 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
       assistanceTypes: assistanceTypes == null && nullToAbsent
           ? const Value.absent()
           : Value(assistanceTypes),
+      defaultResistanceValue: defaultResistanceValue == null && nullToAbsent
+          ? const Value.absent()
+          : Value(defaultResistanceValue),
+      defaultResistanceLabel: defaultResistanceLabel == null && nullToAbsent
+          ? const Value.absent()
+          : Value(defaultResistanceLabel),
+      defaultResistanceShowInName: Value(defaultResistanceShowInName),
       nameOrder: nameOrder == null && nullToAbsent
           ? const Value.absent()
           : Value(nameOrder),
@@ -517,6 +594,12 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
       complexMetadata: serializer.fromJson<String?>(json['complexMetadata']),
       isUnilateral: serializer.fromJson<bool>(json['isUnilateral']),
       assistanceTypes: serializer.fromJson<String?>(json['assistanceTypes']),
+      defaultResistanceValue:
+          serializer.fromJson<double?>(json['defaultResistanceValue']),
+      defaultResistanceLabel:
+          serializer.fromJson<String?>(json['defaultResistanceLabel']),
+      defaultResistanceShowInName:
+          serializer.fromJson<bool>(json['defaultResistanceShowInName']),
       nameOrder: serializer.fromJson<String?>(json['nameOrder']),
     );
   }
@@ -543,6 +626,12 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
       'complexMetadata': serializer.toJson<String?>(complexMetadata),
       'isUnilateral': serializer.toJson<bool>(isUnilateral),
       'assistanceTypes': serializer.toJson<String?>(assistanceTypes),
+      'defaultResistanceValue':
+          serializer.toJson<double?>(defaultResistanceValue),
+      'defaultResistanceLabel':
+          serializer.toJson<String?>(defaultResistanceLabel),
+      'defaultResistanceShowInName':
+          serializer.toJson<bool>(defaultResistanceShowInName),
       'nameOrder': serializer.toJson<String?>(nameOrder),
     };
   }
@@ -567,6 +656,9 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
           Value<String?> complexMetadata = const Value.absent(),
           bool? isUnilateral,
           Value<String?> assistanceTypes = const Value.absent(),
+          Value<double?> defaultResistanceValue = const Value.absent(),
+          Value<String?> defaultResistanceLabel = const Value.absent(),
+          bool? defaultResistanceShowInName,
           Value<String?> nameOrder = const Value.absent()}) =>
       BaseExercise(
         id: id ?? this.id,
@@ -599,6 +691,14 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
         assistanceTypes: assistanceTypes.present
             ? assistanceTypes.value
             : this.assistanceTypes,
+        defaultResistanceValue: defaultResistanceValue.present
+            ? defaultResistanceValue.value
+            : this.defaultResistanceValue,
+        defaultResistanceLabel: defaultResistanceLabel.present
+            ? defaultResistanceLabel.value
+            : this.defaultResistanceLabel,
+        defaultResistanceShowInName:
+            defaultResistanceShowInName ?? this.defaultResistanceShowInName,
         nameOrder: nameOrder.present ? nameOrder.value : this.nameOrder,
       );
   BaseExercise copyWithCompanion(BaseExercisesCompanion data) {
@@ -641,6 +741,15 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
       assistanceTypes: data.assistanceTypes.present
           ? data.assistanceTypes.value
           : this.assistanceTypes,
+      defaultResistanceValue: data.defaultResistanceValue.present
+          ? data.defaultResistanceValue.value
+          : this.defaultResistanceValue,
+      defaultResistanceLabel: data.defaultResistanceLabel.present
+          ? data.defaultResistanceLabel.value
+          : this.defaultResistanceLabel,
+      defaultResistanceShowInName: data.defaultResistanceShowInName.present
+          ? data.defaultResistanceShowInName.value
+          : this.defaultResistanceShowInName,
       nameOrder: data.nameOrder.present ? data.nameOrder.value : this.nameOrder,
     );
   }
@@ -667,33 +776,40 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
           ..write('complexMetadata: $complexMetadata, ')
           ..write('isUnilateral: $isUnilateral, ')
           ..write('assistanceTypes: $assistanceTypes, ')
+          ..write('defaultResistanceValue: $defaultResistanceValue, ')
+          ..write('defaultResistanceLabel: $defaultResistanceLabel, ')
+          ..write('defaultResistanceShowInName: $defaultResistanceShowInName, ')
           ..write('nameOrder: $nameOrder')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
-      id,
-      name,
-      prefixes,
-      implements,
-      bodyPositions,
-      suffixes,
-      primaryMuscleGroup,
-      secondaryMuscleGroup,
-      field,
-      tissueType,
-      tissueName,
-      numPhases,
-      orderIndex,
-      phaseDescriptions,
-      intention,
-      patternType,
-      complexMetadata,
-      isUnilateral,
-      assistanceTypes,
-      nameOrder);
+  int get hashCode => Object.hashAll([
+        id,
+        name,
+        prefixes,
+        implements,
+        bodyPositions,
+        suffixes,
+        primaryMuscleGroup,
+        secondaryMuscleGroup,
+        field,
+        tissueType,
+        tissueName,
+        numPhases,
+        orderIndex,
+        phaseDescriptions,
+        intention,
+        patternType,
+        complexMetadata,
+        isUnilateral,
+        assistanceTypes,
+        defaultResistanceValue,
+        defaultResistanceLabel,
+        defaultResistanceShowInName,
+        nameOrder
+      ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -717,6 +833,10 @@ class BaseExercise extends DataClass implements Insertable<BaseExercise> {
           other.complexMetadata == this.complexMetadata &&
           other.isUnilateral == this.isUnilateral &&
           other.assistanceTypes == this.assistanceTypes &&
+          other.defaultResistanceValue == this.defaultResistanceValue &&
+          other.defaultResistanceLabel == this.defaultResistanceLabel &&
+          other.defaultResistanceShowInName ==
+              this.defaultResistanceShowInName &&
           other.nameOrder == this.nameOrder);
 }
 
@@ -740,6 +860,9 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
   final Value<String?> complexMetadata;
   final Value<bool> isUnilateral;
   final Value<String?> assistanceTypes;
+  final Value<double?> defaultResistanceValue;
+  final Value<String?> defaultResistanceLabel;
+  final Value<bool> defaultResistanceShowInName;
   final Value<String?> nameOrder;
   const BaseExercisesCompanion({
     this.id = const Value.absent(),
@@ -761,6 +884,9 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
     this.complexMetadata = const Value.absent(),
     this.isUnilateral = const Value.absent(),
     this.assistanceTypes = const Value.absent(),
+    this.defaultResistanceValue = const Value.absent(),
+    this.defaultResistanceLabel = const Value.absent(),
+    this.defaultResistanceShowInName = const Value.absent(),
     this.nameOrder = const Value.absent(),
   });
   BaseExercisesCompanion.insert({
@@ -783,6 +909,9 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
     this.complexMetadata = const Value.absent(),
     this.isUnilateral = const Value.absent(),
     this.assistanceTypes = const Value.absent(),
+    this.defaultResistanceValue = const Value.absent(),
+    this.defaultResistanceLabel = const Value.absent(),
+    this.defaultResistanceShowInName = const Value.absent(),
     this.nameOrder = const Value.absent(),
   }) : name = Value(name);
   static Insertable<BaseExercise> custom({
@@ -805,6 +934,9 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
     Expression<String>? complexMetadata,
     Expression<bool>? isUnilateral,
     Expression<String>? assistanceTypes,
+    Expression<double>? defaultResistanceValue,
+    Expression<String>? defaultResistanceLabel,
+    Expression<bool>? defaultResistanceShowInName,
     Expression<String>? nameOrder,
   }) {
     return RawValuesInsertable({
@@ -829,6 +961,12 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
       if (complexMetadata != null) 'complex_metadata': complexMetadata,
       if (isUnilateral != null) 'is_unilateral': isUnilateral,
       if (assistanceTypes != null) 'assistance_types': assistanceTypes,
+      if (defaultResistanceValue != null)
+        'default_resistance_value': defaultResistanceValue,
+      if (defaultResistanceLabel != null)
+        'default_resistance_label': defaultResistanceLabel,
+      if (defaultResistanceShowInName != null)
+        'default_resistance_show_in_name': defaultResistanceShowInName,
       if (nameOrder != null) 'name_order': nameOrder,
     });
   }
@@ -853,6 +991,9 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
       Value<String?>? complexMetadata,
       Value<bool>? isUnilateral,
       Value<String?>? assistanceTypes,
+      Value<double?>? defaultResistanceValue,
+      Value<String?>? defaultResistanceLabel,
+      Value<bool>? defaultResistanceShowInName,
       Value<String?>? nameOrder}) {
     return BaseExercisesCompanion(
       id: id ?? this.id,
@@ -874,6 +1015,12 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
       complexMetadata: complexMetadata ?? this.complexMetadata,
       isUnilateral: isUnilateral ?? this.isUnilateral,
       assistanceTypes: assistanceTypes ?? this.assistanceTypes,
+      defaultResistanceValue:
+          defaultResistanceValue ?? this.defaultResistanceValue,
+      defaultResistanceLabel:
+          defaultResistanceLabel ?? this.defaultResistanceLabel,
+      defaultResistanceShowInName:
+          defaultResistanceShowInName ?? this.defaultResistanceShowInName,
       nameOrder: nameOrder ?? this.nameOrder,
     );
   }
@@ -939,6 +1086,18 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
     if (assistanceTypes.present) {
       map['assistance_types'] = Variable<String>(assistanceTypes.value);
     }
+    if (defaultResistanceValue.present) {
+      map['default_resistance_value'] =
+          Variable<double>(defaultResistanceValue.value);
+    }
+    if (defaultResistanceLabel.present) {
+      map['default_resistance_label'] =
+          Variable<String>(defaultResistanceLabel.value);
+    }
+    if (defaultResistanceShowInName.present) {
+      map['default_resistance_show_in_name'] =
+          Variable<bool>(defaultResistanceShowInName.value);
+    }
     if (nameOrder.present) {
       map['name_order'] = Variable<String>(nameOrder.value);
     }
@@ -967,6 +1126,9 @@ class BaseExercisesCompanion extends UpdateCompanion<BaseExercise> {
           ..write('complexMetadata: $complexMetadata, ')
           ..write('isUnilateral: $isUnilateral, ')
           ..write('assistanceTypes: $assistanceTypes, ')
+          ..write('defaultResistanceValue: $defaultResistanceValue, ')
+          ..write('defaultResistanceLabel: $defaultResistanceLabel, ')
+          ..write('defaultResistanceShowInName: $defaultResistanceShowInName, ')
           ..write('nameOrder: $nameOrder')
           ..write(')'))
         .toString();
@@ -7056,6 +7218,9 @@ typedef $$BaseExercisesTableCreateCompanionBuilder = BaseExercisesCompanion
   Value<String?> complexMetadata,
   Value<bool> isUnilateral,
   Value<String?> assistanceTypes,
+  Value<double?> defaultResistanceValue,
+  Value<String?> defaultResistanceLabel,
+  Value<bool> defaultResistanceShowInName,
   Value<String?> nameOrder,
 });
 typedef $$BaseExercisesTableUpdateCompanionBuilder = BaseExercisesCompanion
@@ -7079,6 +7244,9 @@ typedef $$BaseExercisesTableUpdateCompanionBuilder = BaseExercisesCompanion
   Value<String?> complexMetadata,
   Value<bool> isUnilateral,
   Value<String?> assistanceTypes,
+  Value<double?> defaultResistanceValue,
+  Value<String?> defaultResistanceLabel,
+  Value<bool> defaultResistanceShowInName,
   Value<String?> nameOrder,
 });
 
@@ -7206,6 +7374,18 @@ class $$BaseExercisesTableFilterComposer
 
   ColumnFilters<String> get assistanceTypes => $composableBuilder(
       column: $table.assistanceTypes,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<double> get defaultResistanceValue => $composableBuilder(
+      column: $table.defaultResistanceValue,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<String> get defaultResistanceLabel => $composableBuilder(
+      column: $table.defaultResistanceLabel,
+      builder: (column) => ColumnFilters(column));
+
+  ColumnFilters<bool> get defaultResistanceShowInName => $composableBuilder(
+      column: $table.defaultResistanceShowInName,
       builder: (column) => ColumnFilters(column));
 
   ColumnFilters<String> get nameOrder => $composableBuilder(
@@ -7348,6 +7528,18 @@ class $$BaseExercisesTableOrderingComposer
       column: $table.assistanceTypes,
       builder: (column) => ColumnOrderings(column));
 
+  ColumnOrderings<double> get defaultResistanceValue => $composableBuilder(
+      column: $table.defaultResistanceValue,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<String> get defaultResistanceLabel => $composableBuilder(
+      column: $table.defaultResistanceLabel,
+      builder: (column) => ColumnOrderings(column));
+
+  ColumnOrderings<bool> get defaultResistanceShowInName => $composableBuilder(
+      column: $table.defaultResistanceShowInName,
+      builder: (column) => ColumnOrderings(column));
+
   ColumnOrderings<String> get nameOrder => $composableBuilder(
       column: $table.nameOrder, builder: (column) => ColumnOrderings(column));
 }
@@ -7417,6 +7609,15 @@ class $$BaseExercisesTableAnnotationComposer
 
   GeneratedColumn<String> get assistanceTypes => $composableBuilder(
       column: $table.assistanceTypes, builder: (column) => column);
+
+  GeneratedColumn<double> get defaultResistanceValue => $composableBuilder(
+      column: $table.defaultResistanceValue, builder: (column) => column);
+
+  GeneratedColumn<String> get defaultResistanceLabel => $composableBuilder(
+      column: $table.defaultResistanceLabel, builder: (column) => column);
+
+  GeneratedColumn<bool> get defaultResistanceShowInName => $composableBuilder(
+      column: $table.defaultResistanceShowInName, builder: (column) => column);
 
   GeneratedColumn<String> get nameOrder =>
       $composableBuilder(column: $table.nameOrder, builder: (column) => column);
@@ -7531,6 +7732,9 @@ class $$BaseExercisesTableTableManager extends RootTableManager<
             Value<String?> complexMetadata = const Value.absent(),
             Value<bool> isUnilateral = const Value.absent(),
             Value<String?> assistanceTypes = const Value.absent(),
+            Value<double?> defaultResistanceValue = const Value.absent(),
+            Value<String?> defaultResistanceLabel = const Value.absent(),
+            Value<bool> defaultResistanceShowInName = const Value.absent(),
             Value<String?> nameOrder = const Value.absent(),
           }) =>
               BaseExercisesCompanion(
@@ -7553,6 +7757,9 @@ class $$BaseExercisesTableTableManager extends RootTableManager<
             complexMetadata: complexMetadata,
             isUnilateral: isUnilateral,
             assistanceTypes: assistanceTypes,
+            defaultResistanceValue: defaultResistanceValue,
+            defaultResistanceLabel: defaultResistanceLabel,
+            defaultResistanceShowInName: defaultResistanceShowInName,
             nameOrder: nameOrder,
           ),
           createCompanionCallback: ({
@@ -7575,6 +7782,9 @@ class $$BaseExercisesTableTableManager extends RootTableManager<
             Value<String?> complexMetadata = const Value.absent(),
             Value<bool> isUnilateral = const Value.absent(),
             Value<String?> assistanceTypes = const Value.absent(),
+            Value<double?> defaultResistanceValue = const Value.absent(),
+            Value<String?> defaultResistanceLabel = const Value.absent(),
+            Value<bool> defaultResistanceShowInName = const Value.absent(),
             Value<String?> nameOrder = const Value.absent(),
           }) =>
               BaseExercisesCompanion.insert(
@@ -7597,6 +7807,9 @@ class $$BaseExercisesTableTableManager extends RootTableManager<
             complexMetadata: complexMetadata,
             isUnilateral: isUnilateral,
             assistanceTypes: assistanceTypes,
+            defaultResistanceValue: defaultResistanceValue,
+            defaultResistanceLabel: defaultResistanceLabel,
+            defaultResistanceShowInName: defaultResistanceShowInName,
             nameOrder: nameOrder,
           ),
           withReferenceMapper: (p0) => p0

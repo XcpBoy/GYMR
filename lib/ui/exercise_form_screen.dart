@@ -57,8 +57,16 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
   // MUSCLE UPS"). Lives in complexMetadata, not the fullName pieces - see
   // BaseExercise.shorthand (database.dart) and kns_search.dart.
   late final TextEditingController _shorthandController;
-  late final TextEditingController _bandTypeController;
-  late final TextEditingController _bandTensionController;
+  // Default resistance modifier (schema v34, assistance/bands overhaul):
+  // replaces both the old per-exercise ASSISTANCE_TYPE list (every
+  // exercise only ever used one entry in practice) and the BANDED
+  // load-type's dead bandType/bandTension fields. _resistanceValueController
+  // holds the unsigned magnitude; _resistanceAdds is the sign (true = added
+  // band resistance, false = assistance subtracted).
+  late final TextEditingController _resistanceLabelController;
+  late final TextEditingController _resistanceValueController;
+  bool _resistanceLabelShowInName = false;
+  bool _resistanceAdds = false;
 
   String _loadType = 'EXT.LOAD';
   bool _isIsometric = false;
@@ -73,8 +81,6 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
   final List<bool> _prefixShowInName = [];
   final List<TextEditingController> _suffixControllers = [];
   final List<bool> _suffixShowInName = [];
-  final List<TextEditingController> _assistanceControllers = [];
-  final List<bool> _assistanceShowInName = [];
   final List<TextEditingController> _implementPositionControllers = [];
   final List<bool> _implementPositionShowInName = [];
   List<String> _nameOrder = List<String>.from(kDefaultNamePieceOrder);
@@ -148,7 +154,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
         ..._implementPositionControllers,
         ..._prefixControllers,
         ..._suffixControllers,
-        ..._assistanceControllers,
+        _resistanceLabelController,
       ];
 
   String? _encodePieceList(
@@ -169,6 +175,13 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     } catch (_) {
       return raw.split(',');
     }
+  }
+
+  String _formatMagnitude(double value) {
+    if (value.isFinite && value == value.truncateToDouble()) {
+      return value.truncate().toString();
+    }
+    return value.toString();
   }
 
   drift.Value<String?> _toValue(String text) {
@@ -206,14 +219,19 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     _numPhasesController = TextEditingController(text: (e?.numPhases ?? 1).toString());
     _descriptionController = TextEditingController(text: e?.parsedComplexMetadata["description"] ?? "");
     _shorthandController = TextEditingController(text: e?.shorthand ?? "");
-    _bandTypeController = TextEditingController(text: e?.parsedComplexMetadata["bandType"] ?? "");
-    _bandTensionController = TextEditingController(text: e?.parsedComplexMetadata["bandTension"] ?? "");
+    _resistanceLabelController =
+        TextEditingController(text: e?.defaultResistanceLabel ?? "");
+    _resistanceLabelShowInName = e?.defaultResistanceShowInName ?? false;
+    _resistanceAdds = (e?.defaultResistanceValue ?? 0) > 0;
+    _resistanceValueController = TextEditingController(
+        text: e?.defaultResistanceValue == null
+            ? ""
+            : _formatMagnitude(e!.defaultResistanceValue!.abs()));
 
     _loadPieceInto(e?.bodyPositions, _bodyPositionControllers, _bodyPositionShowInName);
     _loadPieceInto(e?.implements, _implementControllers, _implementShowInName);
     _loadPieceInto(e?.prefixes, _prefixControllers, _prefixShowInName);
     _loadPieceInto(e?.suffixes, _suffixControllers, _suffixShowInName);
-    _loadPieceInto(e?.assistanceTypes, _assistanceControllers, _assistanceShowInName);
     _loadPieceIntoFromList(e?.parsedImplementPosition ?? [], _implementPositionControllers, _implementPositionShowInName);
     _nameOrder = e != null ? List<String>.from(e.nameOrderResolved) : [];
 
@@ -264,8 +282,8 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     _tissueTypeController.dispose(); _tissueNameController.dispose(); _numPhasesController.dispose();
     _descriptionController.dispose();
     _shorthandController.dispose();
-    _bandTypeController.dispose(); _bandTensionController.dispose();
-    for (var c in [..._prefixControllers, ..._suffixControllers, ..._implementControllers, ..._bodyPositionControllers, ..._assistanceControllers, ..._implementPositionControllers, ..._phaseDescriptionControllers]) {
+    _resistanceLabelController.dispose(); _resistanceValueController.dispose();
+    for (var c in [..._prefixControllers, ..._suffixControllers, ..._implementControllers, ..._bodyPositionControllers, ..._implementPositionControllers, ..._phaseDescriptionControllers]) {
       c.dispose();
     }
     super.dispose();
@@ -317,8 +335,15 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     final impJson = _encodePieceList(_implementControllers, _implementShowInName);
     final preJson = _encodePieceList(_prefixControllers, _prefixShowInName);
     final sufJson = _encodePieceList(_suffixControllers, _suffixShowInName);
-    final assistJson = _encodePieceList(_assistanceControllers, _assistanceShowInName);
     final nameOrderJson = jsonEncode(_reconcileNameOrder(_nameOrder, _liveNameTokens()));
+
+    final resistanceLabel = _resistanceLabelController.text.trim().isEmpty
+        ? null
+        : _resistanceLabelController.text.trim().toUpperCase();
+    final resistanceMagnitude = double.tryParse(_resistanceValueController.text);
+    final resistanceValue = resistanceMagnitude == null
+        ? null
+        : (_resistanceAdds ? resistanceMagnitude.abs() : -resistanceMagnitude.abs());
 
     final List<Map<String, dynamic>> implPosData = [];
     for (int i = 0; i < _implementPositionControllers.length; i++) {
@@ -346,8 +371,6 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
       "description": _descriptionController.text.trim(),
       "shorthand": _shorthandController.text.trim().toUpperCase(),
       "implement_position": implPosData,
-      if (_loadType == 'BANDED') "bandType": _bandTypeController.text.trim(),
-      if (_loadType == 'BANDED') "bandTension": _bandTensionController.text.trim(),
     });
 
     try {
@@ -366,7 +389,9 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
             bodyPositions: drift.Value(posJson),
             prefixes: drift.Value(preJson),
             suffixes: drift.Value(sufJson),
-            assistanceTypes: drift.Value(assistJson),
+            defaultResistanceLabel: drift.Value(resistanceLabel),
+            defaultResistanceValue: drift.Value(resistanceValue),
+            defaultResistanceShowInName: drift.Value(_resistanceLabelShowInName),
             nameOrder: drift.Value(nameOrderJson),
             numPhases: drift.Value(int.tryParse(_numPhasesController.text) ?? 1),
             phaseDescriptions: drift.Value(jsonEncode(phaseMetadata)),
@@ -398,7 +423,9 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
             bodyPositions: drift.Value(posJson),
             prefixes: drift.Value(preJson),
             suffixes: drift.Value(sufJson),
-            assistanceTypes: drift.Value(assistJson),
+            defaultResistanceLabel: drift.Value(resistanceLabel),
+            defaultResistanceValue: drift.Value(resistanceValue),
+            defaultResistanceShowInName: drift.Value(_resistanceLabelShowInName),
             nameOrder: drift.Value(nameOrderJson),
             numPhases: drift.Value(int.tryParse(_numPhasesController.text) ?? 1),
             phaseDescriptions: drift.Value(jsonEncode(phaseMetadata)),
@@ -470,7 +497,12 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     _loadPieceInto(e.implements, _implementControllers, _implementShowInName);
     _loadPieceInto(e.prefixes, _prefixControllers, _prefixShowInName);
     _loadPieceInto(e.suffixes, _suffixControllers, _suffixShowInName);
-    _loadPieceInto(e.assistanceTypes, _assistanceControllers, _assistanceShowInName);
+    _resistanceLabelController.text = e.defaultResistanceLabel ?? '';
+    _resistanceLabelShowInName = e.defaultResistanceShowInName;
+    _resistanceAdds = (e.defaultResistanceValue ?? 0) > 0;
+    _resistanceValueController.text = e.defaultResistanceValue == null
+        ? ''
+        : _formatMagnitude(e.defaultResistanceValue!.abs());
     _loadPieceIntoFromList(e.parsedImplementPosition, _implementPositionControllers, _implementPositionShowInName);
     _nameOrder = List<String>.from(e.nameOrderResolved);
 
@@ -513,7 +545,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
       } else if (type == 'suffix') {
         found = _extractPieceValues(e.suffixes);
       } else if (type == 'assistance') {
-        found = _extractPieceValues(e.assistanceTypes);
+        found = [e.defaultResistanceLabel ?? ''];
       } else if (type == 'implementPosition') {
         found = e.parsedImplementPosition.map((p) => p['v'].toString()).toList();
       } else if (type == 'tissueType') {
@@ -664,9 +696,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
                   () => setState(() { _suffixControllers.add(_newPieceController()); _suffixShowInName.add(true); }),
                   type: 'suffix', color: LabColors.primary),
               const SizedBox(height: 16),
-              _buildToggleableList('ASSISTANCE_TYPE', _assistanceControllers, _assistanceShowInName,
-                  () => setState(() { _assistanceControllers.add(_newPieceController()); _assistanceShowInName.add(true); }),
-                  type: 'assistance', color: Colors.tealAccent),
+              _buildResistanceModifierRow(),
               const SizedBox(height: 16),
               LabTextField(
                 controller: _shorthandController,
@@ -752,7 +782,12 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     return Row(children: [Container(width: 4, height: 24, color: LabColors.accent), const SizedBox(width: 8), Text(title, style: LabStyles.mono(context, color: LabColors.onSurface, fontWeight: FontWeight.bold).copyWith(fontSize: 14))]);
   }
 
-  static const List<String> _loadTypes = ['LASTRE', 'EXT.LOAD', 'JST.BW', 'BANDED', 'UNMOVABLE'];
+  // BANDED removed (schema v34, assistance/bands overhaul): it used to be
+  // a 5th load type here but never had distinct math anywhere in the app -
+  // every totalLoad calculation silently treated it exactly like EXT.LOAD.
+  // A band is now the resistance modifier below, which can apply to any of
+  // these 4 real load-type shapes.
+  static const List<String> _loadTypes = ['LASTRE', 'EXT.LOAD', 'JST.BW', 'UNMOVABLE'];
 
   Widget _buildLoadTypeSelector() {
     return Column(
@@ -784,31 +819,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
             );
           }).toList(),
         ),
-        if (_loadType == 'BANDED') ...[
-          const SizedBox(height: 16),
-          _buildBandConfigFields(),
-        ],
       ],
-    );
-  }
-
-  Widget _buildBandConfigFields() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: LabColors.surfaceDim,
-        border: Border.all(color: LabColors.primary.withValues(alpha: 0.3), width: 0.5),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('BAND_CONFIG', style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
-          const SizedBox(height: 8),
-          LabTextField(controller: _bandTypeController, label: 'BAND_TYPE (E.G: LOOP, TUBE)'),
-          const SizedBox(height: 12),
-          LabTextField(controller: _bandTensionController, label: 'TENSION_NOTES (E.G: LIGHT/MEDIUM/HEAVY)'),
-        ],
-      ),
     );
   }
 
@@ -860,11 +871,80 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
     }).toList());
   }
 
+  // Default resistance modifier (schema v34, assistance/bands overhaul):
+  // ONE label + signed value per exercise, replacing the old ASSISTANCE_TYPE
+  // toggleable list (every exercise only ever used a single entry in
+  // practice - confirmed via audit) and the dead BAND_CONFIG fields. The
+  // label doubles as the ASSISTANCE nomenclature token (NAME switch below),
+  // and the value pre-fills every new set of this exercise (workout_manager
+  // copies it at set-creation time, never re-reads it afterward - same
+  // pattern as bodyweight).
+  Widget _buildResistanceModifierRow() {
+    const color = Colors.tealAccent;
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Text('RESISTANCE_MODIFIER', style: LabStyles.mono(context, color: color.withValues(alpha: 0.7), fontSize: 9)),
+        IconButton(
+          icon: const Icon(Icons.manage_search, color: color, size: 18),
+          onPressed: () => _showQualityOverlay(_resistanceLabelController, 'assistance'),
+        ),
+      ]),
+      Row(children: [
+        Expanded(
+          flex: 2,
+          child: LabTextField(
+              controller: _resistanceLabelController,
+              label: 'LABEL (E.G: BAND, MACHINE, PARTNER)'),
+        ),
+        const SizedBox(width: 8),
+        // Sign toggle: "-" = assistance subtracted (assisted machine/band),
+        // "+" = added band resistance (accommodating resistance). BANDED
+        // used to be its own load type with no math; this is that math.
+        InkWell(
+          onTap: () => setState(() => _resistanceAdds = !_resistanceAdds),
+          child: Container(
+            width: 36,
+            height: 48,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+                border: Border.all(
+                    color: _resistanceAdds ? LabColors.accent : color,
+                    width: 0.5)),
+            child: Text(_resistanceAdds ? '+' : '-',
+                style: LabStyles.mono(context,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: _resistanceAdds ? LabColors.accent : color)),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 70,
+          child: LabTextField(
+            controller: _resistanceValueController,
+            label: 'DEFAULT',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('NAME', style: LabStyles.mono(context, fontSize: 6, color: _resistanceLabelShowInName ? color : Colors.grey)),
+          Switch.adaptive(
+            value: _resistanceLabelShowInName,
+            activeColor: color,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            onChanged: (v) => setState(() => _resistanceLabelShowInName = v),
+          ),
+        ]),
+      ]),
+    ]);
+  }
+
   // Generalized version of the old body-position-only list: an "add via
   // search" + "add blank" header, and a per-item NAME switch that controls
   // whether that piece is included when fullName is assembled (see
   // BaseExercise.fullName in database.dart). Used for BODY_POSITION,
-  // IMPLEMENTS, PREFIXES, SUFFIXES and ASSISTANCE_TYPE alike.
+  // IMPLEMENTS, PREFIXES and SUFFIXES.
   Widget _buildToggleableList(String title, List<TextEditingController> controllers,
       List<bool> showInName, VoidCallback onAdd,
       {required String type, Color color = LabColors.primary}) {
@@ -939,7 +1019,10 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
           addTokens('SUFFIXES', _suffixControllers, _suffixShowInName);
           break;
         case 'ASSISTANCE':
-          addTokens('ASSISTANCE', _assistanceControllers, _assistanceShowInName);
+          if (_resistanceLabelShowInName &&
+              _resistanceLabelController.text.trim().isNotEmpty) {
+            tokens.add('ASSISTANCE::0');
+          }
           break;
       }
     }
@@ -989,8 +1072,7 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
         ctrls = _suffixControllers;
         break;
       case 'ASSISTANCE':
-        ctrls = _assistanceControllers;
-        break;
+        return _resistanceLabelController.text.trim();
     }
     if (ctrls == null || idx >= ctrls.length) return '';
     return ctrls[idx].text.trim();

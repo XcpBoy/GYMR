@@ -7,6 +7,7 @@ import '../logic/chart_models.dart';
 import 'database_provider.dart';
 import '../logic/calculator.dart';
 import '../logic/lr_asymmetry.dart';
+import '../logic/load_math.dart';
 
 // --- Session Metrics ---
 final sessionsMetricsProvider = StreamProvider.family<List<SessionMetric>, DateTimeRange?>((ref, range) {
@@ -305,28 +306,23 @@ final oneRmProgressionProvider = StreamProvider.family<List<OneRmPoint>, (int, D
 
 // --- LR.ALERT (DATA.NLZR) ---
 
-// Same load-type detection as oneRmProgressionProvider above (LASTRE/
-// JST.BW/UNMOVABLE vs plain EXT.LOAD), plus assistanceValue subtracted
-// before adding bodyweight - matches _applyAssistance/_detectLoadDetails in
-// export_service.dart/workout_manager.dart so the EORM numbers here agree
-// with the rest of the app for the same exercise.
+// Now routes through lib/logic/load_math.dart's shared
+// detectLoadDetails/computeEffectiveLoad instead of its own copy of the
+// load-type regex/fallback and the assistanceValue subtraction - this used
+// to independently duplicate that exact logic (see PNDEV history), and the
+// resistance modifier is signed now (negative = assisted, positive =
+// added band resistance) rather than always-subtracted.
 double _lrTotalLoad(BaseExercise exercise, double weight, double? assistanceValue, double bw) {
-  final intentionText = exercise.intention ?? '';
-  final metaMatch = RegExp(r'\[NT:(.*)\|ISO:(.*)\]').firstMatch(intentionText);
-  final isL = (metaMatch?.group(1) == 'LASTRE') || exercise.field == 'LASTRE';
-  final isJst = (metaMatch?.group(1) == 'JST.BW') || exercise.field == 'JST.BW';
-  final isU = (metaMatch?.group(1) == 'UNMOVABLE') || exercise.field == 'UNMOVABLE';
-  final assistance = assistanceValue ?? 0.0;
-
-  double totalLoad;
-  if (isJst) {
-    totalLoad = bw - assistance;
-  } else if (isL || isU) {
-    totalLoad = (weight - assistance) + bw;
-  } else {
-    totalLoad = weight - assistance;
-  }
-  return totalLoad < 0 ? 0.0 : totalLoad;
+  final details = detectLoadDetails(
+      intention: exercise.intention,
+      tissueName: exercise.tissueName,
+      field: exercise.field);
+  return computeEffectiveLoad(
+    loadType: details.type,
+    rawWeight: weight,
+    bodyweight: bw,
+    resistanceModifier: assistanceValue,
+  );
 }
 
 String? _lrSideOf(String? rawComplexMetadata) {
