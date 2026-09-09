@@ -889,33 +889,45 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
           onPressed: () => _showQualityOverlay(_resistanceLabelController, 'assistance'),
         ),
       ]),
-      Row(children: [
+      // Every column below shares the same "header text (fontSize 8) + 4px
+      // gap + control" vertical rhythm LabTextField uses internally, so the
+      // LABEL/SIGN/DEFAULT/NAME controls all start at the same y instead of
+      // the plain InkWell/Switch sitting higher (no header of their own)
+      // while LabTextField's actual input box is pushed down by its label.
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(
           flex: 2,
           child: LabTextField(
-              controller: _resistanceLabelController,
-              label: 'LABEL (E.G: BAND, MACHINE, PARTNER)'),
+              controller: _resistanceLabelController, label: 'LABEL'),
         ),
         const SizedBox(width: 8),
         // Sign toggle: "-" = assistance subtracted (assisted machine/band),
         // "+" = added band resistance (accommodating resistance). BANDED
         // used to be its own load type with no math; this is that math.
-        InkWell(
-          onTap: () => setState(() => _resistanceAdds = !_resistanceAdds),
-          child: Container(
-            width: 36,
-            height: 48,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-                border: Border.all(
-                    color: _resistanceAdds ? LabColors.accent : color,
-                    width: 0.5)),
-            child: Text(_resistanceAdds ? '+' : '-',
-                style: LabStyles.mono(context,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: _resistanceAdds ? LabColors.accent : color)),
-          ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('SIGN', style: LabStyles.mono(context, fontSize: 8, color: Colors.grey)),
+            const SizedBox(height: 4),
+            InkWell(
+              onTap: () => setState(() => _resistanceAdds = !_resistanceAdds),
+              child: Container(
+                width: 36,
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                    border: Border.all(
+                        color: _resistanceAdds ? LabColors.accent : color,
+                        width: 0.5)),
+                child: Text(_resistanceAdds ? '+' : '-',
+                    style: LabStyles.mono(context,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: _resistanceAdds ? LabColors.accent : color)),
+              ),
+            ),
+          ],
         ),
         const SizedBox(width: 8),
         SizedBox(
@@ -927,15 +939,26 @@ class _ExerciseFormScreenState extends ConsumerState<ExerciseFormScreen> {
           ),
         ),
         const SizedBox(width: 8),
-        Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('NAME', style: LabStyles.mono(context, fontSize: 6, color: _resistanceLabelShowInName ? color : Colors.grey)),
-          Switch.adaptive(
-            value: _resistanceLabelShowInName,
-            activeColor: color,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            onChanged: (v) => setState(() => _resistanceLabelShowInName = v),
-          ),
-        ]),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('NAME', style: LabStyles.mono(context, fontSize: 8, color: _resistanceLabelShowInName ? color : Colors.grey)),
+            const SizedBox(height: 4),
+            SizedBox(
+              height: 44,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Switch.adaptive(
+                  value: _resistanceLabelShowInName,
+                  activeColor: color,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (v) => setState(() => _resistanceLabelShowInName = v),
+                ),
+              ),
+            ),
+          ],
+        ),
       ]),
     ]);
   }

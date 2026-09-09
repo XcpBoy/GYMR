@@ -566,11 +566,17 @@ class ExportService {
     final emojiFont = await _loadEmojiFont();
     final fallbackFonts = emojiFont != null ? [emojiFont] : null;
 
+    // PNDEV 19: APPCFG_SHOW_UTILS is the same master switch C.WO's [UTIL]
+    // row uses (workout_manager.dart) - off hides the UTIL column here too,
+    // regardless of the per-column PDF_COLUMNS toggle.
+    final showUtils =
+        tC.getBool(settings, 'APPCFG_SHOW_UTILS', defaultValue: true);
     final visibleCols = <int>[
       for (int i = 0; i < kPdfColumnKeys.length; i++)
-        if (tC.getBool(settings, 'APPCFG_PDF_COL_${kPdfColumnKeys[i]}',
-            defaultValue: true))
-          i
+        if (kPdfColumnKeys[i] != 'UTIL' || showUtils)
+          if (tC.getBool(settings, 'APPCFG_PDF_COL_${kPdfColumnKeys[i]}',
+              defaultValue: true))
+            i
     ];
 
     // 1. PRE-FETCH DATA (BATCH)

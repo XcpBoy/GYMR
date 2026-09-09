@@ -2346,6 +2346,10 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
       Color uiTagBodyposition,
       int setsCount,
       int prCount) {
+    // PNDEV 19: master switch for the whole [UTIL] row (chips + the
+    // placeholder), instead of toggling each utility name individually.
+    final showUtils =
+        tC.getBool(settings, 'APPCFG_SHOW_UTILS', defaultValue: true);
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
@@ -2363,40 +2367,41 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                   children: [
                     // [UTIL] chips — OUTSIDE InkWell to avoid gesture
                     // conflict with the ISO/NAT.LOAD badges below.
-                    GestureDetector(
-                      onTap: () => _showUtilityEditDialog(context),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ...utilities.take(4).map((u) {
-                            final chipColor = tC.getColor(
-                                settings, "PRIORITY_$u",
-                                nameSeed: u);
-                            return Container(
-                              margin: const EdgeInsets.only(right: 3),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 4, vertical: 1),
-                              decoration: BoxDecoration(
-                                color: chipColor.withValues(alpha: 0.2),
-                                border:
-                                    Border.all(color: chipColor, width: 0.5),
-                              ),
-                              child: Text(
-                                u.toUpperCase(),
-                                style: LabStyles.mono(context,
-                                    color: chipColor,
-                                    fontSize: 7,
-                                    fontWeight: FontWeight.bold),
-                              ),
-                            );
-                          }),
-                          if (!hasUtility)
-                            Text('[ UTIL ]',
-                                style: LabStyles.mono(context,
-                                    color: Colors.grey[600]!, fontSize: 8)),
-                        ],
+                    if (showUtils)
+                      GestureDetector(
+                        onTap: () => _showUtilityEditDialog(context),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ...utilities.take(4).map((u) {
+                              final chipColor = tC.getColor(
+                                  settings, "PRIORITY_$u",
+                                  nameSeed: u);
+                              return Container(
+                                margin: const EdgeInsets.only(right: 3),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: chipColor.withValues(alpha: 0.2),
+                                  border:
+                                      Border.all(color: chipColor, width: 0.5),
+                                ),
+                                child: Text(
+                                  u.toUpperCase(),
+                                  style: LabStyles.mono(context,
+                                      color: chipColor,
+                                      fontSize: 7,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              );
+                            }),
+                            if (!hasUtility)
+                              Text('[ UTIL ]',
+                                  style: LabStyles.mono(context,
+                                      color: Colors.grey[600]!, fontSize: 8)),
+                          ],
+                        ),
                       ),
-                    ),
                     // ISO/NAT.LOAD badges — purely informational, no
                     // gesture.
                     if (isIso)
@@ -2543,6 +2548,10 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
       Color isoColor,
       Color uiTagBodyposition,
       Color uiTagPrimaryMuscle) {
+    // PNDEV 19: master switch for the whole [UTIL] row (chips + the
+    // placeholder), instead of toggling each utility name individually.
+    final showUtils =
+        tC.getBool(settings, 'APPCFG_SHOW_UTILS', defaultValue: true);
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -2561,37 +2570,39 @@ class _ExerciseModuleState extends ConsumerState<_ExerciseModule> {
                       runSpacing: 4,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ...utilities.take(4).map((u) {
-                              final chipColor = tC.getColor(
-                                  settings, "PRIORITY_$u",
-                                  nameSeed: u);
-                              return Container(
-                                margin: const EdgeInsets.only(right: 3),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 4, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: chipColor.withValues(alpha: 0.2),
-                                  border:
-                                      Border.all(color: chipColor, width: 0.5),
-                                ),
-                                child: Text(
-                                  u.toUpperCase(),
-                                  style: LabStyles.mono(context,
-                                      color: chipColor,
-                                      fontSize: 7,
-                                      fontWeight: FontWeight.bold),
-                                ),
-                              );
-                            }),
-                            if (!hasUtility)
-                              Text('[ UTIL ]',
-                                  style: LabStyles.mono(context,
-                                      color: Colors.grey[600]!, fontSize: 8)),
-                          ],
-                        ),
+                        if (showUtils)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              ...utilities.take(4).map((u) {
+                                final chipColor = tC.getColor(
+                                    settings, "PRIORITY_$u",
+                                    nameSeed: u);
+                                return Container(
+                                  margin: const EdgeInsets.only(right: 3),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 4, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: chipColor.withValues(alpha: 0.2),
+                                    border: Border.all(
+                                        color: chipColor, width: 0.5),
+                                  ),
+                                  child: Text(
+                                    u.toUpperCase(),
+                                    style: LabStyles.mono(context,
+                                        color: chipColor,
+                                        fontSize: 7,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                );
+                              }),
+                              if (!hasUtility)
+                                Text('[ UTIL ]',
+                                    style: LabStyles.mono(context,
+                                        color: Colors.grey[600]!,
+                                        fontSize: 8)),
+                            ],
+                          ),
                         if (isIso)
                           Container(
                               padding: const EdgeInsets.symmetric(

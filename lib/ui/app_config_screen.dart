@@ -21,6 +21,12 @@ class _ConfigToggle {
 const List<_ConfigToggle> _cwoToggles = [
   _ConfigToggle("TOGGLES", "APPCFG_SHOW_KNS_TOGGLES"),
   _ConfigToggle("FAILURE.PHASE", "APPCFG_SHOW_FAILURE_PHASE"),
+  // Single master switch for the [UTIL] chip row - PNDEV 19: off hides the
+  // whole utility row (chips + the "[ UTIL ]" placeholder) in both C.WO
+  // header variants (workout_manager.dart's _buildFaceHeaderOriginal/New)
+  // AND the UTIL column in PDF exports (export_service.dart), instead of
+  // toggling each individual utility name.
+  _ConfigToggle("UTILS", "APPCFG_SHOW_UTILS"),
 ];
 
 // Toggles that live under VISUALS > EDIT_EXERCISE. Each one hides the
