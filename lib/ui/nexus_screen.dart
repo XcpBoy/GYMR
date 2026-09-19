@@ -846,6 +846,14 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
   Widget _buildOnlyOutputSection(BuildContext context) {
     final onlyOutputColor = _nexusExchangeColor(
         'ONLY_OUTPUT', <String, Color>{'ONLY_OUTPUT': Colors.redAccent});
+    // Not everything under ONLY_OUTPUT needs to read as a red alert - these
+    // two match their own module's identity color instead (ANTRPMTRC.DT's
+    // skin tone, SLPTRCKR's indigo), same as the rest of the app already
+    // color-codes each module distinctly.
+    final antrpmtrcColor = _nexusExchangeColor(
+        'ONLY_OUTPUT_ANTRPMTRC', <String, Color>{'ONLY_OUTPUT_ANTRPMTRC': LabColors.skinTone});
+    final sleepColor = _nexusExchangeColor(
+        'ONLY_OUTPUT_SLPTRCKR', <String, Color>{'ONLY_OUTPUT_SLPTRCKR': LabColors.sleepIndigo});
 
     return Container(
       color: Colors.black,
@@ -882,7 +890,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
             _buildExportCard(
               title: "EXPORT ANTRPMTRC.DT",
               icon: Icons.straighten,
-              color: onlyOutputColor,
+              color: antrpmtrcColor,
               format: "CSV",
               onShare: () async {
                 await _exportAnthropometricPath('csv', share: true);
@@ -899,7 +907,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
             _buildExportCard(
               title: "EXPORT ANTRPMTRC.DT",
               icon: Icons.straighten,
-              color: onlyOutputColor,
+              color: antrpmtrcColor,
               format: "PDF",
               onShare: () async {
                 await _exportAnthropometricPath('pdf', share: true);
@@ -916,7 +924,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
             _buildExportCard(
               title: "EXPORT ANTRPMTRC.DT",
               icon: Icons.straighten,
-              color: onlyOutputColor,
+              color: antrpmtrcColor,
               format: "XLSX",
               onShare: () async {
                 await _exportAnthropometricPath('xlsx', share: true);
@@ -934,7 +942,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
             _buildExportCard(
               title: "EXPORT SLPTRCKR",
               icon: Icons.bedtime_outlined,
-              color: onlyOutputColor,
+              color: sleepColor,
               format: "CSV",
               onShare: () async {
                 await _exportSleepPath('csv', share: true);
@@ -949,7 +957,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
             _buildExportCard(
               title: "EXPORT SLPTRCKR",
               icon: Icons.bedtime_outlined,
-              color: onlyOutputColor,
+              color: sleepColor,
               format: "PDF",
               onShare: () async {
                 await _exportSleepPath('pdf', share: true);
@@ -964,7 +972,7 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
             _buildExportCard(
               title: "EXPORT SLPTRCKR",
               icon: Icons.bedtime_outlined,
-              color: onlyOutputColor,
+              color: sleepColor,
               format: "XLSX",
               onShare: () async {
                 await _exportSleepPath('xlsx', share: true);
