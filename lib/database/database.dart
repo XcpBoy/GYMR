@@ -216,6 +216,27 @@ class AnthropometricLogs extends Table {
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
 }
 
+// --- SLPTRCKR (Sleep Tracker) ---
+// Same tap-on/tap-off + pause/resume mechanic as JRNLR's SleepLogs (see
+// JRNLR/lib/database/database.dart) - bedAt is stamped on "ME ACUESTO",
+// wakeAt stays null until "ME LEVANTO" closes the session out. qualityFeel
+// is a 1-7 subjective read asked at wake time. Not a shared model with
+// JRNLR (separate app, separate DB) - just the same mechanic, ported.
+@DataClassName('SleepLog')
+class SleepLogs extends Table {
+  IntColumn get id => integer().autoIncrement()();
+  DateTimeColumn get bedAt => dateTime()();
+  DateTimeColumn get wakeAt => dateTime().nullable()();
+  IntColumn get qualityFeel => integer().nullable()();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  // Non-null while paused (tap-to-stop/tap-to-continue) - the moment the
+  // pause started. pausedSeconds accumulates every *finished* pause; the
+  // currently-open one (if any) isn't folded in until resume or finish.
+  DateTimeColumn get pausedAt => dateTime().nullable()();
+  IntColumn get pausedSeconds => integer().withDefault(const Constant(0))();
+}
+
 // --- NEW: Theme Personalization ---
 
 class ThemeSettings extends Table {
@@ -292,6 +313,7 @@ class WorkoutBlockSets extends Table {
   WorkoutBlocks,
   WorkoutBlockKns,
   WorkoutBlockSets,
+  SleepLogs,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
@@ -301,7 +323,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(QueryExecutor executor) : super(executor);
 
   @override
-  int get schemaVersion => 34;
+  int get schemaVersion => 35;
 
   // --- Bidirectional Relational Integrity ---
 
@@ -907,6 +929,13 @@ class AppDatabase extends _$AppDatabase {
           } catch (_) {}
         }
 
+        if (from < 35) {
+          // SLPTRCKR: new table, standard Drift createTable migration.
+          try {
+            await m.createTable(sleepLogs);
+          } catch (_) {}
+        }
+
         // Ejecutar alterTable al final si venimos de una versión donde se necesitaba (v18)
         if (from < 18) {
           try {
@@ -1210,6 +1239,100 @@ class AppDatabase extends _$AppDatabase {
     try {
       await customStatement('DROP TABLE IF EXISTS wb_kns_store');
     } catch (_) {}
+  }
+
+  // ---- SLPTRCKR (Sleep Tracker) ----
+  // Ported from JRNLR's sleep tracker mechanic (see
+  // JRNLR/lib/database/database.dart's "Sleep logs" section) - same
+  // tap-on/tap-off + pause/resume shape, separate DB/table.
+
+  int _foldSleepPause(DateTime? pausedAt, int pausedSeconds) {
+    if (pausedAt == null) return pausedSeconds;
+    return pausedSeconds + DateTime.now().difference(pausedAt).inSeconds;
+  }
+
+  Stream<List<SleepLog>> watchAllSleepLogs() {
+    return (select(sleepLogs)
+          ..orderBy([(t) => OrderingTerm.desc(t.bedAt)]))
+        .watch();
+  }
+
+  Future<List<SleepLog>> sleepLogsInRange(DateTime start, DateTime end) {
+    return (select(sleepLogs)
+          ..where((t) => t.bedAt.isBetweenValues(start, end))
+          ..orderBy([(t) => OrderingTerm.asc(t.bedAt)]))
+        .get();
+  }
+
+  /// The still-open session (bed logged, not yet woken), if any - gates
+  /// which of the two buttons the screen shows.
+  Future<SleepLog?> openSleepSession() {
+    return (select(sleepLogs)
+          ..where((t) => t.wakeAt.isNull())
+          ..orderBy([(t) => OrderingTerm.desc(t.bedAt)])
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
+  Future<int> startSleepSession() {
+    return into(sleepLogs).insert(
+      SleepLogsCompanion.insert(bedAt: DateTime.now()),
+    );
+  }
+
+  /// Closes the open session: stamps wakeAt as now and records the
+  /// subjective qualityFeel (1-7).
+  Future<void> finishSleepSession(int id, {int? qualityFeel}) async {
+    final row =
+        await (select(sleepLogs)..where((t) => t.id.equals(id))).getSingle();
+    await (update(sleepLogs)..where((t) => t.id.equals(id))).write(
+      SleepLogsCompanion(
+        wakeAt: Value(DateTime.now()),
+        qualityFeel: Value(qualityFeel),
+        pausedAt: const Value(null),
+        pausedSeconds: Value(_foldSleepPause(row.pausedAt, row.pausedSeconds)),
+      ),
+    );
+  }
+
+  Future<void> pauseSleepSession(int id) {
+    return (update(sleepLogs)..where((t) => t.id.equals(id))).write(
+      SleepLogsCompanion(pausedAt: Value(DateTime.now())),
+    );
+  }
+
+  Future<void> resumeSleepSession(int id) async {
+    final row =
+        await (select(sleepLogs)..where((t) => t.id.equals(id))).getSingle();
+    if (row.pausedAt == null) return;
+    await (update(sleepLogs)..where((t) => t.id.equals(id))).write(
+      SleepLogsCompanion(
+        pausedAt: const Value(null),
+        pausedSeconds: Value(_foldSleepPause(row.pausedAt, row.pausedSeconds)),
+      ),
+    );
+  }
+
+  Future<void> deleteSleepLog(int id) {
+    return (delete(sleepLogs)..where((t) => t.id.equals(id))).go();
+  }
+
+  /// Hand-corrects a session after the fact - bed time, wake time
+  /// (nullable, so a closed session can be reopened by clearing it), and
+  /// the quality feel.
+  Future<void> updateSleepLog(
+    int id, {
+    required DateTime bedAt,
+    DateTime? wakeAt,
+    int? qualityFeel,
+  }) {
+    return (update(sleepLogs)..where((t) => t.id.equals(id))).write(
+      SleepLogsCompanion(
+        bedAt: Value(bedAt),
+        wakeAt: Value(wakeAt),
+        qualityFeel: Value(qualityFeel),
+      ),
+    );
   }
 }
 

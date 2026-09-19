@@ -38,6 +38,7 @@ class LabColors {
   static const Color datasetGold = Color(0xFFFFD700);
   static const Color nexusPurple = Color(0xFFAA00FF);
   static const Color themeWhite = Color(0xFFFFFFFF);
+  static const Color sleepIndigo = Color(0xFF6C63FF);
   static const Color supersetBlockDefault = Color(0xFF00FA9A);
 }
 

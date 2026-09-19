@@ -7,6 +7,7 @@ import 'blueprint_manager.dart';
 import 'ledger_screen.dart';
 import 'workout_manager.dart';
 import 'anthropometric_data_screen.dart';
+import 'sleep_tracker_screen.dart';
 import 'full_dataset_screen.dart';
 import 'data_analyzer_screen.dart';
 import 'timeline_screen.dart';
@@ -51,6 +52,12 @@ class MainHubScreen extends ConsumerWidget {
     final tC = ref.read(themeControllerProvider);
     final lang = ref.watch(languageProvider).value ?? 'en';
 
+    // Standalone dashboard module visibility - APP.CONFIG > UI_LOCATIONS >
+    // DASHBOARD_SCREENS. Doesn't cover the 6-item core grid, which already
+    // has its own dedicated reorder/hide editor (custom_ui_screen.dart).
+    bool showModule(String id) =>
+        tC.getBool(settings, 'APPCFG_SHOW_MODULE_$id', defaultValue: true);
+
     return SingleChildScrollView(
       padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 32),
       child: Column(
@@ -58,19 +65,40 @@ class MainHubScreen extends ConsumerWidget {
         children: [
           _buildCoreModulesGrid(context, settings, tC, lang),
           const SizedBox(height: 12),
-          _buildNexusModule(context, settings, tC, lang),
-          const SizedBox(height: 12),
-          _buildDatasetModule(context, settings, tC, lang),
-          const SizedBox(height: 12),
-          _buildThemeModule(context, settings, tC, lang),
-          const SizedBox(height: 12),
-          _buildPlanningModule(context, settings, tC, lang),
-          const SizedBox(height: 12),
-          _buildDBInspectorModule(context, settings, tC, lang),
-          const SizedBox(height: 12),
-          _buildSomaticLogsModule(context, settings, tC, lang),
-          const SizedBox(height: 12),
+          if (showModule('NEXUS')) ...[
+            _buildNexusModule(context, settings, tC, lang),
+            const SizedBox(height: 12),
+          ],
+          if (showModule('SLPTRCKR')) ...[
+            _buildSleepTrackerModule(context, settings, tC, lang),
+            const SizedBox(height: 12),
+          ],
+          if (showModule('THEME')) ...[
+            _buildThemeModule(context, settings, tC, lang),
+            const SizedBox(height: 12),
+          ],
+          if (showModule('PLANNING')) ...[
+            _buildPlanningModule(context, settings, tC, lang),
+            const SizedBox(height: 12),
+          ],
+          if (showModule('DBINSPECTOR')) ...[
+            _buildDBInspectorModule(context, settings, tC, lang),
+            const SizedBox(height: 12),
+          ],
+          if (showModule('SOMATIC')) ...[
+            _buildSomaticLogsModule(context, settings, tC, lang),
+            const SizedBox(height: 12),
+          ],
+          // APP.CONFIG is never hideable from here - it's the only way
+          // back to un-hide anything else.
           _buildAppConfigModule(context, settings, tC, lang),
+          // Moved below APP.CONFIG (was slot 08, now taken by SLPTRCKR) -
+          // dropped its "08" number, matching APP.CONFIG's own unnumbered
+          // convention, since it no longer sits in the numbered sequence.
+          if (showModule('DATASET')) ...[
+            const SizedBox(height: 12),
+            _buildDatasetModule(context, settings, tC, lang),
+          ],
           /* _buildPRLogicModule(context, settings, tC), — BACKGROUNDED */
         ],
       ),
@@ -359,6 +387,44 @@ class MainHubScreen extends ConsumerWidget {
     );
   }
 
+  Widget _buildSleepTrackerModule(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC, String lang) {
+    final color = tC.getColor(settings, "DASHBOARD_CARD_SLPTRCKR", defaultColor: LabColors.sleepIndigo);
+    final bgColor = tC.getColor(settings, "DASHBOARD_CARD_SLPTRCKR_BG", defaultColor: color.withValues(alpha: 0.08));
+
+    return Material(
+      color: bgColor,
+      child: InkWell(
+        onTap: () {
+          Navigator.push(context, MaterialPageRoute(builder: (context) => const SleepTrackerScreen()));
+        },
+        child: Container(
+          height: 80,
+          decoration: BoxDecoration(
+            border: Border.all(color: color.withValues(alpha: 0.4), width: 0.5),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            children: [
+              Icon(Icons.bedtime_outlined, color: color, size: 32),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(tr(lang, 'SLEEP_TRACKING'), style: LabStyles.mono(context, fontSize: 8, color: color.withValues(alpha: 0.7))),
+                    Text('08 SLPTRCKR', style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: color.withValues(alpha: 0.5)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildDatasetModule(BuildContext context, Map<String, ThemeSetting> settings, ThemeController tC, String lang) {
     final color = tC.getColor(settings, "DASHBOARD_CARD_DATASET", defaultColor: LabColors.datasetGold);
     final bgColor = tC.getColor(settings, "DASHBOARD_CARD_DATASET_BG", defaultColor: color.withValues(alpha: 0.08));
@@ -385,7 +451,7 @@ class MainHubScreen extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(tr(lang, 'RAW_DATA_VIEW_ONLY'), style: LabStyles.mono(context, fontSize: 8, color: color.withValues(alpha: 0.7))),
-                    Text('08 DATASET', style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
+                    Text('DATASET', style: LabStyles.headline(context, color: Colors.white).copyWith(fontSize: 16, letterSpacing: 2)),
                   ],
                 ),
               ),

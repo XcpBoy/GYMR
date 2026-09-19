@@ -2752,6 +2752,139 @@ class ExportService {
     return filePath;
   }
 
+  // --- SLPTRCKR (Sleep Tracker) Export ---
+  // Plain typed select - unlike anthropometric_logs, sleep_logs is a brand
+  // new table (schema v35) with no pre-existing legacy rows that could
+  // have a stray NULL, so there's no need for the raw+null-coalesced
+  // defensive read pattern here.
+  static Future<List<SleepLog>> _fetchSleepRows(AppDatabase db) {
+    return (db.select(db.sleepLogs)
+          ..orderBy([(t) => OrderingTerm.asc(t.bedAt)]))
+        .get();
+  }
+
+  static String _sleepHoursText(SleepLog log) {
+    if (log.wakeAt == null) return '';
+    final rawSeconds = log.wakeAt!.difference(log.bedAt).inSeconds;
+    final hours = (rawSeconds - log.pausedSeconds) / 3600.0;
+    return hours.toStringAsFixed(2);
+  }
+
+  static Future<String> exportSleepToCsv(AppDatabase db,
+      {bool share = true}) async {
+    final rows = await _fetchSleepRows(db);
+    final dtFmt = DateFormat('yyyy-MM-dd HH:mm');
+    final csvData = <List<dynamic>>[
+      ["BED_AT", "WAKE_AT", "HOURS", "QUALITY_FEEL", "PAUSED_MIN"],
+      for (final r in rows)
+        [
+          dtFmt.format(r.bedAt),
+          r.wakeAt != null ? dtFmt.format(r.wakeAt!) : "IN_PROGRESS",
+          _sleepHoursText(r),
+          r.qualityFeel?.toString() ?? "",
+          (r.pausedSeconds / 60).round(),
+        ],
+    ];
+    final output = await getTemporaryDirectory();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final file = File("${output.path}/gymr_sleep_$ts.csv");
+    await file.writeAsString(_encodeCsv(csvData));
+    if (share) {
+      await SharePlus.instance.share(ShareParams(
+          files: [XFile(file.path)], text: 'GYMR Sleep Data CSV'));
+    }
+    return file.path;
+  }
+
+  static Future<String> exportSleepToExcel(AppDatabase db,
+      {bool share = true}) async {
+    final rows = await _fetchSleepRows(db);
+    final dtFmt = DateFormat('yyyy-MM-dd HH:mm');
+    var excel = Excel.createExcel();
+    excel.rename('Sheet1', 'SLEEP');
+    Sheet sheet = excel.sheets.entries.first.value;
+    sheet.appendRow([
+      TextCellValue("BED_AT"),
+      TextCellValue("WAKE_AT"),
+      TextCellValue("HOURS"),
+      TextCellValue("QUALITY_FEEL"),
+      TextCellValue("PAUSED_MIN"),
+    ]);
+    for (final r in rows) {
+      sheet.appendRow([
+        TextCellValue(dtFmt.format(r.bedAt)),
+        TextCellValue(r.wakeAt != null ? dtFmt.format(r.wakeAt!) : "IN_PROGRESS"),
+        TextCellValue(_sleepHoursText(r)),
+        TextCellValue(r.qualityFeel?.toString() ?? ""),
+        IntCellValue((r.pausedSeconds / 60).round()),
+      ]);
+    }
+    final output = await getTemporaryDirectory();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final filePath = "${output.path}/gymr_sleep_$ts.xlsx";
+    await File(filePath).writeAsBytes(excel.encode()!);
+    if (share) {
+      await SharePlus.instance.share(ShareParams(
+          files: [XFile(filePath)], text: 'GYMR Sleep Data Excel'));
+    }
+    return filePath;
+  }
+
+  static Future<String> exportSleepToPdf(AppDatabase db,
+      {bool share = true}) async {
+    final rows = await _fetchSleepRows(db);
+    final dtFmt = DateFormat('yyyy-MM-dd HH:mm');
+    final pdf = pw.Document();
+    final unicodeFont = await _loadUnicodeFont();
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(24),
+        theme: pw.ThemeData.withFont(base: unicodeFont),
+        header: (context) => pw.Container(
+          alignment: pw.Alignment.centerRight,
+          margin: const pw.EdgeInsets.only(bottom: 10),
+          child: pw.Text("GYMR // SLEEP_DATA // PAGE ${context.pageNumber}",
+              style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+        ),
+        build: (pw.Context context) => [
+          pw.Header(
+              level: 0,
+              child: pw.Text("GYMR // SLEEP_DATA",
+                  style: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold, fontSize: 16))),
+          pw.SizedBox(height: 10),
+          pw.TableHelper.fromTextArray(
+            headers: ["BED_AT", "WAKE_AT", "HOURS", "QUALITY_FEEL", "PAUSED_MIN"],
+            data: [
+              for (final r in rows)
+                [
+                  dtFmt.format(r.bedAt),
+                  r.wakeAt != null ? dtFmt.format(r.wakeAt!) : "IN_PROGRESS",
+                  _sleepHoursText(r),
+                  r.qualityFeel?.toString() ?? "",
+                  (r.pausedSeconds / 60).round().toString(),
+                ],
+            ],
+            headerStyle:
+                pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+            cellStyle: const pw.TextStyle(fontSize: 7),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+          ),
+        ],
+      ),
+    );
+    final output = await getTemporaryDirectory();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final filePath = "${output.path}/gymr_sleep_$ts.pdf";
+    await File(filePath).writeAsBytes(await pdf.save());
+    if (share) {
+      await SharePlus.instance.share(ShareParams(
+          files: [XFile(filePath)], text: 'GYMR Sleep Data PDF'));
+    }
+    return filePath;
+  }
+
   // Shared by importExercisesFromCsv/Excel: [cells] is the row already
   // normalized to plain strings (19 positions, matching exportExercisesToCsv's
   // header order), so both formats funnel through one upsert path instead of

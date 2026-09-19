@@ -41,6 +41,24 @@ final List<_ConfigToggle> _pdfColumnToggles = [
     _ConfigToggle(ExportService.kPdfColumnLabels[key]!, 'APPCFG_PDF_COL_$key'),
 ];
 
+// Dashboard module visibility, under UI_LOCATIONS > DASHBOARD_SCREENS.
+// Covers the standalone hub cards (main_hub_screen.dart's
+// _buildXModule functions) - not the 6-item core grid (kHubModuleSpecs),
+// which already has its own dedicated reorder/hide editor
+// (custom_ui_screen.dart) so this doesn't build a second, conflicting
+// toggle for the same items. APP.CONFIG itself is intentionally excluded -
+// hiding the screen that lets you unhide things would lock a user out of
+// their own settings with no way back short of a DB edit.
+const List<_ConfigToggle> _dashboardModuleToggles = [
+  _ConfigToggle("NEXUS", "APPCFG_SHOW_MODULE_NEXUS"),
+  _ConfigToggle("SLPTRCKR", "APPCFG_SHOW_MODULE_SLPTRCKR"),
+  _ConfigToggle("DATASET", "APPCFG_SHOW_MODULE_DATASET"),
+  _ConfigToggle("THEME.MDFYR", "APPCFG_SHOW_MODULE_THEME"),
+  _ConfigToggle("OVARCH PLAN", "APPCFG_SHOW_MODULE_PLANNING"),
+  _ConfigToggle("DB.EDIT", "APPCFG_SHOW_MODULE_DBINSPECTOR"),
+  _ConfigToggle("SOMATIC_SPECTRUM", "APPCFG_SHOW_MODULE_SOMATIC"),
+];
+
 const List<_ConfigToggle> _editExerciseToggles = [
   _ConfigToggle("SECONDARY MUSCLE", "APPCFG_SHOW_SECONDARY_MUSCLE"),
   _ConfigToggle("PATTERN TYPE", "APPCFG_SHOW_PATTERN_TYPE"),
@@ -163,6 +181,13 @@ class _AppConfigScreenState extends ConsumerState<AppConfigScreen>
           for (int i = 0; i < 4; i++) ...[
             _buildRibbonSlotPicker(context, settings, tC, i),
             if (i != 3) const SizedBox(height: 12),
+          ],
+        ]),
+        const SizedBox(height: 12),
+        _buildSectionCard(context, "DASHBOARD_SCREENS", [
+          for (final t in _dashboardModuleToggles) ...[
+            _buildToggleRow(context, settings, tC, t),
+            const SizedBox(height: 12),
           ],
         ]),
       ],
