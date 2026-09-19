@@ -878,6 +878,58 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
                 }
               },
             ),
+            const SizedBox(height: 12),
+            _buildExportCard(
+              title: "EXPORT ANTRPMTRC.DT",
+              icon: Icons.straighten,
+              color: onlyOutputColor,
+              format: "CSV",
+              onShare: () async {
+                await _exportAnthropometricPath('csv', share: true);
+              },
+              onDownload: () async {
+                final filePath =
+                    await _exportAnthropometricPath('csv', share: false);
+                if (filePath != null) {
+                  await _downloadExportedFile(
+                      filePath, 'gymr_anthropometric.csv');
+                }
+              },
+            ),
+            _buildExportCard(
+              title: "EXPORT ANTRPMTRC.DT",
+              icon: Icons.straighten,
+              color: onlyOutputColor,
+              format: "PDF",
+              onShare: () async {
+                await _exportAnthropometricPath('pdf', share: true);
+              },
+              onDownload: () async {
+                final filePath =
+                    await _exportAnthropometricPath('pdf', share: false);
+                if (filePath != null) {
+                  await _downloadExportedFile(
+                      filePath, 'gymr_anthropometric.pdf');
+                }
+              },
+            ),
+            _buildExportCard(
+              title: "EXPORT ANTRPMTRC.DT",
+              icon: Icons.straighten,
+              color: onlyOutputColor,
+              format: "XLSX",
+              onShare: () async {
+                await _exportAnthropometricPath('xlsx', share: true);
+              },
+              onDownload: () async {
+                final filePath =
+                    await _exportAnthropometricPath('xlsx', share: false);
+                if (filePath != null) {
+                  await _downloadExportedFile(
+                      filePath, 'gymr_anthropometric.xlsx');
+                }
+              },
+            ),
           ],
         ],
       ),
@@ -1381,6 +1433,41 @@ class _NexusScreenState extends ConsumerState<NexusScreen> {
       final filePath = await ExportService.exportKnsTreeAlertToMarkdown(
           exercises,
           share: share);
+      if (mounted) setState(() => _isProcessing = false);
+      return filePath;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text("EXPORT_FAILED: $e"),
+            backgroundColor: Colors.redAccent));
+      }
+      if (mounted) setState(() => _isProcessing = false);
+      return null;
+    }
+  }
+
+  // ANTRPMTRC.DT export, ONLY_OUTPUT section - one path helper for all 3
+  // formats instead of one function each, since the only thing that
+  // differs is which ExportService function gets called.
+  Future<String?> _exportAnthropometricPath(String format,
+      {bool share = true}) async {
+    setState(() => _isProcessing = true);
+    try {
+      final db = ref.read(databaseProvider);
+      final String filePath;
+      switch (format) {
+        case 'pdf':
+          filePath =
+              await ExportService.exportAnthropometricToPdf(db, share: share);
+          break;
+        case 'xlsx':
+          filePath = await ExportService.exportAnthropometricToExcel(db,
+              share: share);
+          break;
+        default:
+          filePath =
+              await ExportService.exportAnthropometricToCsv(db, share: share);
+      }
       if (mounted) setState(() => _isProcessing = false);
       return filePath;
     } catch (e) {

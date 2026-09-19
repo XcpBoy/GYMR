@@ -2607,6 +2607,151 @@ class ExportService {
     return filePath;
   }
 
+  // --- ANTRPMTRC.DT (Anthropometric Data) Export ---
+  // Raw + null-coalesced select, same defensive pattern
+  // anthropometric_data_screen.dart's _watchLogs already uses: a legacy row
+  // with an unexpectedly-null column throws "Null check operator used on a
+  // null value" via Drift's typed decoder and kills the WHOLE query, not
+  // just that row.
+  static Future<List<Map<String, dynamic>>> _fetchAnthropometricRows(
+      AppDatabase db) async {
+    final rows = await db.customSelect(
+      'SELECT date, label, value, unit, is_flexed, is_pumped '
+      'FROM anthropometric_logs ORDER BY date ASC',
+      readsFrom: {db.anthropometricLogs},
+    ).get();
+    return rows.map((row) {
+      final rawDate = row.data['date'] as int?;
+      return {
+        'date': rawDate != null
+            ? DateTime.fromMillisecondsSinceEpoch(rawDate * 1000)
+            : DateTime.now(),
+        'label': (row.data['label'] as String?) ?? '',
+        'value': (row.data['value'] as num?)?.toDouble() ?? 0.0,
+        'unit': (row.data['unit'] as String?) ?? '',
+        'isFlexed': (row.data['is_flexed'] as int?) == 1,
+        'isPumped': (row.data['is_pumped'] as int?) == 1,
+      };
+    }).toList();
+  }
+
+  static Future<String> exportAnthropometricToCsv(AppDatabase db,
+      {bool share = true}) async {
+    final rows = await _fetchAnthropometricRows(db);
+    final csvData = <List<dynamic>>[
+      ["DATE", "LABEL", "VALUE", "UNIT", "FLEXED", "PUMPED"],
+      for (final r in rows)
+        [
+          DateFormat('yyyy-MM-dd').format(r['date'] as DateTime),
+          r['label'],
+          r['value'],
+          r['unit'],
+          (r['isFlexed'] as bool) ? "YES" : "",
+          (r['isPumped'] as bool) ? "YES" : "",
+        ],
+    ];
+    final output = await getTemporaryDirectory();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final file = File("${output.path}/gymr_anthropometric_$ts.csv");
+    await file.writeAsString(_encodeCsv(csvData));
+    if (share) {
+      await SharePlus.instance.share(ShareParams(
+          files: [XFile(file.path)], text: 'GYMR Anthropometric Data CSV'));
+    }
+    return file.path;
+  }
+
+  static Future<String> exportAnthropometricToExcel(AppDatabase db,
+      {bool share = true}) async {
+    final rows = await _fetchAnthropometricRows(db);
+    var excel = Excel.createExcel();
+    excel.rename('Sheet1', 'ANTHROPOMETRIC');
+    Sheet sheet = excel.sheets.entries.first.value;
+    sheet.appendRow([
+      TextCellValue("DATE"),
+      TextCellValue("LABEL"),
+      TextCellValue("VALUE"),
+      TextCellValue("UNIT"),
+      TextCellValue("FLEXED"),
+      TextCellValue("PUMPED"),
+    ]);
+    for (final r in rows) {
+      sheet.appendRow([
+        TextCellValue(DateFormat('yyyy-MM-dd').format(r['date'] as DateTime)),
+        TextCellValue(r['label'] as String),
+        DoubleCellValue(r['value'] as double),
+        TextCellValue(r['unit'] as String),
+        TextCellValue((r['isFlexed'] as bool) ? "YES" : ""),
+        TextCellValue((r['isPumped'] as bool) ? "YES" : ""),
+      ]);
+    }
+    final output = await getTemporaryDirectory();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final filePath = "${output.path}/gymr_anthropometric_$ts.xlsx";
+    await File(filePath).writeAsBytes(excel.encode()!);
+    if (share) {
+      await SharePlus.instance.share(ShareParams(
+          files: [XFile(filePath)], text: 'GYMR Anthropometric Data Excel'));
+    }
+    return filePath;
+  }
+
+  static Future<String> exportAnthropometricToPdf(AppDatabase db,
+      {bool share = true}) async {
+    final rows = await _fetchAnthropometricRows(db);
+    final pdf = pw.Document();
+    final unicodeFont = await _loadUnicodeFont();
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(24),
+        theme: pw.ThemeData.withFont(base: unicodeFont),
+        header: (context) => pw.Container(
+          alignment: pw.Alignment.centerRight,
+          margin: const pw.EdgeInsets.only(bottom: 10),
+          child: pw.Text(
+              "GYMR // ANTHROPOMETRIC_DATA // PAGE ${context.pageNumber}",
+              style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+        ),
+        build: (pw.Context context) => [
+          pw.Header(
+              level: 0,
+              child: pw.Text("GYMR // ANTHROPOMETRIC_DATA",
+                  style: pw.TextStyle(
+                      fontWeight: pw.FontWeight.bold, fontSize: 16))),
+          pw.SizedBox(height: 10),
+          pw.TableHelper.fromTextArray(
+            headers: ["DATE", "LABEL", "VALUE", "UNIT", "FLEXED", "PUMPED"],
+            data: [
+              for (final r in rows)
+                [
+                  DateFormat('yyyy-MM-dd').format(r['date'] as DateTime),
+                  r['label'],
+                  (r['value'] as double).toString(),
+                  r['unit'],
+                  (r['isFlexed'] as bool) ? "YES" : "",
+                  (r['isPumped'] as bool) ? "YES" : "",
+                ],
+            ],
+            headerStyle:
+                pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8),
+            cellStyle: const pw.TextStyle(fontSize: 7),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+          ),
+        ],
+      ),
+    );
+    final output = await getTemporaryDirectory();
+    final ts = DateTime.now().millisecondsSinceEpoch;
+    final filePath = "${output.path}/gymr_anthropometric_$ts.pdf";
+    await File(filePath).writeAsBytes(await pdf.save());
+    if (share) {
+      await SharePlus.instance.share(ShareParams(
+          files: [XFile(filePath)], text: 'GYMR Anthropometric Data PDF'));
+    }
+    return filePath;
+  }
+
   // Shared by importExercisesFromCsv/Excel: [cells] is the row already
   // normalized to plain strings (19 positions, matching exportExercisesToCsv's
   // header order), so both formats funnel through one upsert path instead of
